@@ -1,0 +1,32 @@
+[package]
+name = "lm-heap"
+description = "进程的堆：glibc 上限制 arena 的个数、大块直接向系统要、空闲时把空着的还给系统（Miyu 的 miyu-heap）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Cargo 不许 `workspace = true` 以后再单改一条：这里照抄工作区的（改那边的，记得同步这里），只把 `unsafe_code` 从
+# `forbid` 改成 `deny`：整个 crate 仍然不许，只有调 glibc 的三处单独放开，写明为什么安全（同 Miyu 的 `miyu-heap`）。
+# 单成一个 crate 就是为了这个：`lm-engine`、主程序照旧 `forbid`。
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+unwrap_used = "deny"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+
+# macOS 上问内核自己占了多少内存（`usage.rs`，LM-5 照 Miyu 的 `miyu-heap` 搬来）：`proc_pid_rusage`。工作区里本来就有的同一版。
+# MIT 或 Apache-2.0。
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# musl 静态版（x86_64）自带的 memcpy 这一家（LM-6补，`mem/`）。
+[target.'cfg(all(target_os = "linux", target_env = "musl", target_arch = "x86_64"))'.dependencies]
+lm-heap-mem = { path = "mem" }

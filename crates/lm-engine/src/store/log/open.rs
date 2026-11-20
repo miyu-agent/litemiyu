@@ -1,0 +1,476 @@
+//! 打开会话日志时的自检（`docs/designs/07-存储.md` 第四节「打开日志时自检三件事」）：最后一行完整、
+//! 每一行都能解析、序号连续。只截最后一段末尾那半行：它一定从未被确认过。别的不对一律报错，写明
+//! 是哪一段第几行，不自动修：日志是真相，修错了就是丢了。
+
+use std::fmt;
+use std::fs::{self, OpenOptions};
+use std::io::{self, BufRead, BufReader};
+use std::path::{Path, PathBuf};
+
+use lm_kernel::kernel::event::Event;
+use lm_kernel::kernel::id::Seq;
+
+use super::{Mark, SessionLog};
+
+mod lines;
+mod parse;
+mod range;
+mod walk;
+
+pub use lines::{Line, scan as scan_lines};
+pub use parse::Flow;
+
+use walk::{Piece, walk};
+
+/// 打开不了会话日志。
+#[derive(Debug)]
+pub enum OpenError {
+    /// 没有这个会话：目录不存在，或者里面一段日志都没有。
+    Missing(PathBuf),
+    /// 日志坏了：哪一段、第几行（从 1 数）、怎么坏的。
+    Broken {
+        /// 哪一段。
+        segment: PathBuf,
+        /// 第几行。
+        line: usize,
+        /// 怎么坏的。
+        why: String,
+    },
+    /// 读写出错。
+    Io(io::Error),
+}
+
+/// 写进运行日志的那一句：不带目录（带着会话编号），不带怎么坏的（可能转述那一行的字），段只写文件名（施工 LG-1 上）。要细的看
+/// 字段。
+impl fmt::Display for OpenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OpenError::Missing(_) => f.write_str("no session log"),
+            OpenError::Broken { segment, line, .. } => {
+                let name = segment.file_name().unwrap_or_default();
+                write!(f, "{} line {line} is broken", name.to_string_lossy())
+            }
+            OpenError::Io(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for OpenError {}
+
+/// 日志坏在哪（Miyu 施工 YC-6）：给界面看的那几样。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenAt {
+    /// 哪一段：只是文件名，不带目录（目录里带着会话编号，同 [`OpenError`] 写进运行日志的那一句）。
+    pub segment: String,
+    /// 第几行，从这一段的开头数起（从 1 数）。
+    pub line: usize,
+    /// 坏的那一行该是第几条：照段名（这一段第一条的序号）和行号算，没解过。从头整份读的（[`SessionLog::open`]），它以前的都查过、
+    /// 是好的；只读一截的（[`read_between`] 这些）只查过读了的那几行。
+    pub seq: Seq,
+}
+
+impl OpenError {
+    /// 坏在哪（Miyu 施工 YC-6）：不是坏了的、段名不是序号的没有。段名接不上的报在那一段第 1 行，算出来的是段名说的那一条，不一定是
+    /// 真接不上的那一条。
+    #[must_use]
+    pub fn broken_at(&self) -> Option<BrokenAt> {
+        let OpenError::Broken { segment, line, .. } = self else {
+            return None;
+        };
+        let name = segment.file_name()?.to_str()?;
+        let first = name.strip_suffix(".jsonl")?.parse::<u64>().ok()?;
+        let seq = first
+            .checked_add(u64::try_from(*line).ok()?)?
+            .checked_sub(1)?;
+        Some(BrokenAt {
+            segment: name.to_string(),
+            line: *line,
+            seq: Seq::new(seq)?,
+        })
+    }
+}
+
+impl From<io::Error> for OpenError {
+    fn from(error: io::Error) -> OpenError {
+        OpenError::Io(error)
+    }
+}
+
+impl SessionLog {
+    /// 打开一个会话的日志：照段的先后一行行读，自检，截掉最后一段末尾那半行。返回开着的日志，
+    /// 和读出来的事件（交给内核载入，`02-内核.md` 第六节「载入、崩溃、重启」）。空的段当没有；
+    /// 最后一段是空的，接着往里写。
+    ///
+    /// # Errors
+    ///
+    /// 没有这个会话；日志坏了；读写出错。
+    pub fn open(dir: &Path, limit: u64) -> Result<(SessionLog, Vec<Event>), OpenError> {
+        let mut events = Vec::new();
+        let log = SessionLog::open_each(dir, limit, |read| {
+            gather(&mut events, read);
+            Flow::Go
+        })?;
+        Ok((log, events))
+    }
+
+    /// 同 [`SessionLog::open`]，只是读出来的事件照先后一块块交给 `each`，不攒成一整份（施工 V-15：载入时边读边重放，
+    /// 前面的用完就放掉）。`each` 交回 [`Flow::Stop`] 的不读下去，交回没有这个会话。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`SessionLog::open`]；`each` 叫停了的是没有这个会话。
+    pub fn open_each(
+        dir: &Path,
+        limit: u64,
+        mut each: impl FnMut(Vec<Event>) -> Flow,
+    ) -> Result<SessionLog, OpenError> {
+        let mut stopped = false;
+        let end = walk(
+            dir,
+            HalfLine::Cut,
+            None,
+            Parse::Full,
+            &mut |piece| match piece {
+                Piece::Events(read) => {
+                    let flow = each(read);
+                    stopped = matches!(flow, Flow::Stop);
+                    flow
+                }
+                Piece::SegmentEnd => Flow::Go,
+            },
+        )?
+        .filter(|_| !stopped)
+        .ok_or_else(|| OpenError::Missing(dir.to_path_buf()))?;
+        let last = dir.join(super::segment_name_of(end.segment));
+        let size = fs::metadata(&last)?.len();
+        let file = OpenOptions::new().append(true).open(&last)?;
+        Ok(SessionLog {
+            dir: dir.to_path_buf(),
+            file,
+            segment: end.segment,
+            size,
+            next: end.next,
+            limit,
+            torn: false,
+        })
+    }
+}
+
+/// 只读地读整份会话日志（施工 3-9 下）：和 [`SessionLog::open`] 一样自检，只是最后一段末尾没写完的半行
+/// 跳过、不截，一个字节都不写：会话可能正在往里写。测试盯着一个在跑的会话时用它；[`SessionLog::open`]
+/// 会截掉正在写的那半行，把活的日志写坏。
+///
+/// # Errors
+///
+/// 没有这个会话（目录没有，或者一段都还没有）；日志坏了；读写出错。
+pub fn read_events(dir: &Path) -> Result<Vec<Event>, OpenError> {
+    let mut events = Vec::new();
+    walk(dir, HalfLine::Skip, None, Parse::Full, &mut |piece| {
+        if let Piece::Events(read) = piece {
+            gather(&mut events, read);
+        }
+        Flow::Go
+    })?
+    .ok_or_else(|| OpenError::Missing(dir.to_path_buf()))?;
+    Ok(events)
+}
+
+/// 同 [`read_events`]，只是读一段交一段给 `each`，它交回 `false` 就不读下去（施工 6-4：`history` 翻长会话，叫停了
+/// 不用读完整份）。自检照旧，一个字节都不写。
+///
+/// # Errors
+///
+/// 同 [`read_events`]。
+pub fn read_segments(dir: &Path, each: impl FnMut(Vec<Event>) -> bool) -> Result<(), OpenError> {
+    walk(
+        dir,
+        HalfLine::Skip,
+        None,
+        Parse::Full,
+        &mut by_segment(each),
+    )
+    .map(|_| ())
+}
+
+/// 同 [`read_segments`]，只是从 `from` 读起（施工 3-8 七补：列会话照索引记的位置，只读多出来的那一截），交回读到了哪里：
+/// 最后一段、照到的整行末尾、下一条该是几号。`from` 是空的从头读。
+///
+/// `from` 和日志对不上的交回空的，一条都不交给 `each`：记的那一段没有了、比记的短了、记的位置前面一个字节不是 `\n`（不在
+/// 一行的开头）。对得上的照旧自检，只是从 `from` 读起的那一段，报坏了时的行号从 `from` 数起。
+///
+/// # Errors
+///
+/// 同 [`read_events`]。
+pub fn read_marked(
+    dir: &Path,
+    from: Option<&Mark>,
+    each: impl FnMut(Vec<Event>) -> bool,
+) -> Result<Option<Mark>, OpenError> {
+    walk(
+        dir,
+        HalfLine::Skip,
+        from,
+        Parse::Full,
+        &mut by_segment(each),
+    )
+}
+
+/// 只读地读第 `from` 条到第 `upto` 条（施工 V-37 中）：照先后一块块交给 `each`，不攒成段、不攒成整份；读过 `upto` 当场停，
+/// 后面的段不打开，`upto` 是空的读到最后；`each` 交回 [`Flow::Stop`] 的不读下去。最后一段末尾没写完的半行同
+/// [`read_events`] 跳过，一个字节都不写。
+///
+/// 从哪里读起不另存索引：一段的名字就是这一段第一条的序号、一行一条、序号连着（打开时自检过），第 `from` 条在名字不大于
+/// 它的最后一段的第 `from − 名字 + 1` 行，数换行找到这一行的开头，从那里读起。对不上的退回从头读、`from` 以前的不交：名字
+/// 不大于它的那一段是空的、行数不够（不是最后一段），那一行读不成、不是第 `from` 条。最后一段的整行都在 `from` 前面的
+/// （还没写到），什么都不交。
+///
+/// **跳过的那一截不自检**：从 `from` 那一行读起的，前面的行只数换行，不解、不查序号、不查段名，那里坏了不报（同
+/// [`read_marked`] 从记下的位置读起）。读起以后的照旧自检，报坏了的行号照那一段的开头数（同从头读）。退回从头读的照
+/// [`read_events`] 整份自检。
+///
+/// # Errors
+///
+/// 没有这个会话；读到的那一截坏了；读写出错。
+pub fn read_range(
+    dir: &Path,
+    from: Seq,
+    upto: Option<Seq>,
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<(), OpenError> {
+    range::read(dir, (from, upto, None), Parse::Full, &mut each)
+}
+
+/// 同 [`read_range`]，读到最后，`end` 是写这份日志的一方记着的末尾（[`SessionLog::mark`]）：第 `from` 条离末尾比离那一段的
+/// 开头近的，从末尾往回数换行定位（占用线三：读回收着的历史，`from` 多半在末尾附近），不再把前面的读一遍。往回数到的那一行
+/// 照样要是第 `from` 条，对不上的照 [`read_range`] 从开头数。交的、报的错同 [`read_range`]。
+///
+/// # Errors
+///
+/// 同 [`read_range`]。
+pub fn read_range_ending(
+    dir: &Path,
+    from: Seq,
+    end: &Mark,
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<(), OpenError> {
+    range::read(dir, (from, None, Some(end)), Parse::Full, &mut each)
+}
+
+/// 同 [`read_range`]，只是每一行照 [`Event::from_line_only`] 只解 `only` 里的种类（施工 V-39 上补：判官用，
+/// `docs/construction/V-39上补-判官只解析要的种类.md`）：外壳、`only` 里的、留着一切的有效历史照种类认的全解，别的种类的
+/// `body` 只过一遍。自检照旧（最后一段末尾的半行、序号连着、段名、每一行都是合法的 JSON），读不成的报的错（哪一段、第几行、
+/// 为什么）同 [`read_range`]；只有不要的种类的 `body` 合 JSON、不合那一种的写法的不报（2026-11-03 项目主人拍板接受）。
+///
+/// # Errors
+///
+/// 同 [`read_range`]。
+pub fn read_range_only(
+    dir: &Path,
+    from: Seq,
+    upto: Option<Seq>,
+    only: &[&str],
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<(), OpenError> {
+    range::read(dir, (from, upto, None), Parse::Only(only), &mut each)
+}
+
+/// 同 [`read_range`]，只是每一行照调的一方给的 `parse` 解（施工 V-43：记忆抽取上次抽到以前的只解要的种类，以后的全解）。
+/// 自检、报的错的样子同 [`read_range`]，读不成的那一行报的是 `parse` 交回的错。
+///
+/// # Errors
+///
+/// 同 [`read_range`]。
+pub fn read_range_with(
+    dir: &Path,
+    from: Seq,
+    upto: Option<Seq>,
+    parse: ParseLine<'_>,
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<(), OpenError> {
+    range::read(dir, (from, upto, None), Parse::With(parse), &mut each)
+}
+
+/// 同 [`read_marked`]，只是一块块交给 `each`（不攒成段，同 [`read_range`]；它交回 [`Flow::Stop`] 的不读下去），每一行照调的
+/// 一方给的 `parse` 解（施工 V-43）。交回读到了哪里，`from` 和日志对不上的交回空的，同 [`read_marked`]；`from` 是空的从头读、
+/// 整份自检，同 [`read_events`]。
+///
+/// # Errors
+///
+/// 同 [`read_events`]。
+pub fn read_marked_with(
+    dir: &Path,
+    from: Option<&Mark>,
+    parse: ParseLine<'_>,
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<Option<Mark>, OpenError> {
+    walk(
+        dir,
+        HalfLine::Skip,
+        from,
+        Parse::With(parse),
+        &mut |piece| match piece {
+            Piece::Events(events) => each(events),
+            Piece::SegmentEnd => Flow::Go,
+        },
+    )
+}
+
+/// 只读地读 `from` 到 `to` 之间的整行（施工 V-41 上：翻页只读要的那一截）：两样都是一行的开头，多半是 [`scan_lines`] 数到的
+/// （[`Line::start`]、[`Line::end`]），`to` 是要的最后一行后面那一行的开头，可以在后面的段里。照先后一块块交给 `each`，
+/// 它交回 [`Flow::Stop`] 的不读下去；`to` 以后的不读。
+///
+/// 读到的照旧自检：每一行读不读得成、序号从 `from.next` 起连着、从一段开头读起的段名，报坏了的行号照那一段的开头数（同
+/// [`read_range`]）。`from` 以前的不读、不查（同 [`read_range`] 定位跳过的那一截）。
+///
+/// # Errors
+///
+/// 没有这个会话；读到的那一截坏了；`from` 那一段没有了、`from`、`to` 不在一行的开头（读的时候日志变了，只追加的日志不该
+/// 有），报读写出错；读写出错。
+pub fn read_between(
+    dir: &Path,
+    from: &Mark,
+    to: &Mark,
+    mut each: impl FnMut(Vec<Event>) -> Flow,
+) -> Result<(), OpenError> {
+    lines::between(dir, from, to, Parse::Full, &mut |piece| match piece {
+        Piece::Events(events) => each(events),
+        Piece::SegmentEnd => Flow::Go,
+    })
+}
+
+/// 只读地读第 `seq` 条（施工 V-41 上）：`near` 是同一段里它或者它前面一行的开头（多半是 [`scan_lines`] 数到的），从那里数
+/// 换行找到它，解它，对一遍序号。只解这一行，不查别的行。不在 `near` 那一段里的（段没有了、行数不够、`seq` 比 `near` 还
+/// 早、`near` 不在一行的开头）交回空的。
+///
+/// # Errors
+///
+/// 这一行读不成、序号不是 `seq`：日志坏了（哪一段、第几行、为什么）；读写出错。
+pub fn read_line_near(dir: &Path, near: &Mark, seq: Seq) -> Result<Option<Event>, OpenError> {
+    lines::line_near(dir, near, seq)
+}
+
+/// 只读地读第 `seq` 条（施工 V-41 中：撤销的回应只要撤销那一条、一轮的开头、开它的那句话）：同 [`read_range`] 从 `seq` 读到
+/// `seq`，只是定位到了的那一行定位时已经解过、查过是第 `seq` 条，直接交回，不再照一窗解它后面的行。没有第 `seq` 条的（最后
+/// 一段的整行都在它前面）交回空的。
+///
+/// 定位不了的（`seq` 在第一段前面、对不上）同 [`read_range`] 退回从头读到它为止、照旧自检。跳过的那一截、它后面的都不自检
+/// （同 [`read_range`]，2026-11-03 项目主人定）。
+///
+/// # Errors
+///
+/// 同 [`read_range`]。
+pub fn read_one(dir: &Path, seq: Seq) -> Result<Option<Event>, OpenError> {
+    range::one(dir, seq)
+}
+
+/// 调的一方自己定怎么解一行（[`read_marked_with`]、[`read_range_with`]）：几个线程一起解，所以要 `Sync`。
+pub type ParseLine<'a> = &'a (dyn Fn(&str) -> serde_json::Result<Event> + Sync);
+
+/// 每一行怎么解（施工 V-39 上补）。
+#[derive(Clone, Copy)]
+enum Parse<'a> {
+    /// 全解（[`Event::from_line`]）。
+    Full,
+    /// 只解这几种（[`Event::from_line_only`]）。
+    Only(&'a [&'a str]),
+    /// 照调的一方给的（施工 V-43）。
+    With(ParseLine<'a>),
+}
+
+impl Parse<'_> {
+    /// 解一行。
+    fn line(self, text: &str) -> serde_json::Result<Event> {
+        match self {
+            Parse::Full => Event::from_line(text),
+            Parse::Only(only) => Event::from_line_only(text, only),
+            Parse::With(parse) => parse(text),
+        }
+    }
+}
+
+/// 最后一段末尾没写完的半行怎么办。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HalfLine {
+    /// 截掉：载入以后接着往里写。
+    Cut,
+    /// 跳过、不动：只读。
+    Skip,
+}
+
+/// 一块块收进一整份：头一块整个搬过来，不再拷一遍（施工 V-14）。
+fn gather(events: &mut Vec<Event>, read: Vec<Event>) {
+    if events.is_empty() {
+        *events = read;
+    } else {
+        events.extend(read);
+    }
+}
+
+/// 照段收：一段读完了才把这一段的事件一起交给 `each`，它交回 `false` 就停（同施工 V-15 以前）。
+fn by_segment(mut each: impl FnMut(Vec<Event>) -> bool) -> impl FnMut(Piece) -> Flow {
+    let mut segment = Vec::new();
+    move |piece| match piece {
+        Piece::Events(read) => {
+            gather(&mut segment, read);
+            Flow::Go
+        }
+        Piece::SegmentEnd => match each(std::mem::take(&mut segment)) {
+            true => Flow::Go,
+            false => Flow::Stop,
+        },
+    }
+}
+
+/// 只读地拿会话日志的第一条（`session.created`）：列出会话时用（施工 3-9 下）。只读第一段开头那一行，
+/// 不截、不写：会话可能正在往最后一段里写。第一条落了盘，会话才算造好，所以它总是完整的一行；
+/// 还没写完的当没有这个会话。
+///
+/// # Errors
+///
+/// 没有这个会话；第一行读不懂；读写出错。
+pub fn first_event(dir: &Path) -> Result<Event, OpenError> {
+    let segments = segments(dir)?;
+    let Some((_, first)) = segments.first() else {
+        return Err(OpenError::Missing(dir.to_path_buf()));
+    };
+    let mut line = String::new();
+    BufReader::new(fs::File::open(first)?).read_line(&mut line)?;
+    let Some(line) = line.strip_suffix('\n') else {
+        return Err(OpenError::Missing(dir.to_path_buf()));
+    };
+    Event::from_line(line).map_err(|error| broken(first, 1, error.to_string()))
+}
+
+/// 目录里的段：名字是 12 位数字加 `.jsonl` 的，照数字排。别的文件不看。
+fn segments(dir: &Path) -> Result<Vec<(u64, PathBuf)>, OpenError> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(OpenError::Missing(dir.to_path_buf()));
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let mut segments = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let first = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_suffix(".jsonl"))
+            .filter(|stem| stem.len() == 12 && stem.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|stem| stem.parse::<u64>().ok());
+        if let Some(first) = first {
+            segments.push((first, path));
+        }
+    }
+    segments.sort();
+    Ok(segments)
+}
+
+fn broken(segment: &Path, line: usize, why: String) -> OpenError {
+    OpenError::Broken {
+        segment: segment.to_path_buf(),
+        line,
+        why,
+    }
+}

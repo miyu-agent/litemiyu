@@ -1,0 +1,1 @@
+"{path}" is {size}, over the 5 MiB image limit. A smaller copy made with a command can be read.

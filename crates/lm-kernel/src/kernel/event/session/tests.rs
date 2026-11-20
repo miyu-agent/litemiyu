@@ -1,0 +1,302 @@
+//! 会话事件的测试：图纸上的写法读写一字不差、认得出种类；坏的报错说清是哪一种；子会话带着父会话和第几层（施工 7-1）；会话用哪个模型（施工 8-8）；
+//! 换模型的两格（施工 8-10）；换会话的思考强度（施工 SM-1），8-18 那时带 `model` 的一格照读得进、不算会话的；换会话的上下文
+//! 上限（施工 CTX-1）；钉会话的压缩触发线（施工 CT-1）。
+
+use crate::kernel::event::{Body, ContextCap, Event};
+use crate::kernel::test_support::{event_line, read_body, rejected};
+
+const HASH: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+fn created() -> String {
+    format!(r#"{{"policy":"{HASH}"}}"#)
+}
+
+#[test]
+fn session_events_from_the_drawing_round_trip() {
+    match read_body("session.created", &created()) {
+        Body::SessionCreated(created) => assert_eq!(created.policy.as_str(), HASH),
+        other => panic!("{other:?}"),
+    }
+    read_body(
+        "session.policy_changed",
+        &format!(r#"{{"policy":"{HASH}"}}"#),
+    );
+    read_body("session.meta_changed", r#"{"title":"整理 src 目录"}"#);
+    read_body("session.meta_changed", r#"{"pinned":true}"#);
+    match read_body("session.recapped", r#"{"text":"在打招呼。","upto":6}"#) {
+        Body::SessionRecapped(recapped) => {
+            assert_eq!(
+                (recapped.text.as_str(), recapped.upto.get()),
+                ("在打招呼。", 6)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_oneshot_session_says_so_and_others_do_not() {
+    let oneshot = format!(r#"{{"policy":"{HASH}","oneshot":true}}"#);
+    match read_body("session.created", &oneshot) {
+        Body::SessionCreated(created) => assert!(created.oneshot),
+        other => panic!("{other:?}"),
+    }
+    match read_body("session.created", &created()) {
+        Body::SessionCreated(created) => assert!(!created.oneshot, "不写就不是"),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// 子会话的 `session.created` 多两格（施工 7-1）：父会话、第几层，写在最后；主会话不写，原来的日志一个字节不变。
+#[test]
+fn a_child_session_names_its_parent_and_depth() {
+    let parent = "01a0d75d-2180-7a3c-9e41-5b7d2c8f6a10";
+    let child =
+        format!(r#"{{"policy":"{HASH}","cwd":"~/src/miyu","parent":"{parent}","depth":1}}"#);
+    match read_body("session.created", &child) {
+        Body::SessionCreated(created) => {
+            assert_eq!(
+                created.parent.map(|p| p.to_string()),
+                Some(parent.to_string())
+            );
+            assert_eq!(created.depth, Some(1));
+        }
+        other => panic!("{other:?}"),
+    }
+    match read_body("session.created", &created()) {
+        Body::SessionCreated(created) => assert_eq!((created.parent, created.depth), (None, None)),
+        other => panic!("{other:?}"),
+    }
+    // 写成 null 的当没有。
+    let nulls = created().replace('}', r#","parent":null,"depth":null}"#);
+    let line = event_line("session.created", &nulls);
+    let event = Event::from_line(&line).unwrap();
+    assert_eq!(event.to_line(), event_line("session.created", &created()));
+    // 父会话不合写法、层数不是整数的，读不进来。
+    for (bad, why) in [
+        (r#""parent":"p-1","depth":1"#, "bad session id"),
+        (
+            &format!(r#""parent":"{parent}","depth":-1"#) as &str,
+            "invalid value",
+        ),
+        (
+            &format!(r#""parent":"{parent}","depth":"1""#) as &str,
+            "invalid type",
+        ),
+    ] {
+        let body = created().replace('}', &format!(",{bad}}}"));
+        rejected::<Event>(&event_line("session.created", &body), why);
+    }
+}
+
+/// 会话用哪个模型（施工 8-8）：写在最后，读写一字不差；以前的日志没有这一格，照没有读，写回去一个字节不变；`null` 当没有。
+#[test]
+fn a_session_records_its_model_and_old_logs_read_without_it() {
+    let parent = "01a0d75d-2180-7a3c-9e41-5b7d2c8f6a10";
+    for model in [
+        "deepseek/deepseek-flash",
+        "@free",
+        "openrouter/deepseek/deepseek-v4",
+    ] {
+        let body = created().replace('}', &format!(r#","model":"{model}"}}"#));
+        match read_body("session.created", &body) {
+            Body::SessionCreated(created) => assert_eq!(created.model.as_deref(), Some(model)),
+            other => panic!("{other:?}"),
+        }
+    }
+    let child = format!(
+        r#"{{"policy":"{HASH}","cwd":"~/src/miyu","parent":"{parent}","depth":1,"model":"@free"}}"#
+    );
+    read_body("session.created", &child);
+    match read_body("session.created", &created()) {
+        Body::SessionCreated(created) => assert_eq!(created.model, None, "以前的日志没有"),
+        other => panic!("{other:?}"),
+    }
+    let nulled = created().replace('}', r#","model":null}"#);
+    let event = Event::from_line(&event_line("session.created", &nulled)).unwrap();
+    assert_eq!(event.to_line(), event_line("session.created", &created()));
+    let wrong = created().replace('}', r#","model":3}"#);
+    rejected::<Event>(&event_line("session.created", &wrong), "invalid type");
+}
+
+/// 换模型（施工 8-10）：`model`、`replaced` 两格写在最后，读写一字不差；以前的日志没有这两格，照没有读，写回去一个字节不
+/// 变；`null` 当没有；不是字的读不进来。
+#[test]
+fn a_policy_change_records_the_model_and_what_it_replaced() {
+    for body in [
+        r#"{"model":"@free"}"#,
+        r#"{"model":"deepseek/deepseek-flash","replaced":"claude/opus"}"#,
+        r#"{"policy":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","model":"a/m"}"#,
+    ] {
+        let line = event_line("session.policy_changed", body);
+        let event = Event::from_line(&line).unwrap();
+        assert_eq!(event.to_line(), line, "一字不差");
+    }
+    match read_body(
+        "session.policy_changed",
+        r#"{"model":"deepseek/deepseek-flash","replaced":"claude/opus"}"#,
+    ) {
+        Body::PolicyChanged(changed) => assert_eq!(
+            (changed.model.as_deref(), changed.replaced.as_deref()),
+            (Some("deepseek/deepseek-flash"), Some("claude/opus"))
+        ),
+        other => panic!("{other:?}"),
+    }
+    match read_body(
+        "session.policy_changed",
+        &format!(r#"{{"policy":"{HASH}"}}"#),
+    ) {
+        Body::PolicyChanged(changed) => {
+            assert_eq!(
+                (changed.model, changed.replaced),
+                (None, None),
+                "以前的日志"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    let nulled = format!(r#"{{"policy":"{HASH}","model":null,"replaced":null}}"#);
+    let event = Event::from_line(&event_line("session.policy_changed", &nulled)).unwrap();
+    assert_eq!(
+        event.to_line(),
+        event_line(
+            "session.policy_changed",
+            &format!(r#"{{"policy":"{HASH}"}}"#)
+        )
+    );
+    for wrong in [r#"{"model":3}"#, r#"{"model":"a/m","replaced":["b/m"]}"#] {
+        let line = event_line("session.policy_changed", wrong);
+        rejected::<Event>(&line, "body of session.policy_changed not readable");
+    }
+}
+
+/// 换会话的思考强度（施工 SM-1）：`effort` 写在最后，`level` 总是写（回到跟着配置的写 `null`），读写一字不差；和 `model`
+/// 能在同一条里；`effort` 写 `null` 当没有；`level` 不是字也不是 `null` 的读不进来。
+#[test]
+fn a_policy_change_records_the_session_effort() {
+    for body in [
+        r#"{"effort":{"level":"high"}}"#,
+        r#"{"effort":{"level":null}}"#,
+        r#"{"model":"@free","effort":{"level":"off"}}"#,
+    ] {
+        let line = event_line("session.policy_changed", body);
+        assert_eq!(Event::from_line(&line).unwrap().to_line(), line, "一字不差");
+    }
+    match read_body("session.policy_changed", r#"{"effort":{"level":null}}"#) {
+        Body::PolicyChanged(changed) => {
+            let effort = changed.effort.expect("有");
+            assert_eq!(effort.session(), Some(None), "回到跟着配置");
+        }
+        other => panic!("{other:?}"),
+    }
+    let nulled = event_line("session.policy_changed", r#"{"model":"a/m","effort":null}"#);
+    assert_eq!(
+        Event::from_line(&nulled).unwrap().to_line(),
+        event_line("session.policy_changed", r#"{"model":"a/m"}"#)
+    );
+    for wrong in [r#"{"effort":{"level":3}}"#, r#"{"effort":"high"}"#] {
+        let line = event_line("session.policy_changed", wrong);
+        rejected::<Event>(&line, "body of session.policy_changed not readable");
+    }
+}
+
+/// 换会话的上下文上限（施工 CTX-1）：`context` 写在最后，`tokens` 总是写（去掉的写 `null`），读写一字不差；和别的能在同一条
+/// 里；`context` 写 `null` 当没有；`tokens` 不是非负整数的读不进来。
+#[test]
+fn a_policy_change_records_the_context_cap() {
+    for body in [
+        r#"{"context":{"tokens":128000}}"#,
+        r#"{"context":{"tokens":null}}"#,
+        r#"{"model":"a/m","effort":{"level":"high"},"context":{"tokens":1000000}}"#,
+    ] {
+        let line = event_line("session.policy_changed", body);
+        assert_eq!(Event::from_line(&line).unwrap().to_line(), line, "一字不差");
+    }
+    match read_body("session.policy_changed", r#"{"context":{"tokens":null}}"#) {
+        Body::PolicyChanged(changed) => {
+            assert_eq!(changed.context, Some(ContextCap { tokens: None }), "去掉");
+        }
+        other => panic!("{other:?}"),
+    }
+    let nulled = event_line(
+        "session.policy_changed",
+        r#"{"model":"a/m","context":null}"#,
+    );
+    assert_eq!(
+        Event::from_line(&nulled).unwrap().to_line(),
+        event_line("session.policy_changed", r#"{"model":"a/m"}"#)
+    );
+    for wrong in [
+        r#"{"context":{"tokens":-1}}"#,
+        r#"{"context":{"tokens":"128k"}}"#,
+        r#"{"context":128000}"#,
+    ] {
+        let line = event_line("session.policy_changed", wrong);
+        rejected::<Event>(&line, "body of session.policy_changed not readable");
+    }
+}
+
+/// 施工 8-18 的日志里 `effort` 多一个 `model`（会话给那一个模型记的一档）；8-18（补）去掉了那一层。SM-1 起照样读得进、写回去
+/// 一字不差，但不算会话的一档（`Effort::session` 是 `None`）。
+#[test]
+fn an_8_18_effort_cell_round_trips_and_is_not_the_session_s() {
+    for body in [
+        r#"{"effort":{"model":"deepseek/deepseek-v4","level":"high"}}"#,
+        r#"{"effort":{"model":"deepseek/deepseek-v4","level":null}}"#,
+        r#"{"model":"@free","effort":{"model":"a/m","level":"off"}}"#,
+    ] {
+        let line = event_line("session.policy_changed", body);
+        let event = Event::from_line(&line).unwrap_or_else(|e| panic!("{body}：应该读得进：{e}"));
+        assert_eq!(event.to_line(), line, "一字不差");
+        match event.body {
+            Body::PolicyChanged(changed) => {
+                assert_eq!(changed.effort.expect("有").session(), None, "{body}")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+#[test]
+fn broken_session_bodies_say_which_kind() {
+    let line = event_line("session.created", r#"{"policy":7}"#);
+    rejected::<Event>(&line, "body of session.created not readable");
+    let line = event_line("session.meta_changed", r#"{"pinned":"yes"}"#);
+    rejected::<Event>(&line, "body of session.meta_changed not readable");
+    // 回顾两格都要写（施工 3-8 四补）。
+    for body in [r#"{"upto":6}"#, r#"{"text":"x"}"#] {
+        let line = event_line("session.recapped", body);
+        rejected::<Event>(&line, "body of session.recapped not readable");
+    }
+}
+
+/// 钉会话的压缩触发线（施工 CT-1）：`compaction_line` 写在最后，`percent` 总是写、`null` 是去掉，读写一字不差；和别的能在同一条里；
+/// 外层写 `null` 当没有；不是整数的读不进来。Miyu 的样本第三条带 `vision`（VM-1，LiteMiyu 没搬），这里换成 `effort`。
+#[test]
+fn a_policy_change_records_the_line_pin() {
+    for body in [
+        r#"{"compaction_line":{"percent":50}}"#,
+        r#"{"compaction_line":{"percent":null}}"#,
+        r#"{"model":"a/m","effort":{"level":"high"},"compaction_line":{"percent":95}}"#,
+    ] {
+        let line = event_line("session.policy_changed", body);
+        assert_eq!(
+            Event::from_line(&line).expect("合写法").to_line(),
+            line,
+            "一字不差"
+        );
+    }
+    let nulled = event_line(
+        "session.policy_changed",
+        r#"{"model":"a/m","compaction_line":null}"#,
+    );
+    assert_eq!(
+        Event::from_line(&nulled).expect("合写法").to_line(),
+        event_line("session.policy_changed", r#"{"model":"a/m"}"#)
+    );
+    let line = event_line(
+        "session.policy_changed",
+        r#"{"compaction_line":{"percent":"50"}}"#,
+    );
+    rejected::<Event>(&line, "body of session.policy_changed not readable");
+}

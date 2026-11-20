@@ -1,0 +1,444 @@
+//! 送进会话的输入，和输入里的命令（`docs/designs/02-内核.md` 第四节「输入、动作、命令怎么写」）。
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::Arc;
+
+use crate::kernel::accumulate::Delta;
+use crate::kernel::block::Block;
+use crate::kernel::estimate::ImagePrice;
+use crate::kernel::event::{
+    CallError, ContextInjected, Cost, Effect, Event, IdleReason, JobLines, JobReported, Purpose,
+    Question, Said, Usage,
+};
+use crate::kernel::facts::Environment;
+use crate::kernel::id::{CallId, CommandId, ContentHash, ModuleId, Seq, SessionId, TurnId};
+use crate::kernel::origin::{By, Model};
+use crate::kernel::raw::RawJson;
+use crate::kernel::time::Timestamp;
+use crate::kernel::tool::Access;
+
+use super::configure::Replaced;
+
+mod command;
+
+pub use command::{Answer, Command, Queued};
+
+/// 送进会话的一件事。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Input {
+    /// 收到一个命令。
+    Command(Received),
+    /// 追加的事件已经同步到磁盘，到第 `upto` 条为止（`07-存储.md` S4）。
+    Stored {
+        /// 落完盘的时刻：落了盘接着发请求时，熔断要写的事件照它记（施工 6-6 上）。
+        at: Timestamp,
+        /// 落了盘的最后一条的序号。
+        upto: Seq,
+    },
+    /// 环境变了：时区、工作目录。不当场注入，到下一个边界再查（`08-上下文投影.md` C10）。
+    Environment(Environment),
+    /// 模型的限额：造会话、载入以后交一次，换了模型再交（施工 6-2 上）。没交过的不主动压缩。
+    Limits(Limits),
+    /// 回合开始的挂接点跑完了（`05-内核接口.md` 第五节第 2 条）。
+    TurnStartHooksDone {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪个回合的。
+        turn: TurnId,
+        /// 各模块交回来的注入，照固定的先后：先按声明的优先级，再按模块编号。
+        injected: Vec<Injection>,
+        /// 执行器照这一轮的配置重新解析会话的引用，钉着的没了、退回了默认的（施工 8-10，`models.md`「怎么走」第六条第 3
+        /// 条）：原来的、退回的。内核在注入前面记一条 `session.policy_changed`。没退回的没有。
+        replaced: Option<Replaced>,
+        /// 人格的文件改了，执行器照新的拼好的快照的哈希（施工 P-1 再补）：内核换上先放着的那一份策略
+        /// （[`crate::kernel::session::Session::stage_policy`]），记一条带 `policy` 的 `session.policy_changed`。没换的没有。
+        policy: Option<ContentHash>,
+        /// 这一轮开着提前压好（施工 6-11 上，配置 `compaction.prepare`）：执行器冻结这一轮的配置时照它交。不开回合的手动
+        /// 压缩照上一轮的。
+        prepare: bool,
+        /// 这一轮等人确认最多等多少毫秒（施工 CD-1，配置 `permission.confirm.timeout`）：执行器冻结这一轮的配置时照它交，问人时
+        /// 内核照它算截止的时刻、交出 [`super::Action::ExpireApproval`]。没有的一直等。
+        confirm_ms: Option<u64>,
+    },
+    /// 请求发出去了（`02-内核.md` 第六节「回复怎么收、回合怎么结束」）。
+    RequestSent {
+        /// 到的时刻，取自执行器的时钟。用时从这一刻算起。
+        at: Timestamp,
+        /// 哪一次请求。
+        seen: Seq,
+        /// 发给了哪个端点的哪个模型。
+        model: Model,
+        /// 驱动编码以后的请求字节的哈希（`05-内核接口.md` 第七节）。
+        request: ContentHash,
+    },
+    /// 模型的一段增量（`03-事件模型.md` 第五节「增量和累积器怎么写」）。
+    ModelDelta {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次请求的。
+        seen: Seq,
+        /// 这一段增量。
+        delta: Delta,
+    },
+    /// 模型说完了：正常说完的，附上用量；出错的，附上分类和原话。没发出去就失败了的，
+    /// 不报「发出去了」，直接报这一条。
+    ModelEnded {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次请求的。
+        seen: Seq,
+        /// 用量。供应商没报的，没有。
+        usage: Option<Usage>,
+        /// 金额（施工 8-15）：执行器照价格算好的，内核原样记进 `model.called`。算不出的没有。
+        cost: Option<Cost>,
+        /// 出错的分类和原话；正常说完的，没有。
+        error: Option<CallError>,
+        /// 出错时供应商说了要等多久再试，毫秒（施工 3-5 下）；没说的，没有。
+        wait_ms: Option<u64>,
+        /// 超长时超了多少 token，驱动从原话里解析的（施工 6-6 中）：摘要请求照它截短。解析不出来的、别的出错，没有。
+        excess: Option<u64>,
+        /// 真发出去的字节的哈希（施工 MD-2）：扩展驱动报的，记进 `model.called` 的 `sent`。内置驱动的没有。
+        sent: Option<ContentHash>,
+    },
+    /// 到点了：内核交出去的「到点叫醒」到时候了（`02-内核.md` 第四节）。回合已经不在等了的，不理。
+    Woke {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 为哪一次请求等的：出错的那一次。
+        seen: Seq,
+    },
+    /// 工具执行完了（`02-内核.md` 第六节「工具怎么调、下一步怎么走」）。成功、出错，或者叫它停以后停在了改之前
+    /// （施工 4-9 再补一）：已取消、被拒绝、已跳过的那一句是内核写的。
+    ToolDone {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次调用。
+        call_id: CallId,
+        /// 出错了没有：工具执行了，但是出了错。错在哪，写在内容块里。
+        error: bool,
+        /// 给模型看的内容。
+        blocks: Vec<Block>,
+        /// 执行用了多少毫秒，执行器量的。
+        duration_ms: Option<u64>,
+        /// 给人看的说法，工具交的（施工 4-5 上）；没交的是空的。
+        human: Option<Said>,
+        /// 效果，工具交的（施工 4-6 上）：改前改后的内容已经由执行器存成了 blob，这里是它们的哈希。
+        effects: Vec<Effect>,
+        /// 叫它停以后停在了改之前，什么都没改（施工 4-9 再补一）：记成已取消，那一句内核写。
+        stopped: bool,
+        /// 工具要结束这一轮（施工 4-14）：成功的才认。
+        end_turn: bool,
+        /// 她发出去的图（施工 X-19）：工具交的，原样记进结果。
+        sent: Vec<crate::kernel::event::Sent>,
+        /// 这件工具给人看的名字，照语言，执行器派它那一刻取的（施工 9-8 六补）：脚本、MCP 的、扩展的工具有，核心自带的、
+        /// 没写的是空的。
+        display_name: BTreeMap<String, String>,
+        /// 给头看的结构化结果（施工 W-11）：工具交的，原样记进结果；没交的没有。
+        detail: Option<crate::kernel::raw::RawJson>,
+    },
+    /// 工具执行中的一段输出，只推给头（`03-事件模型.md` 第五节）。
+    ToolProgress {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次调用。
+        call_id: CallId,
+        /// 一段输出。
+        text: String,
+    },
+    /// 在跑的调用问人一组题（`02-内核.md` 第六节「提问怎么走」）。
+    ToolAsks {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次调用。
+        call_id: CallId,
+        /// 一组题，照先后。
+        questions: Vec<Question>,
+    },
+    /// 压完要重读的文件读好了（施工 6-5）：[`super::Action::Reread`] 的每一个照先后，一个一项。内核记在那次摘要
+    /// 请求上，什么都不出；不是在路上的那一次的，不理。
+    Reread {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次摘要请求。
+        seen: Seq,
+        /// 每一个读得怎么样，照交出去的先后。
+        files: Vec<Reread>,
+    },
+    /// 撤销撤掉压缩时读回的日志（施工 6-9）：[`super::Action::ReadBack`] 的回报，从第 `from` 条起，一条接一条连到
+    /// 最后一条。对得上正在读回的那一次才记撤销；对不上的当过时的不理。
+    ReadBack {
+        /// 到的时刻，取自执行器的时钟：撤销那一条记这一刻。
+        at: Timestamp,
+        /// 从第几条起，照交出去的。
+        from: Seq,
+        /// 读回的事件，照先后。
+        events: Vec<Event>,
+    },
+    /// 检查点里重读的文件的原文，照 blob 找（施工 6-5）：[`super::Action::Recall`] 的回报（施工 6-9）。放进有效历史，
+    /// 什么都不出；不是现在这个检查点的，组装时找不到它。
+    Recalled {
+        /// 原文，照 blob 找。
+        texts: BTreeMap<ContentHash, String>,
+    },
+    /// 要重启了：有计划的重启，关之前送进来（`02-内核.md` 第六节「载入、崩溃、重启」第 3 条）。
+    Restarting {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+    },
+    /// 后台命令结束了（施工 7-2，`docs/blueprint/kernel/session.md`「回报」）：执行器交来，记一条 `job.reported`，不带回合
+    /// 编号。对不上一个还没结束的后台命令的，不理。
+    JobEnded {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 谁让它结束的，照原因填（2026-09-30 定）：自己退出的是起它的那次调用，被停掉的是停它的人或者那次 `jobs` 调用，
+        /// 撤销停掉的是撤销的人，重启、崩了的是内核。
+        by: By,
+        /// 哪个命令引起的：那次调用所在回合的、停它、撤销的那个命令的。
+        cause: Option<CommandId>,
+        /// 那一条的 `body`。
+        reported: JobReported,
+    },
+    /// 监视的后台命令出了一批行（施工 MN-1 上，设计 56 第三节第 2 条）：执行器在 200 毫秒的窗口里攒好、截过一次交来。
+    /// 闲着记一条 `job.lines`、照回报开一轮；她这一轮在跑时挂在这一轮上，下一步问模型以前合成一条记下（`watch.rs`）。
+    /// 对不上一个还没结束的后台命令的，不理。
+    JobLines {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 起它的那次调用。
+        by: By,
+        /// 那次调用所在回合的命令。
+        cause: Option<CommandId>,
+        /// 这一批：`job`、截过的 `text`、原来几行、截掉几个字。
+        lines: JobLines,
+    },
+    /// 人打的一条命令跑完了（施工 SH-1 上，`shell.rs`）：执行器照 `RunShell` 跑完、到时、叫停以后交来，记成 `shell.ran`。
+    /// 对不上这一轮在跑的那一条的，不理。
+    ShellRan {
+        /// 跑完的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 跑完的样子，原样记。
+        ran: crate::kernel::event::ShellRan,
+    },
+    /// 辅助请求发出去了（施工 3-8 四补 `recap.rs`；五补起回顾、起标题共用这一路，`aside.rs`）：和主请求的
+    /// [`Input::RequestSent`] 一样，名字是用途加它照到的那一条 `upto`。不是在路上的那一次的，不理。
+    AsideSent {
+        /// 到的时刻，取自执行器的时钟。用时从这一刻算起。
+        at: Timestamp,
+        /// 哪一种辅助请求。
+        purpose: Purpose,
+        /// 哪一次：照到的那一条。
+        upto: Seq,
+        /// 发给了哪个端点的哪个模型。
+        model: Model,
+        /// 驱动编码以后的请求字节的哈希。
+        request: ContentHash,
+        /// 旁路请求退到了会话的模型（施工 Q-2，设计 43 第三节第 3 条）：登记的档位池全在冷却、都出错了。
+        fell_back: bool,
+    },
+    /// 辅助请求的一段增量。不推给头：辅助请求只用说完了的那一句。
+    AsideDelta {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一种辅助请求。
+        purpose: Purpose,
+        /// 哪一次。
+        upto: Seq,
+        /// 这一段增量。
+        delta: Delta,
+    },
+    /// 辅助请求说完了：正常说完的附上用量，出错的附上分类和原话。辅助请求出错不自动重试，要等多久、超了多少都用不上。
+    /// 没发出去就失败了的，不报「发出去了」，直接报这一条。
+    AsideEnded {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一种辅助请求。
+        purpose: Purpose,
+        /// 哪一次。
+        upto: Seq,
+        /// 用量。供应商没报的，没有。
+        usage: Option<Usage>,
+        /// 金额（施工 8-15）：同 [`Input::ModelEnded`] 的。
+        cost: Option<Cost>,
+        /// 出错的分类和原话；正常说完的，没有。
+        error: Option<CallError>,
+        /// 真发出去的字节的哈希（施工 MD-2）：同 [`Input::ModelEnded`] 的。
+        sent: Option<ContentHash>,
+    },
+    /// 订的「空了告诉我」等不到了（施工 C-6，`docs/blueprint/cross-session.md` 第六条第 8、9 款）：执行器交，到点了是
+    /// `expired`，订的时候那个会话不在了是 `gone`。内核照账本还在等、`expired` 的确实到了点的，记一条 `peer.idle`，`by` 是
+    /// 内核，只记下、不叫醒；别的不理。读回日志的时候到的先放着。
+    WatchEnded {
+        /// 到的时刻，取自执行器的时钟：`expired` 照它查到没到点。
+        at: Timestamp,
+        /// 等的是哪个会话。
+        session: SessionId,
+        /// `expired` 或者 `gone`。
+        reason: IdleReason,
+    },
+    /// 有没有头订阅着这个会话（施工 7-2）：会话 actor 在订阅、退订时交。只在内存里，不进日志；造会话、载入以后当没人
+    /// 看着。没人看着的一次性会话，回报只记下、不开轮（`agents.md` 第三条第 3 条）。
+    Watched {
+        /// 有头订阅着。
+        watched: bool,
+    },
+    /// 替它看图回来了（施工 8-17，`docs/blueprint/kernel/session.md`「替它看图」）：[`super::Action::Describe`] 的回报。成了的
+    /// 内核记一条 `image.described`；不是在路上的那一张的不理；读回日志的时候到的先放着。
+    Described {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一张图。
+        blob: ContentHash,
+        /// 成了的：替它看的端点和模型、转述的原文（去掉了前后空白，不是空的）。没成的没有：原因执行器记在运行日志里。
+        seen: Option<(Model, String)>,
+    },
+    /// 执行前的链判完了（`02-内核.md` 第六节「确认怎么走」）。
+    ToolGuarded {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次调用。
+        call_id: CallId,
+        /// 链的结论。
+        verdict: Verdict,
+    },
+    /// 等人确认等到了截止的时刻（施工 CD-1，`docs/blueprint/kernel/asking.md`「到时没人确认」）：[`super::Action::ExpireApproval`]
+    /// 到时候了。这件还在等确认的，内核替人拒绝，`by` 是内核；人已经定了、有了结果、不在等的，不理。
+    ApprovalExpired {
+        /// 到的时刻，取自执行器的时钟。
+        at: Timestamp,
+        /// 哪一次调用。
+        call_id: CallId,
+        /// 写给模型的那一句：出厂的 `core/tool-results/approval-timed-out.txt`，执行器编进程序交来（不进策略快照）。
+        text: String,
+        /// 给人看的说法，同那一句的位置。
+        human: Option<Said>,
+    },
+}
+
+/// 执行前的链交回的结论：几个守卫合起来，最严者胜（`05-内核接口.md` 第五节第 1 条）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// 放行。
+    Allow,
+    /// 拒绝。
+    Deny {
+        /// 哪个模块拒的：写成被拒绝的结果的 `by`。
+        module: ModuleId,
+        /// 写给模型的那一句。
+        text: String,
+        /// 给人看的说法（施工 4-5 上）；模块没交的是空的。
+        human: Option<Said>,
+    },
+    /// 要问人。请求的另外几格照写进 `tool.approval_requested`，调用编号由内核填。
+    Ask {
+        /// 哪个模块问的：写成请求的 `by`。
+        module: ModuleId,
+        /// 要的是哪一类访问。
+        access: Access,
+        /// 提的放行规则；没提就没有。
+        rule: Option<RawJson>,
+        /// 给头看的：为什么要问。
+        detail: Option<RawJson>,
+    },
+}
+
+/// 收到的一个命令，连同它从哪里来、什么时候到的。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Received {
+    /// 命令编号，发送方生成。同一个编号只生效一次（不变量 9）。
+    pub id: CommandId,
+    /// 谁发的，取自连接，不取自正文。
+    pub by: By,
+    /// 到的时刻，取自执行器的时钟。
+    pub at: Timestamp,
+    /// 命令本身。
+    pub command: Command,
+}
+
+/// 一个模块在回合开始时交回来的一块注入。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Injection {
+    /// 哪个模块注入的：写成事件的 `by`。
+    pub module: ModuleId,
+    /// 注入的那一块，原样追加。
+    pub fact: ContextInjected,
+}
+
+/// 会话要发给的模型的限额（`compaction.md`「对外的样子」模型的资料）：压缩线照它算。
+#[derive(Clone)]
+pub struct Limits {
+    /// 发给哪个端点的哪个模型：和锚比，换过模型锚作废。
+    pub model: Model,
+    /// 上下文窗口；没报的没有，不主动压。
+    pub window: Option<u64>,
+    /// 最大输出；没报的没有，输出预留按策略里的上限。
+    pub max_output: Option<u64>,
+    /// 一张图怎么算，驱动交的（施工 6-3 上）；没有的照策略里的固定数。
+    pub images: Option<Arc<dyn ImagePrice>>,
+    /// 看不了图（施工 8-17，`docs/blueprint/models.md`「怎么走」第十三条第 1 条）：池里有一个成员看不了就算。是真的，请求里有
+    /// 还没转述过的图就先转述。不知道的（测试的端口）是假的。
+    pub blind: bool,
+    /// 这一轮发给谁（施工 E-M）：供应商、模型、思考强度、预设，写进模型那一块事实；没交的（测试的端口）不写。
+    pub identity: Option<crate::kernel::facts::Identity>,
+}
+
+impl Limits {
+    /// 套上会话的上下文上限 `context`（施工 CTX-1，设计 68 第二节第 2 条）：生效的窗口取模型的窗口和它里小的，模型没报窗口的
+    /// 照它；没设的不动。路由交限额时套（换模型、池换了成员都照套），压缩线照套过的窗口算。
+    #[must_use]
+    pub fn capped(mut self, context: Option<u64>) -> Limits {
+        self.window = match (self.window, context) {
+            (Some(window), Some(context)) => Some(window.min(context)),
+            (window, None) => window,
+            (None, context) => context,
+        };
+        self
+    }
+}
+
+/// 图片的算法是驱动交的对象，打印时只说有没有。
+impl fmt::Debug for Limits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Limits")
+            .field("model", &self.model)
+            .field("window", &self.window)
+            .field("max_output", &self.max_output)
+            .field("images", &self.images.is_some())
+            .field("blind", &self.blind)
+            .finish()
+    }
+}
+
+/// 图片的算法比的是不是同一个对象。
+impl PartialEq for Limits {
+    fn eq(&self, other: &Limits) -> bool {
+        self.model == other.model
+            && self.window == other.window
+            && self.max_output == other.max_output
+            && self.blind == other.blind
+            && self.identity == other.identity
+            && match (&self.images, &other.images) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
+}
+
+impl Eq for Limits {}
+
+/// 压完要重读的一个文件读得怎么样（`compaction.md` 第九条，施工 6-5）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reread {
+    /// 读到了：原文存进了 blob。
+    Read {
+        /// 原文的哈希。
+        blob: ContentHash,
+        /// 原文。
+        text: String,
+    },
+    /// 比上限大，没读完。
+    TooLarge,
+    /// 读不到：没有、读不了、不是普通文件、不是 UTF-8。
+    Unreadable,
+}

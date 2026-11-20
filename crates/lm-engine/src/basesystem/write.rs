@@ -1,0 +1,144 @@
+//! `write`（`10-自带软件.md` 第三节「`write` 的细则」，施工 4-6 上）：新建一个文件，或者整体覆盖一个文件。参数照
+//! Claude Code 叫 `file_path`、`content`。
+//!
+//! 已经在了的文件，要她看过、而且现在的内容和她看到的一样才写（第五节「她看过的」）；照它原来的编码、BOM、换行
+//! 写。新文件写成 UTF-8、不带 BOM，上级目录没有的建上。写的时候先写临时文件再改名盖上去（[`crate::fs::replace()`]）。
+//! 报 `file.changed`：改前改后的内容本身，执行器存成 blob。
+
+use std::fs;
+
+use serde::Deserialize;
+
+use crate::fs::{Kind, OpenError, replace};
+use crate::tool::{Call, Done, Effect, Progress, Running, Spec, Stop, Target, Tool};
+use lm_kernel::kernel::template::Template;
+use lm_kernel::kernel::tool::Access;
+
+use crate::basesystem::blocking::blocking;
+use crate::basesystem::common::{Common, Shown, contents, index_lock, said_n};
+use crate::basesystem::load::{self, LoadError, say};
+use crate::basesystem::text::{Style, line_count};
+
+/// `write`。
+pub(crate) struct Write {
+    spec: Spec,
+    texts: Texts,
+}
+
+/// 输出里给她看的几句：`software/basesystem/write/*.txt`，和几件工具共用的。
+#[derive(Clone)]
+struct Texts {
+    common: Common,
+    created: Template,
+    updated: Template,
+}
+
+/// 她给的参数。照 pi 写成 `path`、照 opencode 写成 `filePath` 的也认，和 `read` 一样。
+#[derive(Deserialize)]
+struct Args {
+    #[serde(alias = "path", alias = "filePath")]
+    file_path: String,
+    content: String,
+}
+
+impl Write {
+    /// 照编进程序的字造，共用的几句是 `common`。
+    pub(crate) fn load(common: Common) -> Result<Write, LoadError> {
+        let text = |name: &str, fields: &[&str]| load::text("write", name, fields);
+        Ok(Write {
+            spec: load::spec("write", Access::Write)?,
+            texts: Texts {
+                common,
+                created: text("created", &["path"])?,
+                updated: text("updated", &["path"])?,
+            },
+        })
+    }
+}
+
+impl Tool for Write {
+    fn spec(&self) -> &Spec {
+        &self.spec
+    }
+
+    fn targets(&self, call: &Call) -> Vec<Target> {
+        lm_kernel::kernel::json::from_str::<Args>(&call.args)
+            .map(|args| {
+                vec![Target {
+                    path: args.file_path,
+                    write: true,
+                    itself: false,
+                }]
+            })
+            .unwrap_or_default()
+    }
+
+    fn run(&self, call: Call, _progress: Progress) -> Running<'_> {
+        let texts = self.texts.clone();
+        Box::pin(async move {
+            match lm_kernel::kernel::json::from_str::<Args>(&call.args) {
+                Ok(args) => {
+                    blocking(call.stop.clone(), move |stop| {
+                        write(&texts, &call, &args, stop)
+                    })
+                    .await
+                }
+                Err(error) => texts.common.bad_args(&error),
+            }
+        })
+    }
+}
+
+/// 写：换成真实的位置，看它现在是什么；已经在了的先核对她看过的，再照原来的写法写。真正改之前看一眼旗
+/// （施工 4-9 再补一）：叫停了就不改，交回 `stopped`。
+fn write(texts: &Texts, call: &Call, args: &Args, stop: &Stop) -> Done {
+    let path = args.file_path.as_str();
+    let failed = |error: &dyn std::fmt::Display| texts.common.write_failed(path, error);
+    let real = match call.real(path) {
+        Ok(real) => real,
+        Err(error) => return failed(&error),
+    };
+    // 记忆的目录（L7 四）：拿着锁读、核对、写，别的窗口同时改的不丢；读过以后被别人改了的照旧拦。
+    let _index = index_lock::lock(call, &real);
+    let before = match contents(&real) {
+        Ok(before) => before,
+        Err(OpenError::NotAFile(Kind::Directory)) => return texts.common.directory(path),
+        Err(OpenError::NotAFile(_)) => return texts.common.not_regular(path),
+        Err(OpenError::NotFound) => None,
+        Err(OpenError::Io(error)) => return failed(&error),
+    };
+    let after = match &before {
+        Some(old) => {
+            // 改之前核对：看过、可现在的内容和她看到的不一样的不写；没看过的照写（施工 ED-2）。
+            if let Some(refused) = texts.common.stale(call, path, &real, old) {
+                return refused;
+            }
+            Style::of(old).encode(&args.content)
+        }
+        None => Style::fresh().encode(&args.content),
+    };
+    if stop.stopped() {
+        return Done::stopped();
+    }
+    if before.is_none()
+        && let Some(dir) = real.parent()
+        && let Err(error) = fs::create_dir_all(dir)
+    {
+        return failed(&error);
+    }
+    if let Err(error) = replace(&real, &after) {
+        return failed(&error);
+    }
+    let (template, key) = match before {
+        Some(_) => (&texts.updated, "write/updated"),
+        None => (&texts.created, "write/created"),
+    };
+    let shown = Shown::here(call).path(&real);
+    Done::ok(say(template, &[("path", &shown)]))
+        .said(said_n(key, "count", line_count(&args.content) as u64))
+        .effect(Effect::Changed {
+            path: real,
+            before,
+            after,
+        })
+}

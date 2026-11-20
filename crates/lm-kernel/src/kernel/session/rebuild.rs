@@ -1,0 +1,313 @@
+//! 压后重建（`docs/blueprint/compaction.md` 第八、九条，施工 6-5）：检查点里代码写的几段（读过、改过的文件清单，
+//! 取回指路，太大没重读的），和最近读过、改过的几个文件的原文；用过的技能另算一组（施工 X-10 下）。
+//!
+//! 内核不碰磁盘：发摘要请求之前交出要重读的候选（[`Session::reread_paths`]），执行器读完、存成 blob 送回来，记在
+//! 那次摘要请求上；取到摘要以后照先后挑（[`Session::rebuild`]）。
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::Session;
+use super::action::Action;
+use super::input::Reread;
+use super::policy::{Notes, Rebuild};
+use crate::kernel::estimate;
+use crate::kernel::event::{Body, CompactTrigger, ContextCompacted, Effect, Event, RestoredFile};
+use crate::kernel::id::{ContentHash, Seq};
+use crate::kernel::origin::By;
+use crate::kernel::template::Template;
+use crate::kernel::time::Timestamp;
+
+/// 清单里最多写几个文件，多的写还有几个。
+const LISTED: usize = 30;
+/// 交给执行器的单个上限：token 折成字节，和本地估算一样一个 token 算 4 个字节。
+const BYTES_PER_TOKEN: u64 = 4;
+
+/// 挑好的：代码写的几段、重读的文件、它们的原文（照 blob 找）。
+#[derive(Debug, Default)]
+pub(super) struct Rebuilt {
+    pub(super) notes: String,
+    pub(super) restored: Vec<RestoredFile>,
+    pub(super) texts: BTreeMap<ContentHash, String>,
+}
+
+impl Session {
+    /// 执行器送回了第 `seen` 次摘要请求的重读结果（施工 6-5）：记在那次请求上。换上提前压好的那一份的，收下就写压缩（施工
+    /// 6-11 上，`prepare.rs`）。别的不理（施工 8-9 从 `call.rs` 挪来，那边放不下了）。
+    pub(super) fn reread_done(
+        &mut self,
+        at: Timestamp,
+        seen: Seq,
+        files: Vec<Reread>,
+    ) -> Vec<Action> {
+        if let Some(compacting) = self.call(seen).and_then(|call| call.compaction.as_mut()) {
+            compacting.reread(files);
+            return Vec::new();
+        }
+        self.swap_reread(at, seen, files).unwrap_or_default()
+    }
+
+    /// 取回原文（施工 6-9，`kernel/history.md`「重读的原文」）：现在的检查点重读过文件的，照先后交出它们的 blob；没有
+    /// 检查点、没重读过的，没有。检查点换了、原文不在内存里的时候出（载入以后、撤掉了压缩、恢复了压缩）。
+    pub(super) fn recall(&self) -> Option<Action> {
+        let Body::ContextCompacted(compacted) = &self.history.checkpoint()?.body else {
+            return None;
+        };
+        let blobs: Vec<ContentHash> = compacted
+            .restored
+            .iter()
+            .map(|file| file.blob.clone())
+            .collect();
+        (!blobs.is_empty()).then_some(Action::Recall { blobs })
+    }
+
+    /// 压后重建的数：策略里有、窗口够的才有（第九条第 2 条）。
+    fn rebuild_numbers(&self) -> Option<Rebuild> {
+        let rebuild = self.policy.compaction.as_ref()?.rebuild?;
+        self.policy.notes.as_ref()?;
+        let window = self.limits.as_ref()?.window?;
+        (window >= rebuild.min_window).then_some(rebuild)
+    }
+
+    /// 发第 `upto` 条的摘要请求之前，交给执行器重读的候选（第九条第 1 条）：被替代的那一段里读过、改过的文件，最近
+    /// 的在前、去重；尾巴里读过、改过的跳过；最多 [`Rebuild::candidates`] 个。用过的技能另算一组（施工 X-10 下）：不算
+    /// 在文件里，同样挑，接在文件后面。重读不了的（策略里没有、窗口不够）没有。
+    pub(super) fn reread_paths(&self, upto: Seq) -> Vec<String> {
+        let Some(rebuild) = self.rebuild_numbers() else {
+            return Vec::new();
+        };
+        let tail: BTreeSet<String> = self.touched(|seq| seq > upto).into_iter().collect();
+        let skills = self.skills_before(upto, &rebuild);
+        let pick = |paths: Vec<String>, other: &[String]| -> Vec<String> {
+            paths
+                .into_iter()
+                .filter(|path| !tail.contains(path) && !other.contains(path))
+                .take(rebuild.candidates)
+                .collect()
+        };
+        let mut paths = pick(self.touched(|seq| seq <= upto), &skills);
+        paths.extend(pick(skills, &[]));
+        paths
+    }
+
+    /// 被替代的那一段里用过的技能（`skill` 标着的 `file.read`），最近用过的在前、去重；技能不另算的（以前造的快照）没有。
+    fn skills_before(&self, upto: Seq, rebuild: &Rebuild) -> Vec<String> {
+        if rebuild.skills.is_none() {
+            return Vec::new();
+        }
+        self.effect_paths(
+            |seq| seq <= upto,
+            |effect| match effect {
+                Effect::FileRead(read) if read.skill.is_some() => Some(&read.path),
+                _ => None,
+            },
+        )
+    }
+
+    /// 交给执行器的单个上限，字节：文件、技能（施工 X-10 下）两组的单个上限里大的那个。
+    pub(super) fn reread_limit(&self) -> u64 {
+        self.rebuild_numbers().map_or(0, |rebuild| {
+            let skill = rebuild.skills.map_or(0, |skills| skills.tokens);
+            rebuild
+                .file_tokens
+                .max(skill)
+                .saturating_mul(BYTES_PER_TOKEN)
+        })
+    }
+
+    /// 取到第 `upto` 条的摘要以后挑（第九条第 3 条）：重读到的照先后，单个不超过 [`Rebuild::file_tokens`]、合计不超过
+    /// [`Rebuild::total`]、加上以后压完的整份请求不超过压缩线的一半，挑满 [`Rebuild::files`] 个为止；太大的、放不下的
+    /// 进清单。`reread` 和 `paths` 一个对一个（对不上的在收的时候就不收，[`super::compaction::Compacting`]），没收到（执行器
+    /// 没做）的照没有候选写。策略里没有几段的模板的，什么都不写。
+    pub(super) fn rebuild(
+        &self,
+        at: Timestamp,
+        upto: Seq,
+        cut: Option<Seq>,
+        summary: &str,
+        paths: &[String],
+        reread: Option<&[Reread]>,
+    ) -> Rebuilt {
+        let Some(notes) = self.policy.notes.as_ref() else {
+            return Rebuilt::default();
+        };
+        let listed: Vec<String> = self
+            .touched(|seq| seq <= upto)
+            .iter()
+            .map(|path| self.shown(path))
+            .collect();
+        let head = files_and_retrieve(notes, &listed, upto);
+        // 摘要请求截短过的：摘要没看到的那一段，从检查点后面第一条到截到的那一条（施工 6-6 中）。写在最后，估算照算。
+        let uncovered = cut
+            .zip(notes.uncovered.as_ref())
+            .map(|(cut, uncovered)| {
+                let from =
+                    self.history
+                        .checkpoint()
+                        .map_or(1, |checkpoint| match &checkpoint.body {
+                            Body::ContextCompacted(compacted) => compacted.upto.get() + 1,
+                            _ => 1,
+                        });
+                say(
+                    uncovered,
+                    &[("from", &from.to_string()), ("to", &cut.to_string())],
+                )
+            })
+            .unwrap_or_default();
+        let mut rebuilt = Rebuilt::default();
+        let mut too_large = Vec::new();
+        let picked = reread.zip(self.rebuild_numbers()).zip(self.room(
+            at,
+            upto,
+            summary,
+            &format!("{head}{uncovered}"),
+        ));
+        if let Some(((reread, rebuild), room)) = picked {
+            let skills = self.skills_before(upto, &rebuild);
+            // 文件、技能各自的合计，两组合起来的不超过 `room`（施工 X-10 下）。
+            let (mut files, mut total, mut skill_total, mut all) = (0usize, 0u64, 0u64, 0u64);
+            for (path, file) in paths.iter().zip(reread) {
+                let shown = self.shown(path);
+                let skill = rebuild.skills.filter(|_| skills.contains(path));
+                match file {
+                    _ if skill.is_none() && files == rebuild.files => {}
+                    Reread::Read { blob, text } => {
+                        let tokens = estimate::text(text);
+                        let fits = match skill {
+                            Some(skill) => {
+                                tokens <= skill.tokens
+                                    && skill_total.saturating_add(tokens) <= skill.total
+                            }
+                            None => {
+                                tokens <= rebuild.file_tokens
+                                    && total.saturating_add(tokens) <= rebuild.total
+                            }
+                        } && all.saturating_add(tokens) <= room;
+                        if !fits {
+                            too_large.push(shown);
+                            continue;
+                        }
+                        all = all.saturating_add(tokens);
+                        match skill {
+                            Some(_) => skill_total = skill_total.saturating_add(tokens),
+                            None => {
+                                files += 1;
+                                total = total.saturating_add(tokens);
+                            }
+                        }
+                        rebuilt.restored.push(RestoredFile {
+                            path: shown,
+                            blob: blob.clone(),
+                            tokens,
+                        });
+                        rebuilt.texts.insert(blob.clone(), text.clone());
+                    }
+                    Reread::TooLarge => too_large.push(shown),
+                    Reread::Unreadable => {}
+                }
+            }
+        }
+        rebuilt.notes = head;
+        if !too_large.is_empty() {
+            rebuilt
+                .notes
+                .push_str(&say(&notes.too_large, &[("files", &too_large.join(", "))]));
+        }
+        rebuilt.notes.push_str(&uncovered);
+        rebuilt
+    }
+
+    /// 压完的整份请求还能放多少重读的原文：压缩线的一半，减去不带重读的文件时压完的整份请求的估算。没交限额的，没有。
+    fn room(&self, at: Timestamp, upto: Seq, summary: &str, notes: &str) -> Option<u64> {
+        let line = self.line()?;
+        let mut trial = self.history.clone();
+        trial.append(Event {
+            seq: self.ledger.next_seq(),
+            at,
+            turn: None,
+            by: By::Kernel,
+            cause: None,
+            body: Body::ContextCompacted(Box::new(ContextCompacted {
+                upto,
+                summary: summary.to_string(),
+                trigger: Some(CompactTrigger::Auto),
+                instructions: None,
+                notes: notes.to_string(),
+                restored: Vec::new(),
+                refills: None,
+                prepared: false,
+                truncated: None,
+            })),
+        });
+        let request = self.policy.assembler.assemble(&trial);
+        let base = self.used_in(&trial, &request)?;
+        Some((line / 2).saturating_sub(base))
+    }
+
+    /// 有效历史里、序号合 `keep` 的工具结果报过的读过、改过的文件，真实的位置，最近的在前、去重。
+    fn touched(&self, keep: impl Fn(Seq) -> bool) -> Vec<String> {
+        self.effect_paths(keep, |effect| match effect {
+            Effect::FileRead(read) => Some(&read.path),
+            Effect::FileChanged(changed) => Some(&changed.path),
+            _ => None,
+        })
+    }
+
+    /// 有效历史里、序号合 `keep` 的工具结果报过的效果里，`pick` 挑出来的路径，最近的在前、去重。
+    fn effect_paths(
+        &self,
+        keep: impl Fn(Seq) -> bool,
+        pick: impl Fn(&Effect) -> Option<&String>,
+    ) -> Vec<String> {
+        let mut seen = BTreeSet::new();
+        let mut paths = Vec::new();
+        for event in self.history.events().iter().rev() {
+            let Body::ToolResult(result) = &event.body else {
+                continue;
+            };
+            if !keep(event.seq) {
+                continue;
+            }
+            for path in result.effects.iter().rev().filter_map(&pick) {
+                if seen.insert(path.clone()) {
+                    paths.push(path.clone());
+                }
+            }
+        }
+        paths
+    }
+
+    /// 清单、包装里的写法：在会话的工作目录里的写相对的，别的写绝对的。
+    fn shown(&self, path: &str) -> String {
+        let cwd = self.environment.cwd.trim_end_matches(['/', '\\']);
+        match path.strip_prefix(cwd) {
+            Some("") => ".".to_string(),
+            Some(rest) if rest.starts_with(['/', '\\']) && !cwd.is_empty() => rest[1..].to_string(),
+            _ => path.to_string(),
+        }
+    }
+}
+
+/// 清单（最多 [`LISTED`] 个，多的写还有几个）和取回指路。清单一个一行，行照原样写：模板换字段时会把换行转义掉。
+fn files_and_retrieve(notes: &Notes, listed: &[String], upto: Seq) -> String {
+    let mut text = String::new();
+    if !listed.is_empty() {
+        text.push_str(&say(&notes.files, &[]));
+        for path in listed.iter().take(LISTED) {
+            text.push_str(&format!("- {path}\n"));
+        }
+        if let Some(more) = listed.len().checked_sub(LISTED).filter(|more| *more > 0) {
+            text.push_str(&say(&notes.files_more, &[("count", &more.to_string())]));
+        }
+    }
+    text.push_str(&say(&notes.retrieve, &[("upto", &upto.to_string())]));
+    text
+}
+
+/// 照模板换进字段；模板造的时候试换过，缺了字段的不会有，缺了也只是写空。
+fn say(template: &Template, fields: &[(&str, &str)]) -> String {
+    let fields: BTreeMap<&str, &str> = fields.iter().copied().collect();
+    template.render(&fields).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests;

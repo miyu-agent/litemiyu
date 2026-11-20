@@ -1,0 +1,419 @@
+//! 把有效历史渲染成消息（`docs/designs/08-上下文投影.md` 第四节「默认的组装怎么写」
+//! 第 2 到 4 条）。
+//!
+//! 检查点排在最前（清空的不出字，施工 6-8 补）；之后照有效历史排好的先后（[`History::ordered`]）一条条渲染。
+//! 人这一边的块（检查点、事实、人的消息）先攒着，碰到模型的回复或工具的结果，再合成一条
+//! user 消息放在它前面：照攒进来的先后，只有一处例外，每个回合开始的地方，放这一回合开始时
+//! 注入的事实和触发它的那条，先事实、后触发。「开始时注入的」到这一轮有了回复、结束，或者第一次
+//! 记下模型调用为止（施工 4-9 再补三上）：出错了等着重试时再注入的，照先后放，前缀才接得上。内核开始时注入的角色扮演提示
+//! 是唯一的例外，排在触发后面（施工 P-1 补，08 C2）。
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::kernel::block::{Block, Text};
+use crate::kernel::event::{Body, CompactTrigger, ContextCompacted, Event, ToolStatus};
+use crate::kernel::history::History;
+use crate::kernel::id::{Seq, TurnId};
+use crate::kernel::origin::By;
+use crate::kernel::request::Message;
+
+use crate::assemble::tag::defuse;
+use crate::assemble::texts::Texts;
+use crate::assemble::{jobs, peers, shell};
+
+/// 渲染有效历史：检查点和历史，照先后排好的消息。稳定区不在这里。
+#[cfg(test)]
+pub(crate) fn render(history: &History, texts: &Texts) -> Vec<Message> {
+    render_in(history, &history.ordered(), texts)
+}
+
+/// 渲染有效历史，照排好的先后 `ordered`（[`History::ordered`]）：检查点和历史，照先后排好的消息，稳定区不在这里。组装时排一次，
+/// 渲染和看接不接着写共用（施工 V-17 下）。
+pub(crate) fn render_in(history: &History, ordered: &[&Event], texts: &Texts) -> Vec<Message> {
+    let mut transcript = Transcript::default();
+    let rans = shell::rans(history);
+    // 清空的检查点什么都不出（施工 6-8 补）：她看到的上下文从这里起是空的。
+    if let Some(checkpoint) = history.checkpoint()
+        && let Body::ContextCompacted(compacted) = &checkpoint.body
+        && compacted.trigger != Some(CompactTrigger::Clear)
+    {
+        transcript.add(
+            checkpoint.seq,
+            Place::Here,
+            vec![text_block(checkpoint_block(history, compacted, texts))],
+        );
+    }
+    for &event in ordered {
+        match &event.body {
+            // 人用 `!` 跑的命令（施工 SH-1 上）：和它的 `shell.ran` 拼成一块，`shell.ran` 自己不出字。
+            Body::MessageUser(message) if message.shell => {
+                let blocks = shell::spoken(message, rans.get(&event.seq).copied(), texts);
+                transcript.add(event.seq, Place::Here, blocks);
+            }
+            Body::MessageUser(message) => {
+                let blocks = said(history, event, known(&message.blocks), texts);
+                transcript.add(event.seq, Place::Here, blocks);
+            }
+            Body::ContextInjected(fact) => {
+                let place = match transcript.trigger_of(event.turn) {
+                    Some(trigger) if fact.after => Place::After(trigger),
+                    Some(trigger) => Place::Before(trigger),
+                    None => Place::Here,
+                };
+                transcript.add(event.seq, place, vec![text_block(fact.text.clone())]);
+            }
+            Body::TurnStarted(started) => match started.trigger {
+                Some(trigger) => transcript.start(event.turn, trigger),
+                // 手动压缩单开的那一轮（施工 6-8）：不是哪一句引起的，她也没看到过它。
+                None => transcript.silence(event.turn),
+            },
+            // 这一轮请求过一次了：之后注入的不再是开始时的（施工 4-9 再补三上）。它自己不进上下文。压缩以前记下的
+            // 不算（施工 6-2 上）：那是被替代掉的那段的请求和摘要请求，压完的第一次主请求前缀本来就从头来，回合开头压的，
+            // 压完再注入的事实照样和触发的那句放在一起。
+            Body::ModelCalled(_) if before_checkpoint(history, event.seq) => {}
+            // 回顾这类辅助请求不是这一轮请求过（施工 3-8 四补）：它不带回合编号，可以落在回合开始的那几块中间。
+            Body::ModelCalled(called) if called.aside() => {}
+            Body::ModelCalled(_) => transcript.settle(),
+            Body::TurnEnded(ended) => {
+                transcript.settle();
+                // 没有触发的那一轮不出「这一轮没走完」那一句：她没看到过它，写了会当成是上一轮（施工 6-8）。
+                if let Some(said) = texts.turn_ended.for_reason(&ended.reason)
+                    && !transcript.silent(event.turn)
+                {
+                    transcript.add(event.seq, Place::Here, vec![text_block(said.to_string())]);
+                }
+            }
+            Body::MessageAssistant(reply) => {
+                transcript.settle();
+                transcript.push(Message::Assistant {
+                    blocks: known(&reply.blocks),
+                });
+            }
+            // 回报不带回合编号，照它在日志里的位置排：闲着时到的就是开这一轮的那条，照触发挪到回合开始的地方；回合中途
+            // 到的排在那一步的工具结果后面（施工 7-2，`jobs.rs`）。
+            // 监视的命令出的行（施工 MN-1 上）照回报排。
+            Body::JobReported(_) | Body::ChildReported(_) | Body::JobLines(_) => {
+                let block = texts
+                    .jobs
+                    .as_ref()
+                    .and_then(|jobs| jobs::report(history, &event.body, jobs));
+                transcript.add(event.seq, Place::Here, block.into_iter().map(text_block).collect());
+            }
+            // 空了的通知（施工 C-6，`peers.rs`）：不带回合编号，照回报排。
+            Body::PeerIdle(notice) => {
+                let block = peers::idle(notice, texts.peers.as_ref());
+                transcript.add(event.seq, Place::Here, block.into_iter().map(text_block).collect());
+            }
+            Body::ToolResult(result) => transcript.push(Message::Tool {
+                call_id: result.call_id,
+                // 被拒绝、已取消、已跳过、失败，对模型都是「没成」，为什么写在内容里。
+                error: result.status != ToolStatus::Ok,
+                blocks: known(&result.blocks),
+            }),
+            // 不进上下文的：会话的事件、请人确认和人的决定、问人和人的回答（她看到的只有工具
+            // 结果）、改回文件的结局（她不知道被撤过）、暂停了自动压缩（给人看的）、不认识的种类。压缩、撤销、恢复、撤回已经由
+            // 有效历史用掉了，这里碰不到。
+            // 一个个列出来，加一种事件时编译器会逼着决定它渲不渲染。
+            Body::SessionCreated(_)
+            | Body::PolicyChanged(_)
+            | Body::MetaChanged(_)
+            // 封存是给人和桥看的（施工 C-8 下）：封存以后不再请求。
+            | Body::SessionSealed(_)
+            // 换工作区不进上下文：下一轮开始时变了的环境照旧注成一块事实（施工 9-7 上）。
+            | Body::WorkspaceChanged(_)
+            | Body::SessionRecapped(_)
+            // 人用 `!` 跑的命令的结果和那句话拼在一起，在那句话的位置渲染（施工 SH-1 上）。
+            | Body::ShellRan(_)
+            // 斜杠命令的那一句只给人和聊天记录看（施工 O-6）。
+            | Body::CommandRan(_)
+            // 图的转述经请求的 `described` 进请求，驱动把图的位置换成它（施工 8-17）。
+            | Body::ImageDescribed(_)
+            | Body::TurnReverted(_)
+            | Body::TurnUnreverted(_)
+            | Body::FilesRestored(_)
+            | Body::MessageWithdrawn(_)
+            | Body::ApprovalRequested(_)
+            | Body::ApprovalDecided(_)
+            | Body::QuestionAsked(_)
+            | Body::QuestionAnswered(_)
+            // 脚本里的 `miyu call`：结果只交给脚本，她看到的是那次 `shell` 的输出（施工 M-1，设计 39 第七节第 2 条）。
+            | Body::ContextCompacted(_)
+            | Body::CompactionPaused(_)
+            | Body::Unknown { .. } => {}
+        }
+    }
+    transcript.finish()
+}
+
+/// 人这边的一条消息的块，照谁发的（主请求和回顾的请求共用）：子代理发来的留言注明是哪个子代理（施工 7-7，`jobs.rs`），
+/// 别的会话发来的话注明是哪个会话（施工 C-2，`peers.rs`）；
+/// 别人（人、父会话）发的原样。
+pub(crate) fn said(
+    history: &History,
+    event: &Event,
+    blocks: Vec<Block>,
+    texts: &Texts,
+) -> Vec<Block> {
+    match &event.by {
+        By::Schedule(schedule) => {
+            crate::assemble::schedule::message(schedule, blocks, texts.schedule.as_ref())
+        }
+        By::Session(session) if history.is_peer(&session.id) => {
+            peers::message(&session.id, blocks, texts.peers.as_ref())
+        }
+        by => jobs::message(history, (event.seq, by), blocks, texts.jobs.as_ref()),
+    }
+}
+
+/// 第 `seq` 条排在检查点前面：被动压缩、回合开头压缩留下的尾巴里的，和摘要请求自己的 `model.called`。
+/// 检查点那一块（`kernel/request.md`「组装」第 2 条）：包装的开头、摘要、摘要的收尾、代码写的几段、重读的文件、包装的
+/// 结尾。摘要、重读的原文原样放，不转义：一个是模型自己写的多行正文，一个是文件本来的样子；只中和提前写出的摘要、文件、
+/// 包装的收尾（施工 AS-10，`tag::defuse`：文件是工作区里的任意内容）。重读的原文照 blob 从有效历史取，取不到的那一份整块
+/// 不写（施工 6-5）。
+fn checkpoint_block(history: &History, compacted: &ContextCompacted, texts: &Texts) -> String {
+    let summary = defuse(
+        &compacted.summary,
+        &[&texts.checkpoint_close, &texts.checkpoint_end],
+    );
+    let mut block = format!(
+        "{}{}{}{}",
+        texts.checkpoint_open, summary, texts.checkpoint_close, compacted.notes
+    );
+    if let Some(wrap) = &texts.restored {
+        for file in &compacted.restored {
+            let Some(text) = history.recalled(&file.blob) else {
+                continue;
+            };
+            let fields = BTreeMap::from([("path", file.path.as_str())]);
+            block.push_str(&wrap.open.render(&fields).unwrap_or_default());
+            block.push_str(&defuse(text, &[&wrap.close, &texts.checkpoint_end]));
+            block.push_str(&wrap.close);
+        }
+    }
+    block.push_str(&texts.checkpoint_end);
+    block
+}
+
+fn before_checkpoint(history: &History, seq: Seq) -> bool {
+    history
+        .checkpoint()
+        .is_some_and(|checkpoint| seq < checkpoint.seq)
+}
+
+/// 渲染到一半的消息，加上人这一边还没合成消息的块。
+#[derive(Default)]
+struct Transcript {
+    /// 已经排好的消息。
+    messages: Vec<Message>,
+    /// 人这一边攒着的块，照攒进来的先后。
+    pending: Vec<Piece>,
+    /// 这一段里每个回合开始的地方：攒到第几块时开始的，由哪一条触发。
+    starts: Vec<(usize, Seq)>,
+    /// 刚开始、还没回复过的回合，和触发它的那一条。这时注入的事实，是回合开始时注入的。
+    starting: Option<(TurnId, Seq)>,
+    /// 没有触发的回合：手动压缩单开的那一轮（施工 6-8），不进上下文。
+    silent: BTreeSet<TurnId>,
+}
+
+/// 人这一边攒着的一块。
+struct Piece {
+    /// 它是哪一条事件的。
+    seq: Seq,
+    /// 放在哪。
+    place: Place,
+    /// 块本身。
+    block: Block,
+}
+
+/// 一块放在哪：回合开始时注入的事实，和触发这一回合的那一条放在一起。
+#[derive(Clone, Copy)]
+enum Place {
+    /// 照攒进来的先后。
+    Here,
+    /// 排在触发的第几条前面：回合开始时注入的事实。
+    Before(Seq),
+    /// 排在触发的第几条后面：内核回合开始时注入的角色扮演提示（施工 P-1 补，08 C2 唯一的例外）。
+    After(Seq),
+}
+
+impl Transcript {
+    /// 攒下第 `seq` 条事件的几块。
+    fn add(&mut self, seq: Seq, place: Place, blocks: Vec<Block>) {
+        self.pending
+            .extend(blocks.into_iter().map(|block| Piece { seq, place, block }));
+    }
+
+    /// 回合开始了，由第 `trigger` 条触发。记下开始的地方。
+    fn start(&mut self, turn: Option<TurnId>, trigger: Seq) {
+        self.starting = turn.map(|turn| (turn, trigger));
+        self.starts.push((self.pending.len(), trigger));
+    }
+
+    /// 没有触发的回合开始了（手动压缩单开的那一轮，施工 6-8）：不记开始的地方，记下它不进上下文。
+    fn silence(&mut self, turn: Option<TurnId>) {
+        self.starting = None;
+        self.silent.extend(turn);
+    }
+
+    /// 这个回合没有触发。
+    fn silent(&self, turn: Option<TurnId>) -> bool {
+        turn.is_some_and(|turn| self.silent.contains(&turn))
+    }
+
+    /// 这一回合注入的事实该和哪一条放在一起：回合刚开始、还没回复过，就是触发它的那一条。
+    fn trigger_of(&self, turn: Option<TurnId>) -> Option<Seq> {
+        match self.starting {
+            Some((starting, trigger)) if turn == Some(starting) => Some(trigger),
+            _ => None,
+        }
+    }
+
+    /// 回合里有了回复、请求过一次，或者回合结束了：之后注入的事实，照先后放。
+    fn settle(&mut self) {
+        self.starting = None;
+    }
+
+    /// 放进模型的回复或工具的结果。人这一边攒着的块先合成一条 user 消息，排在它前面。
+    fn push(&mut self, message: Message) {
+        self.flush();
+        self.messages.push(message);
+    }
+
+    /// 人这一边攒着的块合成一条 user 消息：照攒进来的先后；每个回合开始的地方，放这一回合
+    /// 开始时注入的事实和触发它的那条，先事实、后触发（08 C2），角色扮演提示接在触发后面（施工 P-1 补）。触发的那一条
+    /// 不在这一段里，事实就照原来的先后。什么都没攒就不出消息。
+    ///
+    /// 挪到的是回合开始的那个位置，日志里它不会动。所以发过的请求里已经排好的先后，以后也
+    /// 不会变，前缀接得上。
+    fn flush(&mut self) {
+        let starts = std::mem::take(&mut self.starts);
+        if self.pending.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending);
+        // 这一段里没有回合开始的地方：什么都不挪，照攒进来的先后（施工 V-17 下：回合中途的大多是这样，不用建下面几张表）。
+        if starts.is_empty() {
+            let blocks = pending.into_iter().map(|piece| piece.block).collect();
+            self.messages.push(Message::User { blocks });
+            return;
+        }
+        let here: BTreeSet<Seq> = pending.iter().map(|piece| piece.seq).collect();
+        // 触发在这一段里的，才挪。
+        let starts: Vec<(usize, Seq)> = starts
+            .into_iter()
+            .filter(|(_, trigger)| here.contains(trigger))
+            .collect();
+        let placed: BTreeSet<Seq> = starts.iter().map(|&(_, trigger)| trigger).collect();
+        let mut groups: BTreeMap<Seq, Group> = BTreeMap::new();
+        let mut rest = Vec::new();
+        for (index, piece) in pending.into_iter().enumerate() {
+            match piece.place {
+                Place::Before(trigger) if placed.contains(&trigger) => {
+                    groups.entry(trigger).or_default().facts.push(piece.block);
+                }
+                Place::After(trigger) if placed.contains(&trigger) => {
+                    groups.entry(trigger).or_default().after.push(piece.block);
+                }
+                _ if placed.contains(&piece.seq) => {
+                    groups
+                        .entry(piece.seq)
+                        .or_default()
+                        .trigger
+                        .push(piece.block);
+                }
+                _ => rest.push((index, piece.block)),
+            }
+        }
+        let mut blocks = Vec::new();
+        let mut starts = starts.into_iter().peekable();
+        for (index, block) in rest {
+            while let Some((_, trigger)) = starts.next_if(|&(at, _)| at <= index) {
+                if let Some(group) = groups.remove(&trigger) {
+                    group.put(&mut blocks);
+                }
+            }
+            blocks.push(block);
+        }
+        for (_, trigger) in starts {
+            if let Some(group) = groups.remove(&trigger) {
+                group.put(&mut blocks);
+            }
+        }
+        self.messages.push(Message::User { blocks });
+    }
+
+    /// 渲染完了：最后攒着的也合成一条。
+    fn finish(mut self) -> Vec<Message> {
+        self.flush();
+        self.messages
+    }
+}
+
+/// 一个回合开始时的那一组：开始时注入的事实，触发它的那一条，和排在触发后面的角色扮演提示。
+#[derive(Default)]
+struct Group {
+    /// 回合开始时注入的事实。
+    facts: Vec<Block>,
+    /// 触发这一回合的那一条。
+    trigger: Vec<Block>,
+    /// 排在触发后面的（施工 P-1 补）。
+    after: Vec<Block>,
+}
+
+impl Group {
+    /// 放进消息里：先事实，再触发，最后是排在触发后面的。
+    fn put(self, blocks: &mut Vec<Block>) {
+        blocks.extend(self.facts);
+        blocks.extend(self.trigger);
+        blocks.extend(self.after);
+    }
+}
+
+/// 这一次是不是接着写（`05-内核接口.md` 第七节「接着写被打断的回复」，施工 3-5 再补）：有效历史的
+/// 最后，是一条带 `interrupted` 的回复，后面只有一条内核记的 `reply_cut` 事实，中间只隔着
+/// `model.called`、`session.recapped`（施工 3-8 四补：回顾不进上下文，中途要了也照样接着写）、`session.meta_changed`（施工 3-8
+/// 五补：上一轮起的标题可能在这一轮中途回来，改标题也不进上下文）、`image.described`（施工 8-17：图的转述不渲染，打断以前发出去的
+/// 转述可能这时才回来）。这时渲染出来的最后一条 user 消息里只有被打断的那一句，前面那条 assistant 是
+/// 半截。那一句之后又来了别的（人的消息、切了级别以后的事实），不算：最后那条 user 里不只有那一句，
+/// 去不掉。`ordered` 是排好的有效历史（[`History::ordered`]，组装时和渲染共用那一份）。
+pub(crate) fn continues(ordered: &[&Event]) -> bool {
+    let mut tail = ordered.iter().rev().filter(|event| {
+        !matches!(
+            event.body,
+            Body::ModelCalled(_)
+                | Body::SessionRecapped(_)
+                | Body::MetaChanged(_)
+                | Body::WorkspaceChanged(_)
+                | Body::CommandRan(_)
+                | Body::ImageDescribed(_)
+        )
+    });
+    let noticed = tail.next().is_some_and(|event| {
+        event.by == By::Kernel
+            && matches!(&event.body, Body::ContextInjected(fact) if fact.kind.as_str() == "reply_cut")
+    });
+    noticed
+        && tail.next().is_some_and(
+            |event| matches!(&event.body, Body::MessageAssistant(reply) if reply.interrupted),
+        )
+}
+
+/// 一个文本块。
+fn text_block(text: String) -> Block {
+    Block::Text(Text { text })
+}
+
+/// 认识的内容块，照先后。不认识的块原样存在日志里，投影跳过它（`03-事件模型.md` 第八节）。
+fn known(blocks: &[Block]) -> Vec<Block> {
+    let mut known = Vec::with_capacity(blocks.len());
+    known.extend(
+        blocks
+            .iter()
+            .filter(|block| !matches!(block, Block::Unknown(_)))
+            .cloned(),
+    );
+    known
+}
+
+#[cfg(test)]
+mod tests;

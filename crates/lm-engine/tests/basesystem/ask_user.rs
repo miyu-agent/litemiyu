@@ -1,0 +1,202 @@
+//! `ask_user`（`docs/blueprint/tools/ask_user.md`，施工 D-2）：参数照 Claude Code，题交给端口原样（`multiSelect` 记成
+//! `multiple`、`preview` 带着）；回答一道一行写成结果，逐字节比；参数不对的、一道题都没有的，端口一次都不问；没有端口的说这里
+//! 没人能回答；没答到就了结的照叫停收场。
+
+use std::sync::{Arc, Mutex};
+
+use serde_json::json;
+
+use lm_engine::tool::{Answering, Done, QuestionPort};
+use lm_kernel::kernel::block::{Block, Text};
+use lm_kernel::kernel::event::{Choice, Question, Response};
+use lm_kernel::kernel::tool::Access;
+
+use crate::support::{Site, human, said, tool};
+
+/// 交回的那一段字。
+fn text(done: &Done) -> &str {
+    match done.blocks.as_slice() {
+        [Block::Text(Text { text })] => text,
+        other => panic!("只有一段字：{other:?}"),
+    }
+}
+
+/// 假的提问端口：记下交来的题，交回给的回答。
+struct Port {
+    answers: Option<Vec<Response>>,
+    asked: Mutex<Vec<Vec<Question>>>,
+}
+
+impl QuestionPort for Port {
+    fn ask(&self, questions: Vec<Question>) -> Answering<'_> {
+        self.asked.lock().expect("没 panic").push(questions);
+        let answers = self.answers.clone();
+        Box::pin(async move { answers })
+    }
+}
+
+fn port(answers: Option<Vec<Response>>) -> Arc<Port> {
+    Arc::new(Port {
+        answers,
+        asked: Mutex::new(Vec::new()),
+    })
+}
+
+fn response(picked: &[&str], text: Option<&str>, notes: Option<&str>) -> Response {
+    Response {
+        picked: picked.iter().map(|label| label.to_string()).collect(),
+        text: text.map(str::to_string),
+        notes: notes.map(str::to_string),
+        attachments: Vec::new(),
+    }
+}
+
+/// 四道题：单选带预览的、多选的、没有选项的、没答的。
+fn args() -> serde_json::Value {
+    json!({"questions": [
+        {"question": "用哪个？", "header": "库", "options": [
+            {"label": "甲 (Recommended)", "description": "快", "preview": "fn a() {}\n"},
+            {"label": "乙"}
+        ]},
+        {"question": "要哪些？", "options": [{"label": "乙"}, {"label": "丙"}], "multiSelect": true},
+        {"question": "叫什么？"},
+        {"question": "还有吗？", "options": [{"label": "有"}]}
+    ]})
+}
+
+#[tokio::test]
+async fn the_answers_come_back_one_line_each() {
+    let site = Site::new();
+    let port = port(Some(vec![
+        response(&["甲 (Recommended)"], None, None),
+        response(&["乙", "丙"], None, Some("先这样")),
+        response(&[], Some("小美"), None),
+        response(&[], None, None),
+    ]));
+    let done = site
+        .done_with_questions("ask_user", args(), Some(port.clone()))
+        .await;
+    assert!(!done.error);
+    assert_eq!(
+        text(&done),
+        "\"用哪个？\" = 甲 (Recommended)\n\"要哪些？\" = 乙, 丙 (note: 先这样)\n\"叫什么？\" = 小美\n\"还有吗？\" = (no answer)\nGo on with these answers in mind.\n"
+    );
+    assert_eq!(human(done), said("ask_user/answered"));
+    let asked = port.asked.lock().expect("没 panic");
+    assert_eq!(asked.len(), 1);
+    assert_eq!(
+        asked[0][0],
+        Question {
+            header: Some("库".to_string()),
+            question: "用哪个？".to_string(),
+            options: vec![
+                Choice {
+                    label: "甲 (Recommended)".to_string(),
+                    description: Some("快".to_string()),
+                    preview: Some("fn a() {}\n".to_string()),
+                },
+                Choice {
+                    label: "乙".to_string(),
+                    description: None,
+                    preview: None,
+                },
+            ],
+            multiple: false,
+        }
+    );
+    assert!(asked[0][1].multiple, "multiSelect 记成 multiple");
+    assert!(asked[0][2].options.is_empty());
+}
+
+#[tokio::test]
+async fn bad_arguments_never_reach_the_port() {
+    let site = Site::new();
+    for args in [
+        json!({}),
+        json!({"questions": []}),
+        json!({"questions": [{"options": []}]}),
+        json!({"questions": [{"question": "?", "options": [{"description": "没标题"}]}]}),
+    ] {
+        let port = port(Some(Vec::new()));
+        let done = site
+            .done_with_questions("ask_user", args.clone(), Some(port.clone()))
+            .await;
+        assert!(done.error, "{args}");
+        assert!(
+            text(&done).starts_with("Bad arguments"),
+            "{args}: {}",
+            text(&done)
+        );
+        assert!(port.asked.lock().expect("没 panic").is_empty(), "{args}");
+    }
+}
+
+#[tokio::test]
+async fn without_a_port_no_one_can_answer() {
+    let done = Site::new()
+        .done_with_questions("ask_user", args(), None)
+        .await;
+    assert!(done.error);
+    assert_eq!(text(&done), "No one can answer questions here.\n");
+    assert_eq!(human(done), said("ask_user/unattended"));
+}
+
+#[tokio::test]
+async fn settled_without_answers_ends_like_a_stop() {
+    let done = Site::new()
+        .done_with_questions("ask_user", args(), Some(port(None)))
+        .await;
+    assert!(done.stopped);
+    assert!(done.blocks.is_empty());
+}
+
+#[test]
+fn it_only_reads() {
+    assert_eq!(tool("ask_user").spec().access, Access::Read);
+}
+
+/// 回答时附了图（施工 Q-A）：那道题的回答后面说附了几个，图照题目的先后跟在字后面；只附了图的那道不算没答。
+#[tokio::test]
+async fn attached_pictures_follow_the_answers() {
+    use lm_kernel::kernel::block::Image;
+    use lm_kernel::kernel::id::{ContentHash, MediaType};
+    let picture = |bytes: &[u8]| {
+        Block::Image(Image {
+            blob: ContentHash::of(bytes),
+            name: None,
+            media_type: MediaType::parse("image/png").unwrap(),
+            width: 10,
+            height: 10,
+            path: None,
+        })
+    };
+    let mut first = response(&["甲 (Recommended)"], None, None);
+    first.attachments = vec![picture(b"a")];
+    let mut third = response(&[], None, None);
+    third.attachments = vec![picture(b"b"), picture(b"c")];
+    let port = port(Some(vec![
+        first,
+        response(&["乙"], None, None),
+        third,
+        response(&[], None, None),
+    ]));
+    let done = site_done(port).await;
+    let Some(Block::Text(Text { text: words })) = done.blocks.first() else {
+        panic!("先是一段字：{:?}", done.blocks);
+    };
+    assert_eq!(
+        words,
+        "\"用哪个？\" = 甲 (Recommended) (attached below: 1)\n\"要哪些？\" = 乙\n\"叫什么？\" = (attached below: 2)\n\"还有吗？\" = (no answer)\nGo on with these answers in mind.\n"
+    );
+    assert_eq!(
+        done.blocks[1..],
+        [picture(b"a"), picture(b"b"), picture(b"c")],
+        "照题目的先后跟在字后面"
+    );
+}
+
+async fn site_done(port: Arc<Port>) -> Done {
+    Site::new()
+        .done_with_questions("ask_user", args(), Some(port))
+        .await
+}

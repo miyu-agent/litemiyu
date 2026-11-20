@@ -1,0 +1,5 @@
+{
+  "description": "List your other sessions, most recently active first; a closed one gets messages when it is next opened. Their ids work with send_message and history.",
+  "parameters": {"type":"object","properties":{"limit":{"type":"integer","description":"Default 20."},"offset":{"type":"integer"}}},
+  "scope": "local_main"
+}

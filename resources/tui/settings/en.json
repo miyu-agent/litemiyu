@@ -1,0 +1,656 @@
+{
+  "title": "Settings",
+  "origins": {
+    "default": "default",
+    "system": "config file",
+    "env": "environment"
+  },
+  "toggle": [
+    "On",
+    "Off"
+  ],
+  "empty": "—",
+  "applies": {
+    "now": "Saved",
+    "next_turn": "Saved",
+    "new_session": "Saved",
+    "head_start": "Takes effect after LiteMiyu restarts"
+  },
+  "failed": "Couldn't save: {why}",
+  "broken": "config.toml has a syntax error at line {line}, column {column}: fix it by hand, then reopen",
+  "bad_value": "invalid value for “{name}”",
+  "key_hints": {
+    "menu": [
+      [
+        "j/k",
+        "move"
+      ],
+      [
+        "Enter",
+        "open"
+      ],
+      [
+        "q/Esc",
+        "back"
+      ]
+    ],
+    "page": [
+      [
+        "Enter",
+        "change"
+      ],
+      [
+        "d",
+        "reset"
+      ],
+      [
+        "Esc",
+        "back"
+      ]
+    ],
+    "choose": [
+      [
+        "↑/↓",
+        "choose"
+      ],
+      [
+        "Enter",
+        "confirm"
+      ],
+      [
+        "Esc",
+        "cancel"
+      ]
+    ],
+    "edit": [
+      [
+        "Enter",
+        "save"
+      ],
+      [
+        "Esc",
+        "cancel"
+      ]
+    ]
+  },
+  "separator": ", ",
+  "pools": {
+    "ticks_hints": [
+      [
+        "Space",
+        "Tick"
+      ],
+      [
+        "j/k",
+        "Move"
+      ],
+      [
+        "Enter",
+        "OK"
+      ],
+      [
+        "Esc",
+        "Cancel"
+      ]
+    ]
+  },
+  "prompt": {
+    "name": "Prompt",
+    "shipped": "Built-in prompt",
+    "custom": "Custom prompt",
+    "blank": "Empty (adds nothing)",
+    "saved": "Prompt saved; new sessions will use it"
+  },
+  "import": {
+    "title": "Import from Miyu: tick the providers to import",
+    "by_catalog": "catalog URL",
+    "key_none": "no key",
+    "key_found": "key found",
+    "key_env": "key from env {name}",
+    "key_missing": "key {name} missing, not imported",
+    "key_unread": "keys unreadable ({why}), not imported",
+    "taken": "already exists",
+    "dropped": "{n} invalid items not imported",
+    "unread": {
+      "denied": "permission denied",
+      "too_big": "over 1 MiB",
+      "not_utf8": "not UTF-8",
+      "broken": "malformed",
+      "other": "unreadable"
+    },
+    "old_layout": "This is an old Miyu data directory (layout 1 or 2) and is not recognized; nothing imported",
+    "no_config": "Miyu's data directory has no config: {path}",
+    "unreadable": "Couldn't read Miyu's config: {why}",
+    "empty": "Miyu's config has no providers",
+    "broken": "Miyu's config has a syntax error at line {line}, column {column}, with no provider before it",
+    "partly_broken": "Miyu's config has a syntax error at line {line}, column {column}; only providers before it are listed. ",
+    "skipped": "Not recognized: {list}",
+    "skipped_item": "{id} ({why})",
+    "nothing": "No provider in Miyu's config can be imported: {list}",
+    "bad_name": "invalid ID",
+    "no_url": "no URL, not in the catalog",
+    "none_ticked": "Nothing ticked, nothing imported",
+    "clash": "LiteMiyu already has {names}:",
+    "clash_buttons": [
+      "Overwrite",
+      "Skip existing",
+      "Cancel"
+    ],
+    "cancelled": "Import cancelled",
+    "all_taken": "Nothing imported: all ticked providers already exist",
+    "done": "Imported {n} providers from Miyu: {names}",
+    "passed": "; skipped existing {names}"
+  },
+  "probe": {
+    "request": "no model list, and a test message to {model} failed: {n}",
+    "auth": "wrong key or no permission (HTTP {n})",
+    "not_found": "no model list at this URL (HTTP 404); the URL is likely wrong",
+    "status": "the server returned HTTP {n}",
+    "timeout": "no complete response within {n} seconds",
+    "connect": "cannot connect ({n})",
+    "garbled": "the response is not a model list",
+    "cut": "the response was cut off midway",
+    "bad_url": "the URL must start with http:// or https://",
+    "bad_key": "the key has characters that cannot be used in a request",
+    "config": "cannot be tested ({n})",
+    "other": "{n}"
+  },
+  "extras": {
+    "skills": [
+      "Skills",
+      "Skill descriptions, on/off"
+    ],
+    "mcp": [
+      "MCP",
+      "MCP server status, on/off"
+    ],
+    "empty": [
+      "No skills yet",
+      "No MCP servers yet"
+    ],
+    "shipped": "built-in",
+    "unreadable": "Couldn't read: {what}",
+    "mcp_broken": "MCP server at line {line} of config.toml is invalid ({why})",
+    "command": "command {what}",
+    "url": "URL {what}",
+    "tools": "{n} tools last listed",
+    "never": "not started yet",
+    "hints": [
+      [
+        "Enter",
+        "on/off"
+      ],
+      [
+        "Esc",
+        "back"
+      ]
+    ]
+  },
+  "opening": {
+    "steps": [
+      "Language",
+      "Controls",
+      "Icons",
+      "Model",
+      "Color scheme"
+    ],
+    "language": {
+      "title": "Language",
+      "sub": "You can change it later in settings",
+      "auto": "Follow the system ({name})"
+    },
+    "controls": {
+      "title": "How do you like to move around?",
+      "sub": "How lists move and search. You can change this in settings later",
+      "arrows": "Arrow keys",
+      "arrows_note": "↑↓ to move, type to search",
+      "vim": "Vim",
+      "vim_note": "j/k to move, / to search"
+    },
+    "icons": {
+      "title": "Icons",
+      "sub": "Do you see icons, or boxes and garbled text?",
+      "yes": "Icons",
+      "no": "Boxes or garbage"
+    },
+    "model": {
+      "title": "Choose a model provider",
+      "sub": "Pick one and add its key to get started",
+      "found": "key found",
+      "configured": "set up",
+      "other": "Other",
+      "more": "More providers…",
+      "more_title": "More providers",
+      "more_search": "Type to search",
+      "no_match": "No matches",
+      "custom": "Custom…",
+      "custom_note": "enter an address and API",
+      "ready_title": "Model",
+      "ready": "Already set up: {name}",
+      "keep": "Use it",
+      "change": "Choose another",
+      "key": "Key",
+      "key_env": "from environment variable {env}",
+      "key_none": "no key needed",
+      "key_needed": "Enter a key",
+      "id": "ID",
+      "id_bad": "\"{name}\" is invalid: start with a lowercase letter; use only lowercase letters, digits, - and _; at most 64 characters",
+      "id_taken": "The ID \"{name}\" is taken. Pick another",
+      "save_anyway": "Save anyway",
+      "model_for_save": "Enter a model name to save",
+      "cost": "Sends one real message and costs a little",
+      "key_sub": "Enter the key, then test the connection",
+      "name": "Display name",
+      "name_hint": "Shows the ID when empty",
+      "url": "Address",
+      "url_bad": "Must start with http:// or https://",
+      "driver": "API",
+      "drivers": [
+        "OpenAI compatible",
+        "Anthropic",
+        "OpenAI Responses"
+      ],
+      "testing": "Connecting…",
+      "connected": "Connected, found {count} models",
+      "connected_request": "Connected: {model} works",
+      "pick_sub": "It works. Pick a model",
+      "no_list": "Couldn't get the model list. Enter a model name and test again",
+      "model_name": "Model name",
+      "model_example": "e.g. gpt-4o",
+      "failed": "Didn't work ({stage}): {message}",
+      "search": "Search models",
+      "search_cue": "/ to search",
+      "more_above": "↑ {n} more",
+      "more_below": "↓ {n} more",
+      "saving": "Saving…",
+      "test": "Test connection",
+      "custom_title": "Custom",
+      "custom_sub": "Any compatible API works",
+      "stages": [
+        "listing models",
+        "sending a request",
+        "configuration"
+      ]
+    },
+    "import": [
+      "Import from Miyu…",
+      "import the providers and keys set up in Miyu"
+    ],
+    "theme": {
+      "title": "Color scheme",
+      "sub": "Choose the mode. Applies immediately. You can change this in settings later",
+      "rows": [
+        "Color mode",
+        "Background fill"
+      ],
+      "modes": [
+        "Auto",
+        "Dark",
+        "Light"
+      ],
+      "ground": [
+        "On",
+        "Off"
+      ],
+      "ground_note": "Paint the whole screen in the color scheme's background",
+      "next": "Next"
+    },
+    "done": {
+      "title": "All set",
+      "summary": "Model {model} · Persona {persona} · Preset {preset}",
+      "start": "Press Enter to start chatting"
+    },
+    "keys": {
+      "searching": "Type to search · Ctrl+J/K select · Enter done · Esc cancel",
+      "editing": "Enter done · Esc cancel",
+      "test": "Enter test connection · j/k move · Esc another provider",
+      "anyway": "Enter save anyway · j/k move · Esc another provider",
+      "pick": "↑↓ choose · Enter next · Esc back",
+      "form": "Enter edit · j/k move · Esc another provider",
+      "driver": "←→ change interface · j/k move · Esc another provider",
+      "models": "/ search · j/k select · Enter choose · Esc another provider",
+      "more": "Type to search · ↑↓ choose · Enter confirm · Esc close",
+      "more_vim": "/ search · j/k choose · Enter confirm · Esc close",
+      "theme": "Enter choose · j/k move · Esc back",
+      "enter_edit": "Enter to edit",
+      "enter_pick": "Enter to choose",
+      "first": "↑↓ choose · Enter next · Esc quit"
+    }
+  },
+  "unset_ask": [
+    "Reset to default: {name}?",
+    "Removes your setting for this and goes back to the {from} value",
+    "Reset",
+    "Cancel"
+  ],
+  "not_set": "This isn't set",
+  "models": {
+    "entry": "Providers & models",
+    "entry_note": "Providers, default models",
+    "pages": [
+      "Providers",
+      "Default models"
+    ],
+    "cols": [
+      "Provider",
+      "Group",
+      "Model",
+      "Use"
+    ],
+    "orgs": [
+      "All",
+      "Other"
+    ],
+    "uses": [
+      "Default text model",
+      "Default vision model"
+    ],
+    "use_notes": [
+      "Used when a turn names no model",
+      "Reads images when the chat model can't"
+    ],
+    "detail": [
+      "Now",
+      "Window",
+      "Inputs",
+      "Used for"
+    ],
+    "tags": [
+      "img",
+      "own"
+    ],
+    "gone": " (gone)",
+    "options": {
+      "": "Auto",
+      "on": "On",
+      "off": "Off",
+      "secret": "API key",
+      "env": "Env variable",
+      "text": "Text",
+      "image": "Image",
+      "pdf": "PDF",
+      "effort_default": "Default",
+      "audio": "Audio",
+      "video": "Video"
+    },
+    "fields": {
+      "id": "ID",
+      "name": "Display name",
+      "base_url": "Base URL",
+      "driver": "API",
+      "auth": "Auth",
+      "key": "API key",
+      "env_key": "Variable",
+      "model": "Model",
+      "inputs": "Input types",
+      "window": "Context window",
+      "effort": "Thinking effort",
+      "temperature": "Temperature",
+      "max_output": "Max output"
+    },
+    "hints": {
+      "id": "lowercase first; letters, digits, - and _",
+      "name": "Empty shows the ID",
+      "base_url": "Request target address",
+      "key_set": "In the key store · leave empty to keep",
+      "key_unset": "Not set",
+      "env_key": "e.g. DEEPSEEK_API_KEY",
+      "model": "As the provider names it",
+      "no_temperature": "This model takes no temperature",
+      "unknown": "unknown",
+      "empty": "empty",
+      "inherit": "inherited",
+      "temperature": "Not sent; the provider decides",
+      "window": "unknown",
+      "max_output": "unknown"
+    },
+    "sources": {
+      "catalog": "catalog",
+      "provider": "provider list",
+      "system": "system",
+      "own": "custom",
+      "default": "default",
+      "id": "ID"
+    },
+    "titles": [
+      "Add provider",
+      "Edit provider · {name}",
+      "Add model · {name}"
+    ],
+    "buttons": [
+      "Save",
+      "Cancel"
+    ],
+    "button_keys": [
+      "s",
+      "Esc"
+    ],
+    "popup_hints": [
+      [
+        [
+          "j/k",
+          "move"
+        ],
+        [
+          "Enter",
+          "edit"
+        ],
+        [
+          "←→",
+          "change"
+        ],
+        [
+          "s",
+          "save"
+        ],
+        [
+          "Esc",
+          "close"
+        ]
+      ],
+      [
+        [
+          "Enter",
+          "keep"
+        ],
+        [
+          "Esc",
+          "undo"
+        ]
+      ],
+      [
+        [
+          "j/k",
+          "move"
+        ],
+        [
+          "Enter",
+          "pick"
+        ],
+        [
+          "/",
+          "search"
+        ],
+        [
+          "Esc",
+          "close"
+        ]
+      ],
+      [
+        [
+          "←→",
+          "choose"
+        ],
+        [
+          "Enter",
+          "confirm"
+        ],
+        [
+          "Esc",
+          "cancel"
+        ]
+      ]
+    ],
+    "pick": [
+      "Only models that see images",
+      "/ search"
+    ],
+    "catalog": [
+      "More providers…",
+      "Custom…",
+      "Loading…",
+      "No matches",
+      "Import from Miyu…"
+    ],
+    "confirm": [
+      "Delete provider {name}?",
+      "Delete model {name}?",
+      "Used by {list}; they will show as gone",
+      "Delete",
+      ", "
+    ],
+    "status": {
+      "loading": "Reading settings…",
+      "fetched": "{n} models",
+      "fetched_one": "{n} model",
+      "no_models": "No models yet · save, then press r",
+      "testing": "Testing {name}…",
+      "tested": "{name} is reachable: {n} models listed",
+      "tested_one": "{name} is reachable: {n} model listed",
+      "model_works": "{name}: {model} works, answered in {secs} s",
+      "also_listed": " · {n} models listed",
+      "also_listed_one": " · {n} model listed",
+      "model_failed": "{name}: {model} does not work: {why}",
+      "listing": "Fetching the model list of {name}…",
+      "list_failed": "Could not fetch the model list of {name}: {why}",
+      "tested_request": "{name} works: {model}",
+      "need_model": "{name}: couldn't list models. Pick one in the model column and press r",
+      "test_failed": "{name} failed: {why}",
+      "save_first": "Save the new provider with s before testing",
+      "saved": "Saved",
+      "saved_restart": "Takes effect after the core restarts",
+      "saving": "Saving…",
+      "conflict": "Changed elsewhere just now (now {current}); your changes are kept, reopen and save again",
+      "offline": "Not connected to the core",
+      "not_custom": "Only models added with n can be deleted",
+      "nothing_here": "Nothing to delete on this page",
+      "no_new": "Nothing to add on this page",
+      "fetching": "Fetching models from {name}…",
+      "fetch_failed": "{name}: no model list; press r to test why",
+      "no_driver": "Can't tell the API: open it and pick one, e.g. openai-chat",
+      "no_base_url": "Unusable: open it and fill in the request target address",
+      "stopped": "Stopped testing {name}",
+      "catalog_failed": "Couldn't read the catalog: {why}",
+      "catalog_fetching": "Fetching the model catalog…",
+      "catalog_fetched": "Model catalog fetched",
+      "catalog_unreachable": "Couldn't fetch the model catalog: {why}. You can choose “Custom…” and enter the address and API yourself"
+    },
+    "catalog_why": {
+      "connect": "cannot connect to the server ({n})",
+      "timeout": "the server took too long to respond",
+      "status": "the server returned HTTP {n}",
+      "too_large": "the download is larger than {n} MiB, so it is not a model catalog",
+      "cut": "the connection dropped during the download",
+      "not_catalog": "the server did not return a model catalog",
+      "write": "cannot write to the cache directory ({n})",
+      "other": "{n}"
+    },
+    "errors": {
+      "bad_id": "\"{name}\" can't be a name: lowercase first, only lowercase letters, digits, - and _, up to 64",
+      "taken": "{name} already exists",
+      "need_name": "The model name can't be empty",
+      "bad_number": "This needs a number",
+      "need_key": "Fill in the variable name, or switch to an API key",
+      "bad_key": "The API key cannot contain control characters",
+      "failed": "Couldn't save: {why}"
+    },
+    "empty": [
+      "Nothing here",
+      "No match"
+    ],
+    "key_hints": [
+      [
+        [
+          "j/k",
+          "move"
+        ],
+        [
+          "Enter",
+          "open"
+        ],
+        [
+          "q/Esc",
+          "back"
+        ]
+      ],
+      [
+        [
+          "h/l",
+          "column"
+        ],
+        [
+          "j/k",
+          "move"
+        ],
+        [
+          "Enter",
+          "edit"
+        ],
+        [
+          "a",
+          "add provider"
+        ],
+        [
+          "n",
+          "add model"
+        ],
+        [
+          "d",
+          "delete"
+        ],
+        [
+          "r",
+          "test"
+        ],
+        [
+          "/",
+          "search"
+        ]
+      ],
+      [
+        [
+          "j/k",
+          "move"
+        ],
+        [
+          "Enter",
+          "pick model"
+        ],
+        [
+          "h/l",
+          "edge turns page"
+        ]
+      ],
+      [
+        [
+          ", .",
+          "page"
+        ],
+        [
+          "q/Esc",
+          "back"
+        ]
+      ],
+      [
+        [
+          "Enter",
+          "done"
+        ],
+        [
+          "Esc",
+          "clear"
+        ]
+      ]
+    ]
+  }
+}

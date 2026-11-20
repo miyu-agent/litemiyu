@@ -1,0 +1,46 @@
+[package]
+name = "lm-kernel"
+description = "LiteMiyu 的纯逻辑：内核、驱动的编解码、组装、策略。不做 I/O"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+# 目录里几个模型共用一份价格、名字（models），要 `Arc` 能读写。
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+sha2 = { version = "0.11", default-features = false }
+# 图片、文件在请求里写成 base64（驱动）。MIT 或 Apache-2.0。
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+# 读、改配置文件，留着注释和先后（配置）。MIT 或 Apache-2.0。
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
+
+[dev-dependencies]
+# 只给测试当对照：技能开头的读法（policy/skill/front.rs，施工 LM-1）照同一批样本和它比，读得出的结果要一样。发行的程序不带它。
+# MIT 或 Apache-2.0。
+yaml-rust2 = { version = "0.13", default-features = false }
+# 自己的集成测试要用照剧本回话的驱动。
+lm-kernel = { path = ".", features = ["testkit"] }
+
+[features]
+# 测试用的执行器替身、照剧本回话的驱动：自己的测试里总是有，别的 crate 的测试要用时打开。
+testkit = []
+
+[lints]
+workspace = true
+
+# 一个模块一个测试程序，照 Miyu 原来一个 crate 一个的分法。
+[[test]]
+name = "kernel"
+path = "tests/kernel/main.rs"
+
+[[test]]
+name = "drivers"
+path = "tests/drivers/main.rs"
+
+[[test]]
+name = "assemble"
+path = "tests/assemble/main.rs"

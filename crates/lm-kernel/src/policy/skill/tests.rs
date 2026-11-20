@@ -1,0 +1,286 @@
+//! 技能的开头（施工 X-10 上）：公开格式的几种写法读得出，写错的说哪里不对。
+
+use std::collections::BTreeMap;
+
+use super::*;
+
+fn skill(front: &str) -> String {
+    format!("---\n{front}---\n\n# 正文\n")
+}
+
+#[test]
+fn the_public_format_reads() {
+    let text = skill(
+        "name: pdf-processing\ndescription: Extract PDF text, fill forms. Use when handling PDFs.\nlicense: Apache-2.0\nmetadata:\n  author: example-org\n  version: \"1.0\"\n  display_name: PDF 处理\n  summary: 读 PDF、填表\n",
+    );
+    assert_eq!(
+        read("pdf-processing", &text),
+        Ok(SkillHead {
+            name: "pdf-processing".to_string(),
+            description: "Extract PDF text, fill forms. Use when handling PDFs.".to_string(),
+            display_name: BTreeMap::from([("en".to_string(), "PDF 处理".to_string())]),
+            summary: BTreeMap::from([("en".to_string(), "读 PDF、填表".to_string())]),
+            model_invocable: true,
+            user_invocable: true,
+            warnings: Vec::new(),
+        })
+    );
+}
+
+#[test]
+fn quoted_and_folded_descriptions_read_too() {
+    let quoted = skill("name: a\ndescription: \"Say: hi, \\\"you\\\"\"\n");
+    assert_eq!(
+        read("a", &quoted).map(|head| head.description),
+        Ok("Say: hi, \"you\"".to_string())
+    );
+    let folded = skill("name: a\ndescription: >\n  First line\n  goes on.\n");
+    assert_eq!(
+        read("a", &folded).map(|head| head.description),
+        Ok("First line goes on.".to_string())
+    );
+    let literal = skill("name: a\ndescription: |\n  First line.\n  Second\tline.\n");
+    assert_eq!(
+        read("a", &literal).map(|head| head.description),
+        Ok("First line. Second line.".to_string()),
+        "并成一行"
+    );
+    // Windows 上检出的带 `\r`、开头带 BOM 的照样读。
+    let crlf = "\u{feff}---\r\nname: a\r\ndescription: Hi.\r\n---\r\nbody\r\n";
+    assert_eq!(read("a", crlf).map(|head| head.name), Ok("a".to_string()));
+}
+
+#[test]
+fn long_descriptions_are_cut_to_the_format_limit() {
+    let long = "字".repeat(DESCRIPTION_CHARS + 10);
+    let head = read("a", &skill(&format!("name: a\ndescription: {long}\n"))).expect("读得出");
+    assert_eq!(head.description.chars().count(), DESCRIPTION_CHARS);
+    assert_eq!(head.warnings, [SkillWarning::DescriptionCut], "截了要说");
+    assert_eq!(
+        (head.display_name, head.summary),
+        (BTreeMap::new(), BTreeMap::new())
+    );
+}
+
+#[test]
+fn wrong_ones_say_what_is_wrong() {
+    let cases = [
+        ("a", "# 没有开头\n".to_string(), SkillProblem::NoFrontmatter),
+        (
+            "a",
+            "---\nname: a\n".to_string(),
+            SkillProblem::NoFrontmatter,
+        ),
+        // 名字没写、写错的照文件夹的名字用（施工 PT-2 上）：文件夹的名字也不合的才不收。
+        ("A B", skill("description: Hi.\n"), SkillProblem::NoName),
+        (
+            "A B",
+            skill("name: [a]\ndescription: Hi.\n"),
+            SkillProblem::NoName,
+        ),
+        (
+            "PDF",
+            skill("name: PDF\ndescription: Hi.\n"),
+            SkillProblem::BadName("PDF".to_string()),
+        ),
+        (
+            "-a",
+            skill("name: -a\ndescription: Hi.\n"),
+            SkillProblem::BadName("-a".to_string()),
+        ),
+        (
+            "a--b",
+            skill("name: a--b\ndescription: Hi.\n"),
+            SkillProblem::BadName("a--b".to_string()),
+        ),
+        ("a", skill("name: a\n"), SkillProblem::NoDescription),
+        (
+            "a",
+            skill("name: a\ndescription: \"  \"\n"),
+            SkillProblem::NoDescription,
+        ),
+    ];
+    for (dir, text, wanted) in cases {
+        assert_eq!(read(dir, &text), Err(wanted), "{text}");
+    }
+    assert!(matches!(
+        read("a", &skill("name: a\ndescription: [unclosed\n")),
+        Err(SkillProblem::Yaml(_))
+    ));
+    let long = "a".repeat(65);
+    assert_eq!(
+        read(&long, &skill(&format!("name: {long}\ndescription: Hi.\n"))),
+        Err(SkillProblem::BadName(long.clone()))
+    );
+}
+
+/// 技能算的功能的编号（施工 X-11 上）：`skill-<名字>`。
+#[test]
+fn a_skill_is_the_feature_skill_dash_name() {
+    assert_eq!(feature_id("pdf-processing"), "skill-pdf-processing");
+}
+
+/// 给人看的照语言（施工 X-13 下）：不带后缀的是 `en`，`_zh`、`_ja` 各是那一种；空的不记。
+#[test]
+fn names_for_people_come_in_each_language() {
+    let text = skill(
+        "name: a\ndescription: A.\nmetadata:\n  display_name: Write a skill\n  display_name_zh: 写技能\n  display_name_ja: \"\"\n  summary_zh: 照包的样子写\n",
+    );
+    let head = read("a", &text).expect("读得成");
+    assert_eq!(
+        head.display_name,
+        BTreeMap::from([
+            ("en".to_string(), "Write a skill".to_string()),
+            ("zh".to_string(), "写技能".to_string())
+        ])
+    );
+    assert_eq!(
+        head.summary,
+        BTreeMap::from([("zh".to_string(), "照包的样子写".to_string())])
+    );
+}
+
+/// 宽松地读（施工 PT-2 上，agentskills.io 接入指南「Lenient validation」）：别家写的技能常见的小毛病照收、记警告。
+#[test]
+fn small_slips_are_kept_with_warnings() {
+    let mismatched = read("pdf-main", &skill("name: pdf\ndescription: Hi.\n")).expect("照收");
+    assert_eq!(mismatched.name, "pdf", "照写的名字用");
+    assert_eq!(
+        mismatched.warnings,
+        [SkillWarning::NameMismatch {
+            name: "pdf".to_string(),
+            dir: "pdf-main".to_string()
+        }]
+    );
+    for (front, written) in [
+        ("description: Hi.\n", None),
+        ("name: PDF\ndescription: Hi.\n", Some("PDF")),
+        ("name: [a]\ndescription: Hi.\n", None),
+    ] {
+        let head = read("a", &skill(front)).expect("照收");
+        assert_eq!(head.name, "a", "照文件夹的名字用：{front}");
+        assert_eq!(
+            head.warnings,
+            [SkillWarning::NameFromFolder {
+                written: written.map(str::to_string),
+                dir: "a".to_string()
+            }],
+            "{front}"
+        );
+    }
+    let colon = read(
+        "a",
+        &skill("name: a\ndescription: Use this skill when: the user says \"PDF\" or a\\b\nlicense: MIT\n"),
+    )
+    .expect("宽松重读读得成");
+    assert_eq!(
+        colon.description, "Use this skill when: the user says \"PDF\" or a\\b",
+        "整句原样"
+    );
+    assert_eq!(colon.warnings, [SkillWarning::LenientYaml]);
+    // 只有读不懂的那几行改：同一段里已经加了引号的照原样读，不再套一层。
+    let mixed = read(
+        "a",
+        &skill("name: a\ndescription: \"Say: hi\"\nlicense: MIT: or Apache\n"),
+    )
+    .expect("宽松重读读得成");
+    assert_eq!(
+        (mixed.description.as_str(), mixed.warnings.as_slice()),
+        ("Say: hi", [SkillWarning::LenientYaml].as_slice())
+    );
+    // 说明的上限照格式：正好 1024 个字不说，多一个就说。
+    for (count, cut) in [(DESCRIPTION_CHARS, false), (DESCRIPTION_CHARS + 1, true)] {
+        let head = read(
+            "a",
+            &skill(&format!("name: a\ndescription: {}\n", "x".repeat(count))),
+        )
+        .expect("读得成");
+        assert_eq!(
+            head.warnings.contains(&SkillWarning::DescriptionCut),
+            cut,
+            "{count}"
+        );
+    }
+    let odd = read(
+        "a",
+        &skill(&format!(
+            "name: a\ndescription: Hi.\ncompatibility: {}\nmetadata:\n  version: 1.0\n",
+            "x".repeat(COMPATIBILITY_CHARS + 1)
+        )),
+    )
+    .expect("照收");
+    assert_eq!(
+        odd.warnings,
+        [SkillWarning::Compatibility, SkillWarning::Metadata]
+    );
+    let fine = read(
+        "a",
+        &skill(
+            "name: a\ndescription: Hi.\ncompatibility: Needs git\nmetadata:\n  version: \"1.0\"\n",
+        ),
+    )
+    .expect("照收");
+    assert!(fine.warnings.is_empty(), "{:?}", fine.warnings);
+    let not_text =
+        read("a", &skill("name: a\ndescription: Hi.\ncompatibility: 3\n")).expect("照收");
+    assert_eq!(not_text.warnings, [SkillWarning::Compatibility]);
+    assert_eq!(
+        (
+            SkillWarning::NameMismatch {
+                name: "pdf".to_string(),
+                dir: "x".to_string()
+            }
+            .code(),
+            SkillWarning::NameMismatch {
+                name: "pdf".to_string(),
+                dir: "x".to_string()
+            }
+            .detail()
+        ),
+        ("skill_name_mismatch", "pdf".to_string())
+    );
+}
+
+/// 谁能用（施工 PT-2 下，Claude Code 定的两格，接入指南提了前一个）：`disable-model-invocation: true` 的不给模型自己用，只能
+/// 人点名；`user-invocable: false` 的不给人点名。没写的、不是是非的照默认（都能）。
+#[test]
+fn who_may_invoke_a_skill_reads_from_two_flags() {
+    let head =
+        |front: &str| read("a", &skill(&format!("name: a\ndescription: A.\n{front}"))).unwrap();
+    let plain = head("");
+    assert!(plain.model_invocable && plain.user_invocable);
+    let manual = head("disable-model-invocation: true\n");
+    assert!(!manual.model_invocable && manual.user_invocable);
+    let background = head("user-invocable: false\n");
+    assert!(background.model_invocable && !background.user_invocable);
+    let odd = head("disable-model-invocation: \"yes\"\nuser-invocable: 0\n");
+    assert!(
+        odd.model_invocable && odd.user_invocable,
+        "不是是非的照默认"
+    );
+}
+
+/// 正文（施工 PT-2 下，人点名用技能时整段给她）：去掉开头 `---` 包着的那一段和它后面的空行；没有开头的整份都是正文。
+#[test]
+fn the_body_is_what_follows_the_front_matter() {
+    assert_eq!(
+        body("---\nname: a\n---\n\n# 正文\n\nDo it.\n"),
+        "# 正文\n\nDo it.\n"
+    );
+    assert_eq!(
+        body("\u{feff}---\r\nname: a\r\n---\r\nDo it.\r\n"),
+        "Do it.\r\n"
+    );
+    assert_eq!(body("# 只有正文\n"), "# 只有正文\n");
+    assert_eq!(body("---\nname: a\n"), "---\nname: a\n", "没收尾的不算开头");
+}
+
+/// 换掉 yaml-rust2 以后（施工 LM-1）：开头里认不得的写法报读不了、说出 `SKILL.md` 的第几行，不悄悄读错。
+#[test]
+fn front_matter_it_does_not_understand_names_the_line() {
+    let read = read("a", &skill("name: a\ndescription: &anchor Hi.\n"));
+    let Err(SkillProblem::Yaml(why)) = read else {
+        panic!("该读不了：{read:?}");
+    };
+    assert!(why.starts_with("line 3: "), "{why}");
+}

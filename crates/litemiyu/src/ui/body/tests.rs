@@ -1,0 +1,1071 @@
+//! 正文区：视口第一行露哪一行、点开的一块铺底色的范围。
+use ratatui::layout::Rect;
+
+use super::first_row;
+use crate::body_view::BodyView;
+use crate::transcript::Transcript;
+use crate::ui::rows::Row;
+
+fn rows(n: usize) -> crate::ui::row_cache::Rows {
+    crate::ui::row_cache::Rows::of_blank(&[(n, None)])
+}
+
+#[test]
+fn a_shaded_block_starts_at_the_bar_and_ends_two_past_the_text() {
+    // 2026-09-30 项目主人：原来铺满正文区，两边超出字太多。正文区从第 10 列起、缩进 2 格，字从第 14 列起、宽 73。
+    let area = Rect::new(10, 0, 80, 20);
+    assert_eq!(super::shade_span(area, 2, 73), (12, 77));
+}
+
+#[test]
+fn shrinking_content_does_not_pull_the_rows_back_down() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    // 30 行露 10 行：跟着最新的，第一行是第 20 行。
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 思考的预览收起，少了 8 行：已经顶上去的不掉下来。
+    assert_eq!(
+        first_row(
+            &rows(22),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 新的字来了，接着往下走。
+    assert_eq!(
+        first_row(
+            &rows(35),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        25
+    );
+    // 撤销藏起了几轮，只剩 27 行：已经顶上去的不掉下来。
+    assert_eq!(
+        first_row(
+            &rows(27),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        25
+    );
+    // 接着发出一句话，多了 4 行：不往回跳，照旧只往下走。
+    view.follow();
+    assert_eq!(
+        first_row(
+            &rows(31),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        25
+    );
+    // 滚上去看，再发一句话：回到最底下。
+    view.top = Some(5);
+    assert_eq!(
+        first_row(
+            &rows(31),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        5
+    );
+    view.follow();
+    assert_eq!(
+        first_row(
+            &rows(36),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        26
+    );
+}
+
+#[test]
+fn a_cleared_screen_keeps_its_place_when_the_window_gets_wider() {
+    // 2026-10-02 项目主人报：半屏时清过屏，最大化以后正文全空，滚一下才回来。清屏那一刻记的是第几行，窗口变宽、
+    // 长段落折的行少了，那个行号落到了内容后面。
+    let blank = rows(1).get(0).unwrap().clone();
+    let narrow = crate::ui::row_cache::Rows::of_chunks(
+        &[
+            (40, Some(0)),
+            (1, None),
+            (40, Some(1)),
+            (1, None),
+            (3, Some(2)),
+        ],
+        &blank,
+    );
+    let wide = crate::ui::row_cache::Rows::of_chunks(
+        &[
+            (10, Some(0)),
+            (1, None),
+            (10, Some(1)),
+            (1, None),
+            (3, Some(2)),
+        ],
+        &blank,
+    );
+    let mut view = BodyView::default();
+    let half = Rect::new(0, 0, 40, 10);
+    // 前两条以后清了屏：清屏那一行是第 81 行，第三条从第 82 行起，往下露。
+    view.rows =
+        crate::ui::row_cache::Rows::of_chunks(&[(40, Some(0)), (1, None), (40, Some(1))], &blank);
+    view.area = half;
+    view.clear();
+    assert_eq!(
+        first_row(
+            &narrow,
+            half,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        81
+    );
+    view.rows = narrow.clone();
+    // 变宽：清屏那一行跟着第二条的末尾走，第三条照样露着。
+    let max = Rect::new(0, 0, 80, 10);
+    let first = first_row(&wide, max, &mut view, (true, false), &Transcript::default());
+    assert_eq!(first, 21, "清屏那一行跟着第二条走");
+    assert!(first < wide.len(), "不空着");
+}
+
+#[test]
+fn opening_the_bottom_line_pushes_up_to_show_what_opened() {
+    // 2026-10-02 项目主人报：最底下的撤销那一行点开以后什么都看不见。点开的那一行留在原位、展开的往下长，
+    // 长到视口外面去了：要露出展开的内容，往上推，但被点的那一行不推出视口。
+    use crate::ui::rows::Target;
+    let mut all = rows(30);
+    let mut v: Vec<Row> = (0..30).map(|i| all.get(i).unwrap().clone()).collect();
+    for row in &mut v[25..30] {
+        row.target = Some(Target::Entry(5));
+    }
+    all = v.into();
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    view.anchor = Some((Target::Entry(5), 9));
+    assert_eq!(
+        first_row(&all, area, &mut view, (true, false), &Transcript::default()),
+        20,
+        "展开的五行都露出来"
+    );
+    // 展开的比视口还高：被点的那一行顶到最上面为止。
+    let mut tall: Vec<Row> = (0..40).map(|_| all.get(0).unwrap().clone()).collect();
+    for row in &mut tall[25..40] {
+        row.target = Some(Target::Entry(5));
+    }
+    let tall: crate::ui::row_cache::Rows = tall.into();
+    let mut view = BodyView::default();
+    view.anchor = Some((Target::Entry(5), 9));
+    view.top = Some(0);
+    assert_eq!(
+        first_row(
+            &tall,
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        25
+    );
+}
+
+#[test]
+fn a_menu_opening_and_closing_does_not_leave_a_gap() {
+    let tall = Rect::new(0, 0, 10, 10);
+    let short = Rect::new(0, 0, 10, 5);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(30),
+            tall,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 命令列表打开，视口矮了 5 行：贴着底边，往上让。
+    assert_eq!(
+        first_row(
+            &rows(30),
+            short,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        25
+    );
+    // 列表关掉，视口又高了：内容跟着下来，不留空白。
+    assert_eq!(
+        first_row(
+            &rows(30),
+            tall,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+}
+
+#[test]
+fn a_wider_window_rewraps_and_does_not_hold_the_old_row_numbers() {
+    let narrow = Rect::new(0, 0, 40, 30);
+    let wide = Rect::new(0, 0, 120, 60);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(200),
+            narrow,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        170
+    );
+    // 最大化：宽了，200 行折成 100 行，视口高了一倍。照最新的露满，不只剩一行。
+    assert_eq!(
+        first_row(
+            &rows(100),
+            wide,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        40
+    );
+}
+
+#[test]
+fn short_content_stays_at_the_top_when_the_view_gets_shorter() {
+    let tall = Rect::new(0, 0, 10, 20);
+    let short = Rect::new(0, 0, 10, 17);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(3),
+            tall,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        0
+    );
+    // 开始回答，运行状态行那一块长出来，视口矮了 3 行：放得下的照旧从第一行露起。
+    assert_eq!(
+        first_row(
+            &rows(3),
+            short,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        0
+    );
+}
+
+#[test]
+fn the_end_of_a_turn_lets_the_rows_settle_once() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 思考、工具收成一行，少了 8 行：回答进行中不动。
+    assert_eq!(
+        first_row(
+            &rows(22),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 一轮结束：放开一次，上面的行补满空白。
+    view.settle();
+    assert_eq!(
+        first_row(
+            &rows(22),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        12
+    );
+}
+
+#[test]
+fn a_long_reply_stops_at_its_first_row_until_her_next_step() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    // 她的正文（编号 7）从第 15 行起。
+    view.reading = Some((7, 15));
+    assert_eq!(
+        first_row(
+            &rows(20),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        10,
+        "放得下：照旧跟着"
+    );
+    assert_eq!(
+        first_row(
+            &rows(26),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        15,
+        "开头顶到最上面：停住"
+    );
+    assert_eq!(
+        first_row(
+            &rows(40),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        15,
+        "后面的字在下面长"
+    );
+    // 她开始下一步：回到最底下接着跟。
+    view.resume();
+    assert_eq!(
+        first_row(
+            &rows(42),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        32
+    );
+    // 下一段正文长了，又停在它的开头。
+    view.reading = Some((9, 44));
+    assert_eq!(
+        first_row(
+            &rows(60),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        44
+    );
+}
+
+#[test]
+fn scrolled_back_to_the_bottom_the_same_reply_does_not_stop_again() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    view.area = area;
+    view.reading = Some((7, 15));
+    view.first = first_row(
+        &rows(30),
+        area,
+        &mut view,
+        (true, false),
+        &Transcript::default(),
+    );
+    assert_eq!(view.first, 15);
+    // 人往下翻到底：跟着最新的，这一段不再停。
+    while view.top.is_some() {
+        view.page(true);
+        view.first = first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default(),
+        );
+    }
+    assert_eq!(
+        first_row(
+            &rows(36),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        26
+    );
+    // 人自己滚上去的：她开始下一步也不动。
+    view.page(false);
+    view.first = first_row(
+        &rows(36),
+        area,
+        &mut view,
+        (true, false),
+        &Transcript::default(),
+    );
+    let kept = view.first;
+    view.resume();
+    assert_eq!(
+        first_row(
+            &rows(40),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        kept
+    );
+}
+
+#[test]
+fn with_the_cap_the_end_of_a_turn_does_not_drop_the_rows() {
+    let running = Rect::new(0, 0, 10, 10);
+    let idle = Rect::new(0, 0, 10, 12);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(13),
+            running,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        3
+    );
+    // 一轮结束，运行状态行那一块收起，视口长高两行：开着封顶时不往下落，多出的两行空着。
+    view.hold();
+    assert_eq!(
+        first_row(
+            &rows(13),
+            idle,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        3
+    );
+    assert_eq!(
+        first_row(
+            &rows(13),
+            idle,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        3,
+        "下一帧照旧不动"
+    );
+    // 没按住的：贴着底边落两行（命令列表关了、输入框变矮了照这样）。
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(13),
+            running,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        3
+    );
+    assert_eq!(
+        first_row(
+            &rows(13),
+            idle,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        1
+    );
+}
+
+#[test]
+fn ctrl_l_empties_the_view_and_keeps_the_rows() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    view.rows = rows(30);
+    view.clear();
+    // 30 行全顶上去，视口是空的；往回滚还在。
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 新的字从空着的视口顶上往下长。
+    assert_eq!(
+        first_row(
+            &rows(33),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    view.top = Some(0);
+    assert_eq!(
+        first_row(
+            &rows(33),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        0
+    );
+}
+
+#[test]
+fn after_ctrl_l_a_shorter_view_does_not_push_new_rows_up() {
+    let tall = Rect::new(0, 0, 10, 10);
+    let short = Rect::new(0, 0, 10, 7);
+    let mut view = BodyView::default();
+    view.rows = rows(30);
+    view.clear();
+    assert_eq!(
+        first_row(
+            &rows(30),
+            tall,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 发出一句话（4 行），运行状态行那一块长出来，视口矮了 3 行：还从清屏那一行露起，不切掉开头。
+    assert_eq!(
+        first_row(
+            &rows(34),
+            short,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    assert_eq!(
+        first_row(
+            &rows(35),
+            short,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 一轮结束，那一块收起：照旧从清屏那一行露起。
+    assert_eq!(
+        first_row(
+            &rows(35),
+            tall,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 新的字多到放不下了，才贴着底边走。
+    assert_eq!(
+        first_row(
+            &rows(45),
+            short,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        38
+    );
+}
+
+#[test]
+fn page_keys_move_half_a_screen() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    view.area = area;
+    // 画的时候会把露出的第一行记进 `view.first`，这里照做。
+    let draw = |view: &mut BodyView| {
+        view.first = first_row(&rows(50), area, view, (true, false), &Transcript::default());
+        view.first
+    };
+    assert_eq!(draw(&mut view), 40);
+    view.page(false);
+    assert_eq!(draw(&mut view), 35, "翻半屏");
+    view.page(true);
+    assert_eq!(draw(&mut view), 40);
+    assert!(view.top.is_none(), "翻到底又跟着最新的");
+}
+
+#[test]
+fn scrolling_after_ctrl_l_does_not_bring_the_rows_back() {
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    view.rows = rows(30);
+    view.clear();
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 往下滚：还是空的。
+    view.top = Some(33);
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+    // 往上滚三行：看得到之前的最后三行。
+    view.top = Some(27);
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        27
+    );
+    // 滚回底：又是空的。
+    view.top = Some(30);
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        30
+    );
+}
+
+#[test]
+fn a_relayout_spread_over_frames_does_not_strand_the_view_at_the_end() {
+    // 2026-10-02 项目主人报：最大化以后内容闪一下就没了，只剩最后一行。长会话整份重排分几帧做，没排到的先用旧行
+    // （窄的、行多），「只往下走」记住了那时的底边，排完行少了，视口停在末尾。
+    let blank = rows(1).get(0).unwrap().clone();
+    let chunks = |a: usize, b: usize| {
+        crate::ui::row_cache::Rows::of_chunks(
+            &[
+                (a, Some(0)),
+                (1, None),
+                (b, Some(1)),
+                (1, None),
+                (2, Some(2)),
+            ],
+            &blank,
+        )
+    };
+    let mut view = BodyView::default();
+    let half = Rect::new(0, 0, 40, 10);
+    let max = Rect::new(0, 0, 80, 10);
+    view.rows = chunks(40, 40);
+    view.area = half;
+    // 变宽的第一帧：最后一条排好了，前两条还是旧行。
+    let mixed = chunks(40, 40);
+    let first = first_row(
+        &mixed,
+        max,
+        &mut view,
+        (false, false),
+        &Transcript::default(),
+    );
+    view.rows = mixed;
+    assert_eq!(first, 84 - 10);
+    // 下一帧排完了：行少了，照新的露最底下一截，不停在末尾。
+    let done = chunks(10, 10);
+    let first = first_row(&done, max, &mut view, (true, false), &Transcript::default());
+    assert_eq!(first, 24 - 10, "露最底下一截");
+}
+
+#[test]
+fn a_finished_reply_counts_as_read_only_while_its_top_was_showing() {
+    // 2026-10-02 项目主人报：mermaid 画出来把回答顶上去。写完了的那段，上一帧开头还露着，后到的图把它撑高时停住；
+    // 一口气整段到的（上一帧还没有它、开头已经在视口上面）照旧跟着最新的。
+    let mut view = BodyView::default();
+    view.first = 10;
+    assert_eq!(
+        super::still_reading(&view, Some((7, 3, true))),
+        Some((7, 3)),
+        "在写的一律算"
+    );
+    assert_eq!(
+        super::still_reading(&view, Some((7, 12, false))),
+        None,
+        "上一帧还没有它"
+    );
+    view.latest = Some((7, 12));
+    assert_eq!(
+        super::still_reading(&view, Some((7, 12, false))),
+        Some((7, 12))
+    );
+    view.latest = Some((7, 3));
+    assert_eq!(
+        super::still_reading(&view, Some((7, 3, false))),
+        None,
+        "开头早就顶出去了"
+    );
+    view.latest = Some((6, 12));
+    assert_eq!(
+        super::still_reading(&view, Some((7, 12, false))),
+        None,
+        "不是同一段"
+    );
+}
+
+#[test]
+fn a_selection_follows_its_entry_and_is_dropped_when_the_text_reflows() {
+    // review C3（2026-10-11）：选区照行号记，上面的图加载好、一段收起、窗口变宽变窄以后反色漂到别处，复制到别的字。
+    let blank = rows(1).get(0).unwrap().clone();
+    let of = |first: usize| {
+        crate::ui::row_cache::Rows::of_chunks(&[(first, Some(0)), (1, None), (5, Some(1))], &blank)
+    };
+    let area = Rect::new(0, 0, 40, 30);
+    let mut view = BodyView::default();
+    view.rows = of(2);
+    view.area = area;
+    // 第二条的第 1、2 行：第 4、5 行。
+    view.select = Some(((4, 3), (5, 8)));
+    // 上面那条长了 3 行（图加载好）：选区跟着第二条往下挪 3 行，列不变。
+    first_row(
+        &of(5),
+        area,
+        &mut view,
+        (true, false),
+        &Transcript::default(),
+    );
+    assert_eq!(view.select, Some(((7, 3), (8, 8))));
+    view.rows = of(5);
+    // 窗口变窄：字重新折过，行列对不上了，选区不要了。
+    first_row(
+        &of(5),
+        Rect::new(0, 0, 30, 30),
+        &mut view,
+        (true, false),
+        &Transcript::default(),
+    );
+    assert_eq!(view.select, None);
+}
+
+#[test]
+fn clearing_right_after_a_reply_that_fit_does_not_stop_at_its_start() {
+    // 2026-10-16 项目主人报：刚起来的第一轮，回答一屏放得下，答完按 Ctrl+L，回答和收尾行还留着，再按一次才清干净。
+    // 清屏以后视口要越过最新那段回答的开头，「长回答停在开头」照「上一帧开头还露着、还没停过」把它停住了。
+    let blank = rows(1).get(0).unwrap().clone();
+    // 你说的话、思考、回答（编号 7，从第 8 行起）、收尾行：一共 16 行，20 行的视口放得下。
+    let all = crate::ui::row_cache::Rows::of_chunks(
+        &[
+            (3, Some(0)),
+            (1, None),
+            (3, Some(1)),
+            (1, None),
+            (6, Some(2)),
+            (1, None),
+            (1, Some(3)),
+        ],
+        &blank,
+    );
+    let area = Rect::new(0, 0, 40, 20);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(&all, area, &mut view, (true, false), &Transcript::default()),
+        0
+    );
+    view.rows = all.clone();
+    view.first = 0;
+    view.latest = Some((7, 8));
+    view.clear();
+    // 下一帧：回答写完了、上一帧开头露着，照 `still_reading` 算还在看。
+    view.reading = super::still_reading(&view, Some((7, 8, false)));
+    assert_eq!(
+        first_row(&all, area, &mut view, (true, false), &Transcript::default()),
+        all.len(),
+        "一下就清干净，不停在回答的开头"
+    );
+}
+
+#[test]
+fn the_gap_after_a_turn_stays_when_scrolling_away_and_back_or_opening_and_closing() {
+    // 2026-10-17 项目主人：一轮结束时间线收起留的空档，展开再收起、滚上去再滚回来就没了，不符合直觉。
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    assert_eq!(
+        first_row(
+            &rows(30),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 时间线收起，少了 6 行：顶上去的不掉下来，底下空 6 行。
+    assert_eq!(
+        first_row(
+            &rows(24),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 往上滚三行：从空着的那一处往上数，不是从内容的末尾。
+    view.top = Some(17);
+    assert_eq!(
+        first_row(
+            &rows(24),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        17
+    );
+    // 滚回来：滚过头的停在原来那一处，接着跟着最新的，空档还在。
+    view.top = Some(30);
+    assert_eq!(
+        first_row(
+            &rows(24),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    assert!(view.top.is_none());
+    assert_eq!(
+        first_row(
+            &rows(24),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    // 点开一步（钉在被点的那一行，展开 5 行），再收起：回到原来那一处。
+    view.top = Some(20);
+    assert_eq!(
+        first_row(
+            &rows(29),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    assert_eq!(
+        first_row(
+            &rows(24),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        20
+    );
+    assert!(view.top.is_none(), "收起以后接着跟着最新的");
+    // 她接着说的字把空档填上。
+    assert_eq!(
+        first_row(
+            &rows(32),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        22
+    );
+}
+
+#[test]
+fn folding_a_long_timeline_above_does_not_leave_its_rows_as_a_gap() {
+    // 2026-10-19 项目主人：长时间线收着、她开了另一段在跑；把上面那段展开、滚上去、再收起，底下空出一大截，Ctrl+End
+    // 也只露一点点，再展开才正常。底边记的是展开时的行号：上面那段收起少掉的几百行，不该算成空档。
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    let rows = |timeline: usize| {
+        crate::ui::row_cache::Rows::of_blank(&[(5, Some(0)), (timeline, Some(1)), (8, Some(2))])
+    };
+    let frame = |view: &mut BodyView, rows: crate::ui::row_cache::Rows| {
+        let first = first_row(&rows, area, view, (true, false), &Transcript::default());
+        view.rows = rows;
+        first
+    };
+    assert_eq!(frame(&mut view, rows(1)), 4, "上面那段收着，跟着最新的");
+    assert_eq!(frame(&mut view, rows(300)), 303, "展开：跟着最新的");
+    view.top = Some(50);
+    assert_eq!(frame(&mut view, rows(300)), 50, "滚上去");
+    // 收起：上面少了 299 行，底边跟着它下面那一条上移，不留空档。
+    assert_eq!(frame(&mut view, rows(1)), 4, "收起以后不空出一大截");
+    view.top = None;
+    assert_eq!(
+        frame(&mut view, rows(1)),
+        4,
+        "Ctrl+End 到底，在跑的那段整个露着"
+    );
+}
+
+#[test]
+fn the_last_entry_folding_still_leaves_its_gap() {
+    // 10-17 那条照旧：最底下那段自己收起（一轮结束）空出的几行留着，等接下来的字填上。
+    let area = Rect::new(0, 0, 10, 10);
+    let mut view = BodyView::default();
+    let rows = |live: usize| crate::ui::row_cache::Rows::of_blank(&[(5, Some(0)), (live, Some(1))]);
+    assert_eq!(
+        first_row(
+            &rows(12),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        7
+    );
+    view.rows = rows(12);
+    assert_eq!(
+        first_row(
+            &rows(8),
+            area,
+            &mut view,
+            (true, false),
+            &Transcript::default()
+        ),
+        7,
+        "顶上去的不掉下来"
+    );
+}
+
+/// 2026-11-11 项目主人（Miyu `832087b1`，发版前 check 33）：她还在跑的那一段里点开一步（展开出几十行）、在里面滚到过底、再点它
+/// 收起，收起的那一行顶在最上面、下面空出一整屏。底边跟着这一步长了、短了多少一起走；原来就有的空档照旧留着。
+#[test]
+fn opening_then_closing_a_step_in_the_live_entry_leaves_no_gap() {
+    use crate::ui::rows::Target;
+    let area = Rect::new(0, 0, 10, 10);
+    let step = Target::Entry(9);
+    // 第 1 条是在跑的那一段：3 行字、那一步（收着 1 行、展开 40 行）、后面 2 行。
+    let rows = |open: usize| {
+        let blank = super::super::row_cache::Rows::of_blank(&[(1, None)])
+            .iter()
+            .next()
+            .cloned()
+            .expect("一行");
+        let mut live = vec![blank.clone(); 3];
+        live.extend((0..open).map(|_| {
+            let mut row = blank.clone();
+            row.target = Some(step);
+            row
+        }));
+        live.extend(vec![blank.clone(); 2]);
+        crate::ui::row_cache::Rows::of_owned(vec![
+            (vec![blank.clone(); 20], Some(0)),
+            (live, Some(1)),
+        ])
+    };
+    let frame = |view: &mut BodyView, rows: crate::ui::row_cache::Rows| {
+        let first = first_row(&rows, area, view, (true, false), &Transcript::default());
+        view.rows = rows;
+        first
+    };
+    let mut view = BodyView::default();
+    assert_eq!(
+        frame(&mut view, rows(1)),
+        16,
+        "跟着最新的：26 行露最后 10 行"
+    );
+    // 点开那一步（它在第 23 行、屏上第 7 行）：比视口高，顶到最上面。
+    view.anchor = Some((step, 7));
+    assert_eq!(frame(&mut view, rows(40)), 23);
+    // 在里面滚到底、再滚回它开头。
+    view.top = Some(999);
+    assert_eq!(frame(&mut view, rows(40)), 55);
+    view.top = Some(23);
+    assert_eq!(frame(&mut view, rows(40)), 23);
+    // 点它收起：回到跟着最新的那一处，下面不空。
+    view.anchor = Some((step, 0));
+    assert_eq!(frame(&mut view, rows(1)), 16, "不留一整屏的空");
+    assert!(view.top.is_none(), "接着跟着最新的");
+}
+
+#[test]
+fn a_timeline_that_folds_mid_turn_for_an_answer_leaves_no_gap() {
+    // 2026-11-12 项目主人（Miyu `f45126c5`，发版前 check 45）：她在跑的那一段时间线很长，中途问了问题，答了以后那一段收起，
+    // 屏幕上空出一大段。一轮结束收起留的空档照旧留着（10-17）；这一轮还在跑、收起是因为后面插进了答问题那一条，底边跟着
+    // 那一段短了多少一起走。
+    let area = Rect::new(0, 0, 10, 10);
+    let rows = |live: usize, answered: bool| {
+        let mut chunks = vec![(20, Some(0)), (live, Some(1))];
+        if answered {
+            chunks.push((1, Some(2)));
+        }
+        crate::ui::row_cache::Rows::of_blank(&chunks)
+    };
+    let frame = |view: &mut BodyView, rows: crate::ui::row_cache::Rows| {
+        let first = first_row(&rows, area, view, (true, false), &Transcript::default());
+        view.rows = rows;
+        first
+    };
+    let mut view = BodyView::default();
+    view.live = true;
+    assert_eq!(frame(&mut view, rows(16, false)), 26, "跟着最新的");
+    // 答了：那一段收成一行，下面接答问题那一条。
+    assert_eq!(frame(&mut view, rows(1, true)), 12, "不留空档");
+    // 一轮结束（不在跑了）的收起照旧留空档。
+    let mut ended = BodyView::default();
+    assert_eq!(frame(&mut ended, rows(16, false)), 26);
+    assert_eq!(
+        frame(&mut ended, rows(1, true)),
+        21,
+        "一轮结束：顶上去的不掉下来"
+    );
+}

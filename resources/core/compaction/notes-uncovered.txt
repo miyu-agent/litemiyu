@@ -1,0 +1,1 @@
+The summary misses entries {from}-{to}, cut to fit its request. history still finds them.

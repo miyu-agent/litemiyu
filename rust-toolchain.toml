@@ -1,0 +1,5 @@
+# 钉死版本，和 Miyu 同一版：代码是从它搬的。升级工具链单独做一步。
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

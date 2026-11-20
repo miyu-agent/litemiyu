@@ -1,0 +1,232 @@
+{
+  "commands": [
+    {
+      "name": "undo",
+      "aliases": [
+        "rewind"
+      ],
+      "summary": {
+        "zh": "撤销上一轮",
+        "en": "Undo the last turn"
+      },
+      "run": "revert"
+    },
+    {
+      "name": "restore",
+      "summary": {
+        "zh": "恢复刚才撤销的那一轮",
+        "en": "Bring back the turn you just undid"
+      },
+      "run": "unrevert"
+    },
+    {
+      "name": "redo",
+      "summary": {
+        "zh": "这一轮原样重来一遍",
+        "en": "Run this turn again as it was"
+      },
+      "run": "redo"
+    },
+    {
+      "name": "edit",
+      "summary": {
+        "zh": "编辑上一句，改完回车重来",
+        "en": "Edit your last message and send it again"
+      },
+      "run": "edit"
+    },
+    {
+      "name": "stop",
+      "summary": {
+        "zh": "停止此会话所有处理中的东西",
+        "en": "Stop everything running in the session"
+      },
+      "run": "stop"
+    },
+    {
+      "name": "clear",
+      "aliases": [
+        "reset"
+      ],
+      "summary": {
+        "zh": "清空上下文",
+        "en": "Clear context"
+      },
+      "run": "clear"
+    },
+    {
+      "name": "compact",
+      "summary": {
+        "zh": "现在就压缩上下文，后面可以写给摘要的要求",
+        "en": "Compact the context now; anything after it guides the summary"
+      },
+      "run": "compact",
+      "args": true
+    },
+    {
+      "name": "rename",
+      "summary": {
+        "zh": "给会话改名；只打 /rename 让 AI 重新起一个，/rename - 去掉标题",
+        "en": "Rename the session; /rename alone asks the AI for a new title, /rename - removes it"
+      },
+      "run": "rename",
+      "args": true
+    },
+    {
+      "name": "icons",
+      "summary": {
+        "zh": "换一套图标：nerd、plain 轮着换",
+        "en": "Switch icons: nerd, plain in turn"
+      },
+      "run": "icons"
+    },
+    {
+      "name": "new",
+      "summary": {
+        "zh": "开一个新会话",
+        "en": "Start a new session"
+      },
+      "run": "new",
+      "args": true
+    },
+    {
+      "name": "delete",
+      "summary": {
+        "zh": "删除当前会话",
+        "en": "Delete this session"
+      },
+      "run": "delete"
+    },
+    {
+      "name": "sessions",
+      "aliases": [
+        "resume"
+      ],
+      "summary": {
+        "zh": "列出会话，切过去",
+        "en": "List sessions and switch to one"
+      },
+      "run": "sessions"
+    },
+    {
+      "name": "jump",
+      "summary": {
+        "zh": "列出这个会话里说过的话，跳过去",
+        "en": "List what you said in this session and jump to it"
+      },
+      "run": "jump"
+    },
+    {
+      "name": "model",
+      "summary": {
+        "zh": "换这个会话的模型",
+        "en": "Change this session's model"
+      },
+      "run": "model"
+    },
+    {
+      "name": "effort",
+      "summary": {
+        "zh": "换正在用的模型的思考程度",
+        "en": "Change the thinking effort of the model in use"
+      },
+      "run": "effort"
+    },
+    {
+      "name": "config",
+      "aliases": [
+        "settings"
+      ],
+      "summary": {
+        "zh": "打开配置：供应商、模型",
+        "en": "Open settings: providers, models"
+      },
+      "run": "config"
+    },
+    {
+      "name": "status",
+      "summary": {
+        "zh": "这个会话的状态：模型、上下文、用量",
+        "en": "This session's status: model, context, usage"
+      },
+      "run": "status"
+    },
+    {
+      "name": "copy",
+      "summary": {
+        "zh": "复制上一轮的回答",
+        "en": "Copy the last reply"
+      },
+      "run": "copy"
+    },
+    {
+      "name": "help",
+      "summary": {
+        "zh": "看看按键和命令",
+        "en": "See keys and commands"
+      },
+      "run": "help"
+    },
+    {
+      "name": "export",
+      "summary": {
+        "zh": "导出这个会话",
+        "en": "Export this session"
+      },
+      "run": "export"
+    },
+    {
+      "name": "exit",
+      "summary": {
+        "zh": "退出",
+        "en": "Exit"
+      },
+      "run": "quit"
+    },
+    {
+      "name": "loop",
+      "summary": {
+        "zh": "循环执行",
+        "en": "Run on a loop"
+      },
+      "run": "loop",
+      "args": true,
+      "argument": {
+        "zh": "[<间隔>] <要说的话> | off",
+        "en": "[<interval>] <prompt> | off"
+      },
+      "usage": [
+        [
+          {
+            "zh": "/loop <间隔> <要说的话>",
+            "en": "/loop <interval> <prompt>"
+          },
+          {
+            "zh": "每隔一段时间说一次，例如 5m、2h",
+            "en": "Send it at a fixed interval, such as 5m or 2h"
+          }
+        ],
+        [
+          {
+            "zh": "/loop <要说的话>",
+            "en": "/loop <prompt>"
+          },
+          {
+            "zh": "由 AI 自己定下一次什么时候",
+            "en": "Let the AI pick when to run next"
+          }
+        ],
+        [
+          {
+            "zh": "/loop off",
+            "en": "/loop off"
+          },
+          {
+            "zh": "停止此会话的循环",
+            "en": "Stop this session's loops"
+          }
+        ]
+      ]
+    }
+  ]
+}

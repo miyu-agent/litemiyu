@@ -1,0 +1,177 @@
+//! 用出来的、供应商的列表（`docs/blueprint/models.md`「怎么走」第二条第 9、10 条，「文件」那张表，施工 8-7）：两种派生
+//! 数据的样子和读写。文件在 `state/models/` 下，由执行器读写（先写临时文件再改名，坏了当没有）；这里只管字和合并。
+//!
+//! - `learned.json`：`{"<供应商>/<模型>":{"window":{"value":…,"at":…}}}`。请求报上下文超长、报了上限的，记下真窗口；
+//!   只学窗口，一直留着，比现在的小才记。
+//! - `providers/<编号>.json`：`{"fetched":…,"models":[{"id":…,"window":…}]}`。供应商的模型列表。
+//! - `renamed.json`：`{"<旧编号>":"<新编号>"}`。改过名的供应商（施工 8-34，[`Renamed`]）：会话钉着旧编号的照它换。
+
+use std::collections::BTreeMap;
+
+use crate::kernel::time::Timestamp;
+use serde::{Deserialize, Serialize};
+
+/// 用出来的：`<供应商>/<模型>` → 这个模型学到的。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Learned(BTreeMap<String, LearnedModel>);
+
+/// 一个模型学到的：现在只有窗口。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LearnedModel {
+    /// 窗口。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<Stamped>,
+}
+
+/// 一个学到的数，和什么时候学到的。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stamped {
+    /// 数。
+    pub value: u64,
+    /// 什么时候记下的。
+    pub at: Timestamp,
+}
+
+impl Learned {
+    /// 读 `learned.json`。
+    ///
+    /// # Errors
+    ///
+    /// 不是这个样子的 JSON：原话说是哪一份。
+    pub fn parse(text: &str) -> Result<Learned, String> {
+        crate::kernel::json::from_str(text)
+            .map_err(|error| format!("learned.json not readable: {error}"))
+    }
+
+    /// 写成 JSON，照键排。
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// 这家这个模型学到的窗口。
+    pub fn window(&self, provider: &str, model: &str) -> Option<Stamped> {
+        self.0.get(&key(provider, model))?.window
+    }
+
+    /// 记一个窗口 `window`（`at` 时学到的）：比已经学到的小、或者还没学到才记，交回记没记。
+    pub fn learn(&mut self, provider: &str, model: &str, window: u64, at: Timestamp) -> bool {
+        let entry = self.0.entry(key(provider, model)).or_default();
+        if entry.window.is_some_and(|known| known.value <= window) {
+            return false;
+        }
+        entry.window = Some(Stamped { value: window, at });
+        true
+    }
+
+    /// 供应商改名（施工 8-34）：`<from>/` 开头的键换成 `<to>/`。新编号下已经学到的照旧（不会有：改名时新编号还没配）。
+    pub fn rename_provider(&mut self, from: &str, to: &str) {
+        let prefix = format!("{from}/");
+        let moved: Vec<String> = self
+            .0
+            .keys()
+            .filter(|key| key.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for old in moved {
+            if let Some(entry) = self.0.remove(&old) {
+                let model = &old[prefix.len()..];
+                self.0.entry(key(to, model)).or_insert(entry);
+            }
+        }
+    }
+}
+
+/// 键：`<供应商>/<模型>`。
+fn key(provider: &str, model: &str) -> String {
+    format!("{provider}/{model}")
+}
+
+/// 一家供应商的模型列表。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderList {
+    /// 什么时候拉的。
+    pub fetched: Timestamp,
+    /// 列出来的模型，照它给的先后。
+    pub models: Vec<ListedModel>,
+}
+
+/// 列表里的一个模型。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListedModel {
+    /// 模型名。
+    pub id: String,
+    /// 报了的窗口。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u64>,
+    /// 报了的最大输出（施工 MD-4：扩展驱动的 `driver.models` 报；内置驱动的列表没有）。以前的文件没有这一格。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output: Option<u64>,
+    /// 能不能调工具（施工 MD-4，同上）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<bool>,
+    /// 看得了图（施工 MD-4，同上）：真的照 `inputs = ["text", "image"]` 算。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
+}
+
+impl ProviderList {
+    /// 读 `providers/<编号>.json`。
+    ///
+    /// # Errors
+    ///
+    /// 不是这个样子的 JSON：原话说是哪一份。
+    pub fn parse(text: &str) -> Result<ProviderList, String> {
+        crate::kernel::json::from_str(text)
+            .map_err(|error| format!("provider list not readable: {error}"))
+    }
+
+    /// 写成 JSON。
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// 列表里的这个模型。
+    pub fn find(&self, model: &str) -> Option<&ListedModel> {
+        self.models.iter().find(|listed| listed.id == model)
+    }
+}
+
+/// 改过名的供应商（施工 8-34）：旧编号 → 现在的编号。连着改的拉平（a→b 以后 b→c，a、b 都指 c），改回去的那一条删掉。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Renamed(BTreeMap<String, String>);
+
+impl Renamed {
+    /// 读 `renamed.json`。
+    ///
+    /// # Errors
+    ///
+    /// 不是这个样子的 JSON：原话说是哪一份。
+    pub fn parse(text: &str) -> Result<Renamed, String> {
+        crate::kernel::json::from_str(text)
+            .map_err(|error| format!("renamed.json not readable: {error}"))
+    }
+
+    /// 写成 JSON，照键排。
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// 旧编号 `from` 现在叫什么；没改过名的没有。
+    pub fn current(&self, from: &str) -> Option<&str> {
+        self.0.get(from).map(String::as_str)
+    }
+
+    /// 记下 `from` 改成了 `to`：原来指 `from` 的都指 `to`，`to` 自己那一条（改回去的）删掉。
+    pub fn record(&mut self, from: &str, to: &str) {
+        for current in self.0.values_mut() {
+            if current == from {
+                *current = to.to_string();
+            }
+        }
+        self.0.insert(from.to_string(), to.to_string());
+        self.0.remove(to);
+    }
+}
+
+#[cfg(test)]
+mod tests;

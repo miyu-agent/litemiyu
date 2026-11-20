@@ -1,0 +1,160 @@
+{
+  "items": {
+    "ui.language": {
+      "name": "Interface language",
+      "description": "The language of the interface. Follow the system reads LC_ALL, LC_MESSAGES and LANG. Takes effect on the next start.",
+      "options": {
+        "auto": "Follow the system",
+        "zh": "中文",
+        "en": "English"
+      }
+    },
+    "sessions.default": {
+      "name": "New session features",
+      "description": "Which features new sessions get. No features gives the model no tools and injects nothing at turn start: just a chat with the model. Open sessions stay as they are.",
+      "options": {
+        "full": "All features",
+        "bare": "No features"
+      }
+    },
+    "compaction.prepare": {
+      "name": "Pre-compaction",
+      "description": "When the context is nearly full, the older part is summarized in the background, so the switch happens without a wait when compaction is due. Off means compacting only once the limit is reached, as before."
+    },
+    "compaction.line": {
+      "name": "Compaction line",
+      "description": "Compact automatically once the context fills this percent of the window. Small windows keep room for the reply, so compaction may start earlier. With a 200K window, values above 85 have no effect. A 1M window can reach 95."
+    },
+    "providers.<id>.name": {
+      "name": "Display name",
+      "description": "The name people see. The id is only for referring to models; without one, the model data's name for this provider is used, then the id."
+    },
+    "providers.<id>.driver": {
+      "name": "Driver",
+      "description": "How to talk to this provider. Known providers can leave it out.",
+      "options": {
+        "openai-chat": "OpenAI-compatible chat",
+        "anthropic": "Anthropic Messages",
+        "openai-responses": "OpenAI Responses"
+      }
+    },
+    "providers.<id>.base_url": {
+      "name": "Address",
+      "description": "The address of this provider's API; the driver adds the path. Known providers can leave it out."
+    },
+    "providers.<id>.key": {
+      "name": "API key",
+      "description": "A key typed here is saved in secrets.toml (readable only by you) and the config holds a reference to it; { env = \"VARIABLE\" } also works. One per provider. Without one, no auth header is sent."
+    },
+    "providers.<id>.catalog": {
+      "name": "Catalog provider",
+      "description": "Which provider in the model data this one is, for example deepseek for a relay that only forwards DeepSeek."
+    },
+    "providers.<id>.local": {
+      "name": "Local service",
+      "description": "A model service on this machine. Left out, it follows the address: on this machine means yes."
+    },
+    "models.chat": {
+      "name": "Chat model",
+      "description": "The model new sessions use, written as provider/model, for example deepseek/deepseek-flash."
+    },
+    "models.vision": {
+      "name": "Vision model",
+      "description": "Looks at images for the chat model when it cannot. Written like the chat model."
+    },
+    "tui.keys": {
+      "name": "Key mode",
+      "description": "Vim: in the session list and the model list, j and k move and / starts a search. Arrow keys: typing searches right away and the arrow keys move.",
+      "options": {
+        "arrows": "Arrow keys",
+        "vim": "Vim"
+      }
+    },
+    "tui.timeline_fold": {
+      "name": "Auto-fold timeline",
+      "description": "Fold the finished steps into one line once the reply is done."
+    },
+    "tui.timeline_expand_thought": {
+      "name": "Expand thoughts",
+      "description": "Show thoughts in full instead of a preview."
+    },
+    "tui.timeline_expand_command": {
+      "name": "Expand commands",
+      "description": "Show commands in full instead of a preview."
+    },
+    "tui.timeline_expand_edit": {
+      "name": "Expand edits",
+      "description": "Show edit diffs in full instead of a preview."
+    },
+    "tui.timeline_limit_live": {
+      "name": "Timeline area height limit",
+      "description": "Show only the latest lines of the running steps."
+    },
+    "tui.timeline_thought_rows": {
+      "name": "Thought preview rows",
+      "description": "How many of the latest lines a thought shows while it runs."
+    },
+    "tui.timeline_preview_rows": {
+      "name": "Command preview rows",
+      "description": "How many lines of a command the timeline previews."
+    },
+    "tui.sidebar_sessions": {
+      "name": "Recent sessions in the sidebar",
+      "description": "How many sessions the sidebar lists, the current one included. 0 hides the list."
+    },
+    "tui.sidebar_jumps": {
+      "name": "Messages to jump to in the sidebar",
+      "description": "How many of your own messages in this session the sidebar lists, newest at the bottom; click one to jump to it. 0 hides the list."
+    },
+    "tui.theme_mode": {
+      "name": "Color mode",
+      "description": "Follow the terminal's background, or always dark or light.",
+      "options": {
+        "auto": "Auto",
+        "dark": "Dark",
+        "light": "Light"
+      }
+    },
+    "tui.theme_background": {
+      "name": "Background fill",
+      "description": "Paint the whole screen in the theme's background."
+    },
+    "tui.icons": {
+      "name": "Icons",
+      "description": "Which icon set the terminal interface draws: Nerd Font glyphs, or plain characters for fonts without them.",
+      "options": {
+        "nerd": "Nerd Font icons",
+        "plain": "Plain characters"
+      }
+    },
+    "jobs.max_running": {
+      "name": "Longest background command",
+      "description": "A command the AI runs in the background is stopped after this long, and the AI is told. At most 2 hours."
+    },
+    "permission.confirm.timeout": {
+      "name": "Confirmation timeout",
+      "description": "Anything waiting for your confirmation is denied after this many seconds. 0 waits forever."
+    }
+  },
+  "pages": {
+    "general": "General",
+    "models": "Providers & models",
+    "appearance": "Appearance",
+    "privacy": "Privacy & security",
+    "advanced": "Advanced"
+  },
+  "groups": {
+    "display": "Display",
+    "new_session": "New sessions",
+    "compaction": "Compaction",
+    "providers": "Providers",
+    "uses": "Default models",
+    "sessions": "Sessions",
+    "tui": "Terminal interface",
+    "timeline": "Timeline",
+    "keys": "Interaction",
+    "theme": "Color scheme",
+    "icons": "Icons",
+    "permission": "Permissions"
+  }
+}

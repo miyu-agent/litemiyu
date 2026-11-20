@@ -1,0 +1,225 @@
+# 平常的门禁（组织级审计 #190，2026-11-19；LM-7 加了 macOS、aarch64）：
+# - check：Linux x86_64（glibc）上查格式、clippy、跑全仓测试。开发用的就是这一种，推 main、开或更新 PR 都跑；
+# - musl：x86_64 musl 全静态（发行的那一种）编得出、全静态、跑得起，自带的 memcpy 在 release 编法里测一遍，全仓测试在 musl 上跑一遍；
+# - aarch64：aarch64 musl 全静态，在原生 arm64 的机器上编、查全静态、跑起来、跑全仓测试；
+# - macos：aarch64-apple-darwin 上 clippy、全仓测试、编 release、跑起来。
+# 三个发行目标（docs/00-设计.md 第二节「平台」）各有一个任务真编、真跑；排函数、打包、查包在 release.yml。
+#
+# 不用任何密钥，只读仓库。量尺（cargo xtask measure）不在这里跑：红线照项目主人那台机器的数判，CI 机器的数不作数。
+# 只用 GitHub 官方的 action（actions/*）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一条分支后推的顶掉先推的那一趟。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: 装上 rust-toolchain.toml 钉住的工具链
+        run: rustup toolchain install
+      - name: 取依赖
+        run: cargo fetch --locked
+      - name: 格式
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      # --no-fail-fast：一个测试程序红了照样跑完别的，一趟看全哪些红（LM-7：macOS 头一趟伪终端那一组红了，后面 lm-engine 的
+      # 几个测试程序就没跑）。
+      # 测试线程数压到 2：CI 机器只有 4 个核、比开发机慢五六倍，照默认的并行数跑，带「十秒内等到」这类限时的测试会被
+      # 别的测试挤到超时（2026-11-19 红过 actor 的 a_write_that_fails_stops_the_session「十秒内没等到」）。
+      # 这是缓解，不是根治：哪几条测试最占机器还没查。同一天别的几趟红是另外的毛病，各自修了：伪终端测试读到不完整的
+      # 状态（approval_wait、recent）、门铃重绑的真缺陷（bell）。
+      - name: 测试
+        env:
+          RUST_TEST_THREADS: 2
+        run: cargo test --workspace --no-fail-fast --locked --offline
+
+  # musl 全静态（LM-6）：发行目标 x86_64-unknown-linux-musl。要装的两样：
+  # - rust 的 musl 目标：`rustup target add x86_64-unknown-linux-musl`（rust-toolchain.toml 没列它，免得每台开发机都去下）；
+  # - musl-tools（给 `musl-gcc`）：ring 的 C、汇编用它编（cc 找 `x86_64-linux-musl-gcc`、`musl-gcc`，都没有退回系统的 cc，本机
+  #   试过也编得过、跑得起，装上更稳）。
+  # 这里照平常的 `cargo build` 编（cc + GNU ld），只查编得过、全静态、跑得起；排函数（rust-lld）、打包在 release.yml。
+  musl:
+    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: 装上 rust-toolchain.toml 钉住的工具链和 musl 的目标
+        run: |
+          rustup toolchain install
+          rustup target add x86_64-unknown-linux-musl
+      - name: 装 musl-gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - name: 取依赖
+        run: cargo fetch --locked
+      - name: 编
+        run: cargo build --release --locked --offline --target x86_64-unknown-linux-musl -p litemiyu
+      - name: 全静态、跑得起
+        run: |
+          set -euo pipefail
+          program=target/x86_64-unknown-linux-musl/release/litemiyu
+          if readelf -d "$program" | grep -q '(NEEDED)'; then echo "::error::要共享库"; readelf -d "$program"; exit 1; fi
+          if readelf -lW "$program" | grep -q INTERP; then echo "::error::要动态链接器"; exit 1; fi
+          env -i HOME=/nonexistent "$program" --version
+      # 自带的 memcpy 这一家（LM-6补，crates/lm-heap/mem）只在 x86_64 + musl + 不带调试断言的编法里编进来：glibc 那个任务、
+      # debug 的测试都测不到它。穷举、符号、起子进程的冒烟都在这两个 crate 的测试里。
+      - name: 自带的 memcpy（release）
+        run: cargo test --release --locked --offline --target x86_64-unknown-linux-musl -p lm-heap -p lm-heap-mem
+      # 全仓测试在 musl 上再跑一遍（debug）：发出去的是 musl 的程序，libc 不同的地方（DNS、getpwuid、线程栈、时区）只有在这里
+      # 才走得到。线程数同 check。
+      - name: 全仓测试（musl）
+        env:
+          RUST_TEST_THREADS: 2
+        run: cargo test --workspace --no-fail-fast --locked --offline --target x86_64-unknown-linux-musl
+
+  # aarch64 musl 全静态（发行目标 aarch64-unknown-linux-musl）：在原生 arm64 的机器上编、跑，不交叉（LM-6「aarch64」：交叉要另配
+  # aarch64 的 musl C 编译器，Ubuntu 没有现成的包）。要装的同 x86_64：rust 的目标、musl-tools（arm64 的 Ubuntu 上给 `musl-gcc`）。
+  # aarch64 上没有自带的 memcpy（lm-heap-mem 只在 x86_64 上编进来），照 musl 原样。
+  aarch64:
+    timeout-minutes: 60
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: 装上 rust-toolchain.toml 钉住的工具链和 musl 的目标
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-unknown-linux-musl
+      - name: 装 musl-gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - name: 取依赖
+        run: cargo fetch --locked
+      - name: 编
+        run: cargo build --release --locked --offline --target aarch64-unknown-linux-musl -p litemiyu
+      - name: 全静态、跑得起
+        run: |
+          set -euo pipefail
+          program=target/aarch64-unknown-linux-musl/release/litemiyu
+          file "$program"
+          if readelf -d "$program" | grep -q '(NEEDED)'; then echo "::error::要共享库"; readelf -d "$program"; exit 1; fi
+          if readelf -lW "$program" | grep -q INTERP; then echo "::error::要动态链接器"; exit 1; fi
+          env -i HOME=/nonexistent "$program" --version
+          env -i HOME=/nonexistent "$program" --help > /dev/null
+      # 伪终端里起来、说一句、本机假服务器回完、/exit 退出（bench/smoke.py，只用标准库，不连外网）。
+      - name: 冒烟
+        run: python3 -I bench/smoke.py target/aarch64-unknown-linux-musl/release/litemiyu
+      - name: 全仓测试（aarch64 musl）
+        env:
+          RUST_TEST_THREADS: 2
+        run: cargo test --workspace --no-fail-fast --locked --offline --target aarch64-unknown-linux-musl
+
+  # macOS（发行目标 aarch64-apple-darwin）。机器选 macos-15：arm64（Apple 芯片），钉住大版本，不跟 macos-latest 换镜像时悄悄变；
+  # 比 macos-14 新、退役得晚。格式不重复查（和平台无关，check 查过）。
+  #
+  # 私有仓库的 macOS 机器按分钟计费约是 Linux 的 10 倍，所以：
+  # - 只在推 main 和手动触发时跑，PR 上不跑：PR 合进 main 那一下照样跑一趟，macOS 的毛病最晚在那里冒出来；PR 每推一次都跑
+  #   太贵，而 PR 上的改动绝大多数和平台无关（Linux 的 check 已经查了）。
+  # - 依赖和编出来的东西用官方的 actions/cache 存（键照 Cargo.lock 和工具链）：依赖不变时不用从头编。
+  macos:
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 60
+    runs-on: macos-15
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: 装上 rust-toolchain.toml 钉住的工具链
+        run: rustup toolchain install
+      - name: 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            target
+          key: macos-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: |
+            macos-${{ runner.arch }}-
+      - name: 取依赖
+        run: cargo fetch --locked
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - name: 测试
+        env:
+          RUST_TEST_THREADS: 2
+        run: cargo test --workspace --no-fail-fast --locked --offline
+      - name: 编
+        run: cargo build --release --locked --offline -p litemiyu
+      # rustls-native-certs 在 macOS 上读钥匙串，要链 Security、CoreFoundation 两个系统框架（LM-5 第 14 条）；别的只许是
+      # /usr/lib 下系统自带的库。查包（xtask dist-check）照同一张表查，这里先印出来看。
+      - name: 只依赖系统自带的库、跑得起
+        run: |
+          set -euo pipefail
+          program=target/release/litemiyu
+          file "$program"
+          otool -L "$program"
+          env -i HOME=/nonexistent "$program" --version
+          env -i HOME=/nonexistent "$program" --help > /dev/null
+      # 伪终端里起来、说一句、本机假服务器回完、/exit 退出（bench/smoke.py）。读按键的线程在 macOS 上等的是伪终端从端的 poll(2)
+      # （LM-5 第 10 条），这一步连同下一步的空闲 CPU 是在真伪终端上验它。
+      - name: 冒烟
+        run: python3 -I bench/smoke.py target/release/litemiyu
+      # 起来以后闲 5 秒，读按键的线程不该转：poll(2) 要是对伪终端交回 POLLNVAL，这条线程会一直醒、占满一个核。
+      - name: 空闲时不转
+        run: |
+          python3 -I - target/release/litemiyu <<'EOF'
+          import os, subprocess, sys, tempfile
+          sys.path.insert(0, "bench")
+          import fake_model, pty_run
+          program = os.path.abspath(sys.argv[1])
+          with tempfile.TemporaryDirectory(prefix="litemiyu-idle-") as root:
+              env = fake_model.home(root, fake_model.start())
+              pid, fd = pty_run.spawn([program], env)
+              try:
+                  out = pty_run.pump(fd, 3.0)
+                  if "❯".encode() not in out:
+                      sys.exit("没画出输入框")
+                  before = subprocess.run(["ps", "-o", "time=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+                  pty_run.pump(fd, 5.0)
+                  after = subprocess.run(["ps", "-o", "time=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+              finally:
+                  pty_run.kill(pid, fd)
+          def seconds(text):
+              total = 0.0
+              for part in text.split(":"):
+                  total = total * 60 + float(part)
+              return total
+          used = seconds(after) - seconds(before)
+          print(f"闲 5 秒用了 {used:.2f} 秒 CPU（{before} → {after}）")
+          if used > 0.5:
+              sys.exit("闲着也在转：读按键的线程多半在空转")
+          EOF
+      # 不进全屏说一句（`litemiyu ask`），连本机明文的假服务器。
+      - name: ask
+        run: |
+          python3 -I - target/release/litemiyu <<'EOF'
+          import os, subprocess, sys, tempfile
+          sys.path.insert(0, "bench")
+          import fake_model
+          program = os.path.abspath(sys.argv[1])
+          with tempfile.TemporaryDirectory(prefix="litemiyu-ask-") as root:
+              env = fake_model.home(root, fake_model.start())
+              env["PATH"] = "/usr/bin:/bin"
+              done = subprocess.run([program, "ask", "你好"], env=env, capture_output=True, text=True, timeout=60)
+          print(done.stdout)
+          print(done.stderr, file=sys.stderr)
+          if done.returncode != 0 or fake_model.ANSWER[-1] not in done.stdout:
+              sys.exit(f"ask 没成：退出码 {done.returncode}")
+          EOF

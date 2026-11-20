@@ -1,0 +1,1 @@
+{"at":"2026-09-25T21:00:00.000Z","kind":"model.changed","turn":143,"by":{"kind":"kernel"},"cause":"cmd-2e30","body":{"ref":"deepseek/deepseek-v4","endpoint":"deepseek","model":"deepseek-v4","effort":{"level":"high","from":"session"},"limits":{"window":1000000,"compaction_line":850000},"why":"turn"}}

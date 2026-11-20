@@ -1,0 +1,625 @@
+{
+  "tips": [
+    "Ctrl+R browses your input history",
+    "/ opens the command list",
+    "Shift+Enter starts a new line",
+    "↑ brings back what you last sent",
+    "Ctrl+S stashes this text, press again to get it back",
+    "Drag to select text, it copies on release",
+    "PgUp and PgDn scroll the conversation",
+    "Ctrl+Z suspends, fg brings it back",
+    "/undo undoes the last turn, /restore brings it back",
+    "With background commands running, ↓ on an empty input opens the panel",
+    "Ctrl+G writes this message in your editor",
+    "/delete deletes this session",
+    "/jump goes back to something you said"
+  ],
+  "queued_withdraw": "click to take back",
+  "copied": "Copied {count} character(s)",
+  "copy_failed": "Couldn't copy: {reason}",
+  "nothing_to_copy": "No reply to copy yet",
+  "core_failed": "Can't connect to the core: {reason}",
+  "loop_stopped": "The loop stopped when the window was closed. Run /loop to start it again",
+  "refused": "The core refused: {reason}",
+  "editing": " Editing your last message · Esc to cancel ",
+  "interrupted": "Interrupted",
+  "failed": "Error: {reason}",
+  "reason_with": "{head}: {message}",
+  "status_hints": {
+    "402": "Out of credit",
+    "404": "Not found: check the endpoint address and the model name",
+    "429": "Rate limited or out of credit, try again later"
+  },
+  "retry_after": {
+    "hints": {
+      "402": "Out of credit; back in about {wait}",
+      "429": "Rate limited or out of quota; back in about {wait}"
+    },
+    "cooling": "All models are cooling down; back in about {wait}",
+    "seconds": [
+      "{n} second",
+      "{n} seconds"
+    ],
+    "minutes": [
+      "{n} minute",
+      "{n} minutes"
+    ],
+    "hours": [
+      "{n} hour",
+      "{n} hours"
+    ],
+    "days": [
+      "{n} day",
+      "{n} days"
+    ]
+  },
+  "retry": "Retry {attempt}/{limit}: {message}",
+  "done": "{time} · {endpoint}/{model} · {elapsed}",
+  "speed": "{rate} tok/s",
+  "thinking": "Thinking",
+  "thought": "Thought",
+  "prepare": "Preparing {name}",
+  "on_session": "session {id}",
+  "via": "{name} ({via})",
+  "to_parent": "parent session",
+  "attached": "Attached: {names}",
+  "to_bottom": "Jump to bottom (Ctrl+End) ↓",
+  "omitted": "{count} line(s) omitted",
+  "shell": {
+    "placeholder": "Type a command to run",
+    "no_attachments": "Commands can't carry attachments",
+    "running": "Running",
+    "exited": "Exit {code} · {elapsed}",
+    "signal": "Signal {signal} · {elapsed}",
+    "timed_out": "Timed out (120s)",
+    "interrupted": "Interrupted",
+    "aborted": "LiteMiyu exited before it finished"
+  },
+  "summary": {
+    "ran": [
+      "Ran 1 command",
+      "Ran {count} commands"
+    ],
+    "used": [
+      "Used 1 tool",
+      "Used {count} tools"
+    ],
+    "made": [
+      "Made 1 edit",
+      "Made {count} edits"
+    ],
+    "edits": [
+      "1 edit",
+      "{count} edits"
+    ],
+    "tools": [
+      "1 tool",
+      "{count} tools"
+    ],
+    "thoughts": [
+      "1 thought",
+      "{count} thoughts"
+    ],
+    "errors": [
+      "1 err",
+      "{count} err"
+    ],
+    "reports": [["1 background command finished", "{count} background commands finished"], ["1 background task finished", "{count} background tasks finished"], ["1 report", "{count} reports"]],
+    "thought_for": "Thought for {elapsed}",
+    "spawned": [
+      "Spawned 1 agent",
+      "Spawned {count} agents"
+    ],
+    "messaged": [
+      "Messaged 1 agent",
+      "Messaged {count} agents"
+    ],
+    "messaged_sessions": [
+      "Messaged 1 session",
+      "Messaged {count} sessions"
+    ],
+    "agents": [
+      "1 agent",
+      "{count} agents"
+    ],
+    "messages": [
+      "1 message",
+      "{count} messages"
+    ]
+  },
+  "home_placeholder": "/ opens the command list",
+  "ignored": {
+    "lead": "These entries are invalid and were ignored: {list}",
+    "settings": "setting {names}",
+    "mcp": "MCP server {names}",
+    "skills": "skill {names}",
+    "join": "; ",
+    "names_join": ", ",
+    "more": "{names} and {rest} more"
+  },
+  "exit_hint": "Press Ctrl+D to exit",
+  "closing": "Exiting: saving the session and settings… (up to 3 s)",
+  "settings_not_saved": "Couldn't save settings: {why}",
+  "input_cleared": "Cleared · ↑ to bring it back",
+  "side_jumps": "Jump to",
+  "colors_not_recorded": "Couldn't save the terminal colors: {error}",
+  "open": {
+    "refused": "Won't open this kind of address: {url}",
+    "missing": "File not found: {path}",
+    "failed": "Can't open it: {reason}",
+    "no_program": "No program can open it: {path}"
+  },
+  "esc_hint": "Press Esc again to interrupt",
+  "switching": "Switching sessions",
+  "stashed": "> stashed",
+  "no_clear_running": "Can't clear the screen while a reply is running",
+  "icons_changed": "Icons: {name}",
+  "markdown": {
+    "image": "[image: ",
+    "details": "Details",
+    "details_marks": [
+      "▶ ",
+      "▼ "
+    ],
+    "bullets": [
+      "▪",
+      "•",
+      "◦"
+    ]
+  },
+  "refusal_hints": {
+    "path_unreadable": "Can't find or read that directory",
+    "not_a_directory": "That's a file, not a directory",
+    "path_forbidden": "That can't be a workspace",
+    "owner_only": "Owner only",
+    "session_not_found": "That session no longer exists",
+    "archived": "This is an archive and can't be continued",
+    "nothing_to_title": "Nothing to title yet",
+    "nothing_to_delete": "No session to delete",
+    "nothing_to_export": "No session to export yet",
+    "nothing_to_rename": "No session yet; say something first, then rename",
+    "nothing_to_delete": "No session to delete",
+    "nothing_to_recap": "Nothing to recap yet",
+    "recap_failed": "The recap could not be written, try again",
+    "nothing_to_compact": "Not enough context",
+    "nothing_to_stop": "Nothing is running",
+    "nothing_to_clear": "The context is empty",
+    "not_redoable": "Can't redo",
+    "empty_message": "Nothing left after the edit",
+    "unknown_job": "That task has already ended",
+    "nothing_to_unrevert": "Nothing to restore",
+    "nothing_to_revert": "Nothing to undo",
+    "turn_running": "Still replying: interrupt first, or wait for it to finish",
+    "id_reused": "This request id was already used with different parameters. Use a new id",
+    "unknown_turn": "Can't find the turn to undo",
+    "restoring": "The last undo or restore is still in progress, one moment",
+    "shell_unavailable": "Shell commands aren't available in this session",
+    "session_unavailable": "The session can't be read right now. Please try again later",
+    "session_read_only": "This session is view-only and can't continue: type /new to start a new one",
+    "unknown_command": "No such command"
+  },
+  "models": {
+    "replaced": "↻ The pinned model is gone, back to the default: {from} → {to}"
+  },
+  "done_usage": " · {tokens}(C{percent}%)",
+  "model_panel": {
+    "title": "Models",
+    "count": "  {count}",
+    "query": " · Search: ",
+    "hint": "↑/↓ select · Enter switch · Esc close",
+    "hint_vim": "/ search · j/k select · Enter switch · Esc close",
+    "searching": "Type to search · Ctrl+J/K select · Enter done · Esc cancel",
+    "loading": "Reading models…",
+    "empty": "No matching models",
+    "no_key": "no key",
+    "refuse_no_key": "This model has no key"
+  },
+  "undo": {
+    "undone": "Undone",
+    "restore_hint": "/restore to bring it back",
+    "undo_compactions": "Undid a compaction: the context is back to before it",
+    "undo_clears": "Undid a clear: the context is back to before it",
+    "stopped_jobs": "Stopped {count} task(s)"
+  },
+  "export": {
+    "saved": "Exported to {path} ({size})",
+    "failed": "Export failed: {reason}"
+  },
+  "rename": {
+    "retitling": "Retitling…",
+    "done": "Renamed: {title}",
+    "removed": "Title removed",
+    "too_long": "Titles are at most {max} characters"
+  },
+  "effort": {
+    "title": "Thinking effort · {model}",
+    "loading_title": "Thinking effort",
+    "hint": "↑/↓ select · Enter switch · Esc close",
+    "default": "Follow settings",
+    "loading": "Reading models…",
+    "none": "This model has no effort levels to choose"
+  },
+  "menu": {
+    "title": "Commands",
+    "count": " {count}"
+  },
+  "file_block": {
+    "file": "[{name}]",
+    "folder": "[{name}/]"
+  },
+  "compaction": {
+    "triggered": "Context compaction started",
+    "progress": "Compacting the context",
+    "written": " {written}",
+    "percent": " {percent}%",
+    "done": "Context compacted: {before} → {after} tokens",
+    "done_mark": "● ",
+    "cleared": "Context cleared",
+    "failed": "· Compaction failed: {reason}",
+    "called_a_tool": "The summary request called a tool",
+    "isolating": "· The summary request called a tool, compacting again without tools",
+    "paused_failures": "· Auto-compaction failed {n} times in a row and is paused: compact manually, switch models, or start a new session",
+    "paused_too_large": "· Entry {entry} is too large and fills the context right after compaction; auto-compaction is paused",
+    "paused": "· Auto-compaction is paused: compact manually, switch models, or start a new session"
+  },
+  "error_classes": {
+    "output_limit": "Reply exceeded the output limit",
+    "retryable": "Temporary error",
+    "rate_limited": "Rate limited",
+    "context_too_long": "Context too long",
+    "auth": "Authentication failed",
+    "no_model": "No usable model",
+    "cooling": "All models are cooling down",
+    "content_policy": "Blocked by the content policy",
+    "bad_stream": "Malformed reply stream",
+    "empty_reply": "Empty reply",
+    "bad_summary": "Couldn't get a summary",
+    "quota": "Out of quota",
+    "compaction_paused": "Auto-compaction is paused",
+    "stalled": "The model stopped responding",
+    "other": "Model error"
+  },
+  "usage_cell": {
+    "context": "{used}/{window}({percent}%)",
+    "total": "Σ{tokens}(C{percent}%)",
+    "failed": "Context compaction failed",
+    "over": "Context exceeds the window",
+    "compact": "Compact",
+    "compacting": "Compacting context"
+  },
+  "status": {
+    "new_title": "New session",
+    "keys": {
+      "id": "Session ID",
+      "cwd": "Working directory",
+      "model": "Model",
+      "context": "Context",
+      "compaction": "Compaction",
+      "usage": "Usage",
+      "hit": "Cache hits",
+      "cost": "Spent"
+    },
+    "effort": "effort {effort}",
+    "window": "window {window}",
+    "average": "avg {rate} tok/s",
+    "context": "{used} / {window} ({percent}%)",
+    "compactions": "{n} times",
+    "compaction_line": "auto at {line}",
+    "total": "{tokens} tokens in all",
+    "split": "in {input} · out {output}",
+    "aux": "side requests {tokens}",
+    "breaks": "cache broke {n} times",
+    "hint": "↑/↓ scroll · c copy · Esc close"
+  },
+  "side": {
+    "id": "#{id}",
+    "cwd": "Workspace",
+    "context": "Context",
+    "context_value": "{used} / {window} · {percent}%",
+    "compactions": "Compactions: {n}",
+    "usage": "Usage",
+    "total": "{tokens} tokens in total",
+    "split": "In {input} · Out {output}",
+    "hit": "Cache hits {percent}%",
+    "breaks": "Cache breaks: {n}",
+    "cost": "Spent {amounts}"
+  },
+  "sessions": {
+    "title": "Sessions",
+    "count": "  {count}",
+    "query": " · Search: ",
+    "hint": "↑/↓ select · Enter switch · Space tick · Ctrl+D delete · Esc close",
+    "hint_vim": "/ search · j/k select · Enter switch · Space tick · Ctrl+D delete · Esc close",
+    "searching": "Type to search · Ctrl+J/K select · Enter done · Esc cancel",
+    "loading": "Reading sessions…",
+    "empty": "No matching sessions",
+    "now": "just now",
+    "minutes": "{n} min ago",
+    "hours": "{n} h ago",
+    "days": "{n} d ago",
+    "side_recent": "Recent sessions",
+    "untitled": "Untitled session",
+    "open_elsewhere": "Open in another window",
+    "busy_elsewhere": "Busy in another window",
+    "closed": "Not open",
+    "taken": "This session is open in another window",
+    "open_failed": "Could not open this session: {reason}",
+    "read_only": "The session log is broken at line {line}; only the part before it can be viewed and the session can't continue. Start a new session to go on.",
+    "read_only_placeholder": "This session is view-only. Type /new to start a new one",
+    "unavailable_retry": "The session can't be read right now; retrying in {wait}",
+    "unavailable_gave_up": "The session can't be read right now. Please try again later",
+    "list_failed": "Could not list sessions: {reason}",
+    "deleted": "Deleted \"{title}\"",
+    "ticked": " · {count} ticked",
+    "delete_again": "Press Ctrl+D again to delete \"{title}\"",
+    "delete_many": "Press Ctrl+D again to delete {count} sessions",
+    "deleted_many": "Deleted {count} sessions",
+    "groups": ["Recent", "Past 7 days", "Past 30 days", "Older"],
+    "delete_running": "A turn is running: interrupt it before deleting this session",
+    "delete_failed": "Couldn't delete this session: {reason}",
+    "new_tier": "/new only takes bare (no features) or full (all features)"
+  },
+  "history": {
+    "title": "History",
+    "count": "  {count}",
+    "placeholder": "Filter history…",
+    "empty": "No matches",
+    "lines": " · +{count} line(s)",
+    "more": "⋮ {count} more line(s)",
+    "hints": "↑/↓ select · Enter fill in · Esc close",
+    "hints_vim": "/ search · j/k select · Enter fill in · Esc close",
+    "searching": "Type to search · Ctrl+J/K select · Enter done · Esc cancel",
+    "now": "just now",
+    "minutes": "{n} min ago",
+    "hours": "{n} h ago",
+    "days": "{n}d ago",
+    "none": "Nothing sent yet"
+  },
+  "jump": {
+    "title": "Jump",
+    "count": "  {count}",
+    "placeholder": "Filter what you said…",
+    "empty": "No matches",
+    "lines": " · +{count} line(s)",
+    "more": "⋮ {count} more line(s)",
+    "hints": "↑/↓ select · Enter jump · Esc close",
+    "hints_vim": "/ search · j/k select · Enter jump · Esc close",
+    "searching": "Type to search · Ctrl+J/K select · Enter done · Esc cancel",
+    "now": "just now",
+    "minutes": "{n} min ago",
+    "hours": "{n} h ago",
+    "days": "{n}d ago",
+    "none": "Nothing said in this session yet"
+  },
+  "help": {
+    "title": "Help",
+    "hint": "↑/↓ scroll · Esc close",
+    "commands": "Commands",
+    "keys_title": "Keys",
+    "keys": [
+      [
+        "Enter",
+        "Send; runs the selected item when a list is open"
+      ],
+      [
+        "Shift+Enter, Ctrl+J",
+        "New line (Alt+Enter works too)"
+      ],
+      [
+        "↑ ↓",
+        "Browse input history from the first or last line"
+      ],
+      [
+        "Ctrl+R",
+        "Input history list"
+      ],
+      [
+        "Ctrl+A",
+        "Go to the start of the input"
+      ],
+      [
+        "Ctrl+← Ctrl+→",
+        "Jump by word"
+      ],
+      [
+        "Ctrl+W, Alt+Backspace",
+        "Delete the previous word"
+      ],
+      [
+        "Ctrl+C",
+        "Copy the selection; clear the input (↑ to bring it back); interrupt while a reply is running"
+      ],
+      [
+        "Ctrl+G",
+        "Write this message in your editor ($VISUAL, $EDITOR)"
+      ],
+      [
+        "Ctrl+Enter",
+        "While answering, send what is queued now (and the input)"
+      ],
+      [
+        "Esc Esc",
+        "Interrupt a running reply and send queued messages"
+      ],
+      [
+        "Ctrl+S",
+        "Stash the input, press again to get it back"
+      ],
+      [
+        "Ctrl+V",
+        "Paste"
+      ],
+      [
+        "↓ (empty input)",
+        "Move to the background button and the subagent rows"
+      ],
+      [
+        "PgUp PgDn",
+        "Scroll the conversation"
+      ],
+      [
+        "Ctrl+End",
+        "Back to the bottom of the transcript"
+      ],
+      [
+        "Ctrl+L",
+        "Clear the screen"
+      ],
+      [
+        "Ctrl+Z",
+        "Suspend, fg to come back"
+      ],
+      [
+        "Ctrl+D",
+        "Exit when the input is empty"
+      ]
+    ]
+  },
+  "drawer": {
+    "agent": "Subagent {name}",
+    "asking": "{who} is asking",
+    "preview": "Preview",
+    "hazard": "Dangerous command",
+    "auto_deny": "Auto-deny in {time}",
+    "answered_tab": " ✓",
+    "review_tab": "Review",
+    "pointer": "› ",
+    "unchecked": "[ ] ",
+    "checked": "[✓] ",
+    "other": "Type another answer",
+    "notes_label": "Notes",
+    "decisions": [
+      "Allow once",
+      "Don't ask again for this folder",
+      "Don't allow"
+    ],
+    "decision_prefix": "Don't ask again for commands starting with `{prefix}` in this folder",
+    "reason_hint": "Add a reason (optional)",
+    "reason_key": "n write a reason",
+    "command_above": "↑ {n} more above",
+    "command_below": "↓ {n} more below",
+    "keys_scroll": "Ctrl+J/K scroll command",
+    "keys_scroll_preview": "Ctrl+J/K scroll preview",
+    "preview_below": "{n} more below",
+    "access": {
+      "execute": "Run a command",
+      "write": "Wants to write {count} file(s)",
+      "read": "Wants to read {count} file(s)",
+      "exec": "Wants to run {tool}"
+    },
+    "access_other": "Wants to use {tool}",
+    "outside": "outside the workspace",
+    "private": "private directory",
+    "protected": "protected",
+    "unanswered": "Unanswered",
+    "keys": "↑/↓ select · Enter submit · n notes · Esc ×2 cancel",
+    "keys_multi": "↑/↓ select · Space check · Enter submit · n notes · Esc ×2 cancel",
+    "keys_approve": "↑/↓ select · Enter confirm · Esc ×2 cancel",
+    "keys_review": "Enter submit · Esc ×2 cancel",
+    "keys_edit": "Enter save · Esc stop editing",
+    "keys_reason": "Enter submit · Esc stop editing",
+    "keys_tabs": " · ←/→ switch question",
+    "answered_head": "You answered {n} question(s)",
+    "answered_line": "{label} → {answer}",
+    "notes_suffix": " (notes: {notes})",
+    "denied_with": "Not allowed · {reason}",
+    "cancel_hint": "Press Esc again to cancel"
+  },
+  "clipboard_unreadable": "Can't read the clipboard: use your terminal's own paste (Ctrl+Shift+V in kitty)",
+  "clipboard_text_only": "Only text can be pasted here",
+  "clipboard_empty": "The clipboard is empty",
+  "paste_label": "[pasted {lines} line(s)]",
+  "loops": {
+    "title": "Loop",
+    "next": "Next {time}",
+    "dynamic": "Dynamic interval",
+    "every": [
+      "Every {n} s",
+      "Every {n} min",
+      "Every {n} h",
+      "Every {n} d"
+    ]
+  },
+  "jobs": {
+    "from_session": "Message from session {id} \"{title}\"",
+    "from_session_untitled": "Message from session {id}",
+    "from_agent": "Message from subagent {job}",
+    "from_main": "Message from the main session",
+    "received": "{from} · {text}",
+    "peer_who": "{id} \"{title}\" ",
+    "peer_who_untitled": "{id} ",
+    "peer_idle": "Session {who}replied",
+    "peer_expired": "Session {who}didn't go idle within 12 hours; stopped waiting",
+    "peer_gone": "Session {who}is gone; stopped waiting",
+    "peer_closed": "Session {who}is not open; stopped waiting",
+    "peer_other": "Session {who}· {reason}",
+    "already_ended": "This task has already ended",
+    "fell_behind": "Some of a subagent's messages may be missing",
+    "button": "Background: {count}",
+    "title": "Background",
+    "active": "{count} running",
+    "hint": "↑/↓ select · Enter expand · x stop · Esc close",
+    "running": "(running {elapsed})",
+    "done": "(done {elapsed})",
+    "failed": "(failed · exit code {code})",
+    "killed": "(failed · signal {signal})",
+    "stopped": "(stopped)",
+    "undone": "(stopped by undo)",
+    "restarted": "(stopped when LiteMiyu last exited)",
+    "timed_out": " (stopped: time limit)",
+    "too_large": " (stopped: output too large)",
+    "too_chatty": " (stopped: output too frequent)",
+    "done_note": "Background command done · {title} · {elapsed}",
+    "failed_note": "Background command failed · {title} · exit code {code}",
+    "killed_note": "Background command failed · {title} · signal {signal}",
+    "stopped_note": "Background command stopped · {title}{why}",
+    "agent_note": "Background task done · {title} · {elapsed}",
+    "agent_stopped_note": "Background task stopped · {title}{why}",
+    "why_undone": " · stopped by undo",
+    "why_restarted": " · stopped when LiteMiyu last exited",
+    "why_timed_out": " · stopped: time limit",
+    "why_too_large": " · stopped: output too large",
+    "why_too_chatty": " · stopped: output too frequent",
+    "ok_mark": "● ",
+    "fail_mark": "✗ ",
+    "stop_mark": "● ",
+    "lines_mark": "◆ ",
+    "lines_note": "Watch · {title} · {lines} lines",
+    "no_output": "No output",
+    "more_ended": "{count} collapsed",
+    "less_ended": "Collapse finished ones",
+    "main": "Main session",
+    "finished": "Done",
+    "more": "{count} more",
+    "doing_thinking": "Thinking",
+    "doing_replying": "Replying",
+    "child_tag": " Subagent · {title} "
+  },
+  "rescue": {
+    "tag": " Rescue mode ",
+    "config_unreadable": "Couldn't read the config ({why}); using the provider from the environment and the command line",
+    "no_key": "No key given ({name}); requests go without authentication",
+    "unavailable": "Not available in rescue mode: nothing is saved to disk",
+    "missing": "litemiyu --rescue: no usable model; missing {missing}.",
+    "missing_sep": ", ",
+    "missing_config": "The config couldn't be read either: {why}",
+    "bad": "litemiyu --rescue: {name} is not valid.",
+    "help": [
+      "Usage: litemiyu [config] [--bare] [--rescue [--base-url <url>] [--model <name>]\n                [--api <api>]] | --version | --help",
+      "",
+      "  litemiyu            start a conversation (all features)",
+      "  litemiyu config     open the settings",
+      "  litemiyu --bare     first session without features: no tools, no context",
+      "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file and command tools;\n                      the session is not kept after closing",
+      "  litemiyu --version  print the version and exit (also -V)",
+      "",
+      "Rescue provider (command-line options override the environment, and both\noverride the config; with none given, models.chat from the config is used):",
+      "  LITEMIYU_RESCUE_BASE_URL  --base-url <url>   provider address; the driver adds\n                            the path (e.g. https://api.deepseek.com/v1)",
+      "  LITEMIYU_RESCUE_MODEL     --model <name>     model name",
+      "  LITEMIYU_RESCUE_API       --api <api>        openai-chat (default), anthropic,\n                                               openai-responses",
+      "  LITEMIYU_RESCUE_API_KEY   (environment only) key; without it requests carry\n                                               no authentication",
+      "",
+      "Example: LITEMIYU_RESCUE_API_KEY=sk-… litemiyu --rescue \\\n        --base-url https://api.deepseek.com/v1 --model deepseek-chat"
+    ]
+  }
+}

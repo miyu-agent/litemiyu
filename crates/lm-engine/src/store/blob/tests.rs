@@ -1,0 +1,363 @@
+//! blob 的测试：存了再取；放在哪；同一份存两遍；崩溃留下的临时文件；撞名；改名时目标已经有了；
+//! 读出来不对；读一段（施工 W-6），不跟 blob 目录里的链接（施工 SEC-3）；核对过、文件没变的不再算哈希（施工 V-24）；只核对、打开了
+//! 从某处读（施工 V-38）。
+
+use std::time::Duration;
+
+use super::*;
+use crate::store::test_support::Scratch;
+
+fn blobs_in(scratch: &Scratch) -> Blobs {
+    Blobs::new(scratch.path().join("blobs"))
+}
+
+#[test]
+fn what_is_put_comes_back() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    // 二进制：带 \0、\r\n，存进去什么，取出来就是什么。
+    let content = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\xff".to_vec();
+    let hash = blobs.put(&content).unwrap();
+    assert_eq!(hash, ContentHash::of(&content));
+    assert_eq!(blobs.get(&hash).unwrap(), content);
+    assert_eq!(fs::read(blobs.path(&hash)).unwrap(), content);
+    // 存完，临时文件都改了名，tmp/ 是空的。
+    let tmp = scratch.path().join("blobs").join("tmp");
+    assert_eq!(fs::read_dir(tmp).unwrap().count(), 0);
+}
+
+#[test]
+fn a_blob_lives_under_its_first_two_hex_digits() {
+    // 路径写死，不照代码算：「abc」的 SHA-256（FIPS 180-2 的测试值），放在 <前两位>/<64 位>，
+    // 文件名里没有 sha256: 的冒号。
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"abc").unwrap();
+    let hex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    let path = scratch.path().join("blobs").join("ba").join(hex);
+    assert_eq!(blobs.path(&hash), path);
+    assert_eq!(fs::read(&path).unwrap(), b"abc");
+}
+
+#[test]
+fn the_same_content_is_stored_once_and_freshened() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"same").unwrap();
+    let path = blobs.path(&hash);
+    // 先把修改时间设到很久以前，像一个快过宽限期的。
+    let long_ago = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(long_ago)
+        .unwrap();
+    assert_eq!(blobs.put(b"same").unwrap(), hash);
+    // 修改时间回到了现在附近；不比精确的值，三个平台的精度不一样。
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    let age = SystemTime::now()
+        .duration_since(modified)
+        .unwrap_or_default();
+    assert!(
+        age < Duration::from_secs(3600),
+        "没有刷成现在：{modified:?}"
+    );
+    // 只有一个文件。
+    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+    assert_eq!(blobs.get(&hash).unwrap(), b"same");
+}
+
+#[test]
+fn a_crash_before_the_rename_leaves_only_a_temp_file() {
+    // 崩在改名之前：tmp/ 里有一个写了一半的，最终的名字上什么都没有。
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let content = b"the whole picture";
+    let tmp = scratch.path().join("blobs").join("tmp");
+    fs::create_dir_all(&tmp).unwrap();
+    fs::write(tmp.join("1-0"), &content[..5]).unwrap();
+    let hash = ContentHash::of(content);
+    assert!(matches!(blobs.get(&hash), Err(BlobError::Missing(missing)) if missing == hash));
+    // 说的是英文，写进运行日志（施工 4-9 再补四中）。
+    let missing = blobs.get(&hash).unwrap_err().to_string();
+    assert_eq!(missing, format!("no blob {hash}"));
+    // 再存一遍，取得到完整的。
+    assert_eq!(blobs.put(content).unwrap(), hash);
+    assert_eq!(blobs.get(&hash).unwrap(), content);
+    // 崩溃留下的那个，回收的时候再清，现在不碰。
+    assert_eq!(fs::read(tmp.join("1-0")).unwrap(), &content[..5]);
+}
+
+#[test]
+fn a_taken_temp_name_is_skipped() {
+    let scratch = Scratch::new();
+    let dir = scratch.path();
+    fs::create_dir_all(dir).unwrap();
+    fs::write(dir.join("a"), "崩溃留下的").unwrap();
+    fs::write(dir.join("b"), "崩溃留下的").unwrap();
+    let mut names = ["a", "b", "c"].into_iter().map(String::from);
+    let (path, file) = create_temp(dir, || names.next().unwrap()).unwrap();
+    drop(file);
+    assert_eq!(path, dir.join("c"));
+    assert_eq!(fs::read_to_string(dir.join("a")).unwrap(), "崩溃留下的");
+    assert_eq!(fs::read_to_string(dir.join("b")).unwrap(), "崩溃留下的");
+}
+
+#[test]
+fn when_every_temp_name_is_taken_it_says_so_in_english() {
+    let scratch = Scratch::new();
+    let dir = scratch.path();
+    fs::create_dir_all(dir).unwrap();
+    fs::write(dir.join("a"), "崩溃留下的").unwrap();
+    let error = create_temp(dir, || "a".to_string()).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    // 说的是英文，写进运行日志（施工 4-9 再补四中）。
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "64 temporary file names in a row are taken in {}",
+            dir.display()
+        )
+    );
+}
+
+#[test]
+fn settling_onto_a_blob_that_is_already_there_is_fine() {
+    // 两个会话同时存同一份：改名的时候，目标已经有了。
+    let scratch = Scratch::new();
+    let dir = scratch.path();
+    fs::create_dir_all(dir).unwrap();
+    fs::write(dir.join("blob"), "内容").unwrap();
+    fs::write(dir.join("temp"), "内容").unwrap();
+    settle(&dir.join("temp"), &dir.join("blob")).unwrap();
+    assert!(!dir.join("temp").exists());
+    assert_eq!(fs::read_to_string(dir.join("blob")).unwrap(), "内容");
+    // 改名失败了（这里是临时文件已经没了），可目标在：也算成功。
+    settle(&dir.join("gone"), &dir.join("blob")).unwrap();
+    // 目标也不在：照实报错。
+    assert!(settle(&dir.join("gone"), &dir.join("nothing")).is_err());
+}
+
+#[test]
+fn a_blob_that_does_not_match_its_name_is_reported() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"original").unwrap();
+    let path = blobs.path(&hash);
+    fs::write(&path, "tampered").unwrap();
+    let error = blobs.get(&hash).unwrap_err();
+    assert!(matches!(&error, BlobError::Corrupt(corrupt) if *corrupt == hash));
+    // 报错写明是哪一个；不自动修，也不删。
+    assert!(error.to_string().contains(hash.as_str()), "{error}");
+    assert!(
+        error
+            .to_string()
+            .ends_with("does not match its name; left as it is"),
+        "{error}"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), "tampered");
+}
+
+/// 核对过的记下（施工 V-24）：同一个 `Blobs` 和从它拷出来的再取，文件一样长、修改时刻没变的不再算哈希；修改时刻、长短变了的
+/// 重新核对，坏了照报；另造的 `Blobs` 没记过，照算。一样长、修改时刻也一样的悄悄坏了查不出来：这是取舍，防的是文件被换、
+/// 被改，不防磁盘坏了一位（以前每次请求都把历史里的图重算一遍）。
+#[test]
+fn a_checked_blob_is_not_hashed_again_until_its_file_changes() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"original").unwrap();
+    assert_eq!(blobs.get(&hash).unwrap(), b"original");
+    let path = blobs.path(&hash);
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    let stamp = |at: SystemTime| {
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    };
+    fs::write(&path, b"tampere!").unwrap();
+    stamp(modified);
+    assert_eq!(
+        blobs.clone().get(&hash).unwrap(),
+        b"tampere!",
+        "拷出来的共用记下的：没变过，不再算"
+    );
+    assert!(
+        matches!(blobs_in(&scratch).get(&hash), Err(BlobError::Corrupt(_))),
+        "另造的没记过，照算"
+    );
+    stamp(modified + Duration::from_secs(5));
+    assert!(
+        matches!(blobs.get(&hash), Err(BlobError::Corrupt(_))),
+        "修改时刻变了，重新核对"
+    );
+    fs::write(&path, b"original").unwrap();
+    assert_eq!(blobs.get(&hash).unwrap(), b"original", "改回来的照样认");
+}
+
+#[test]
+fn read_range_reads_a_segment_and_stops_at_the_end() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"0123456789").unwrap();
+    assert_eq!(
+        blobs.read_range(&hash, 3, 4).unwrap(),
+        (b"3456".to_vec(), 10)
+    );
+    assert_eq!(
+        blobs.read_range(&hash, 8, 100).unwrap(),
+        (b"89".to_vec(), 10),
+        "length 超过剩下的，读到结尾就停"
+    );
+}
+
+#[test]
+fn read_range_past_the_end_is_empty_and_zero_length_only_reports_the_size() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"0123456789").unwrap();
+    assert_eq!(blobs.read_range(&hash, 20, 4).unwrap(), (Vec::new(), 10));
+    assert_eq!(blobs.read_range(&hash, 0, 0).unwrap(), (Vec::new(), 10));
+}
+
+#[test]
+fn read_range_of_an_unknown_blob_is_missing() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = ContentHash::of(b"never stored");
+    assert!(matches!(
+        blobs.read_range(&hash, 0, 4),
+        Err(BlobError::Missing(missing)) if missing == hash
+    ));
+}
+
+/// 读一段不跟 blob 目录里的链接（施工 SEC-3，外部审计 L-3）：blob 换成了指到别处的链接，读一段照没有它办，不交出那里的内容
+/// （整份取的 [`Blobs::get`] 核对哈希，本来就交不出）；数据根的路上经过一层链接的照旧读得到。
+#[test]
+fn read_range_does_not_follow_a_link_planted_in_the_blob_store() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let hash = blobs.put(b"stored").unwrap();
+    let secret = scratch.path().join("secret.txt");
+    fs::write(&secret, b"not a blob").unwrap();
+    fs::remove_file(blobs.path(&hash)).unwrap();
+    std::os::unix::fs::symlink(&secret, blobs.path(&hash)).unwrap();
+    let read = blobs.read_range(&hash, 0, 100);
+    assert!(
+        !matches!(&read, Ok((data, _)) if data == b"not a blob"),
+        "交出了链接指到的内容：{read:?}"
+    );
+    assert!(matches!(blobs.get(&hash), Err(BlobError::Corrupt(_))));
+    let via = scratch.path().join("via");
+    std::os::unix::fs::symlink(scratch.path().join("blobs"), &via).unwrap();
+    let kept = blobs.put(b"kept").unwrap();
+    assert_eq!(
+        Blobs::new(via).read_range(&kept, 0, 100).unwrap(),
+        (b"kept".to_vec(), 4),
+        "数据根的路上有链接照旧读得到"
+    );
+}
+
+/// 照文件存（施工 7-12 下）：和整份存的是同一个 blob，读到的每一段都交出来；已经有的照旧不重写。
+#[test]
+fn a_file_is_stored_as_the_same_blob_piece_by_piece() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    std::fs::create_dir_all(scratch.path()).unwrap();
+    let source = scratch.path().join("out.txt");
+    let content: Vec<u8> = (0..200_000u32).map(|n| (n % 251) as u8).collect();
+    std::fs::write(&source, &content).unwrap();
+    let mut seen = 0usize;
+    let hash = blobs
+        .put_file(&source, |bytes| seen += bytes.len())
+        .unwrap();
+    assert_eq!(hash, ContentHash::of(&content));
+    assert_eq!(seen, content.len(), "每一段都交出来");
+    assert_eq!(blobs.get(&hash).unwrap(), content);
+    assert_eq!(
+        blobs.put_file(&source, |_| {}).unwrap(),
+        hash,
+        "再存一次还是它"
+    );
+    assert!(
+        blobs
+            .put_file(&scratch.path().join("none"), |_| {})
+            .is_err()
+    );
+}
+
+/// 只核对、量大小，和打开了从某处读（施工 V-38）：和 [`Blobs::get`] 同一套核对；核对过、没变过的不再算；变过的打开时先整份
+/// 核对，坏了照报；没有的报没有。
+#[test]
+fn checking_and_opening_follow_the_same_rules_as_get() {
+    let scratch = Scratch::new();
+    let blobs = blobs_in(&scratch);
+    let content: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    let hash = blobs.put(&content).unwrap();
+    assert_eq!(blobs.check(&hash).unwrap(), 200_000);
+    let mut tail = Vec::new();
+    blobs
+        .open_at(&hash, 199_990)
+        .unwrap()
+        .read_to_end(&mut tail)
+        .unwrap();
+    assert_eq!(tail, content[199_990..]);
+    let path = blobs.path(&hash);
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    let mut tampered = content.clone();
+    tampered[7] ^= 1;
+    fs::write(&path, &tampered).unwrap();
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    assert_eq!(
+        blobs.check(&hash).unwrap(),
+        200_000,
+        "核对过、长短和修改时刻没变的不再算（同 V-24 的取舍）"
+    );
+    assert!(matches!(
+        blobs_in(&scratch).check(&hash),
+        Err(BlobError::Corrupt(_))
+    ));
+    assert!(matches!(
+        blobs_in(&scratch).open_at(&hash, 0),
+        Err(BlobError::Corrupt(_))
+    ));
+    fs::write(&path, b"short").unwrap();
+    assert!(
+        matches!(blobs.open_at(&hash, 0), Err(BlobError::Corrupt(_))),
+        "变过的打开时先整份核对"
+    );
+    let missing = ContentHash::of(b"never stored");
+    assert!(matches!(blobs.check(&missing), Err(BlobError::Missing(_))));
+    assert!(matches!(
+        blobs.open_at(&missing, 0),
+        Err(BlobError::Missing(_))
+    ));
+}
+
+/// 数据目录（blob 目录的上一层）被删了以后还在存的（后台命令收尾时存输出、会话停下以前最后一笔）：报错，不把数据目录连 blob
+/// 目录一起建回来（照 Miyu 施工 TMP-1；以前测试跑完 `/tmp` 里留下一堆只剩 `blobs/tmp` 的目录）。造会话时先 `prepare` 的照建。
+#[test]
+fn a_blob_put_after_the_data_directory_is_gone_creates_nothing() {
+    let scratch = Scratch::new();
+    let data = scratch.path().join("data");
+    let blobs = Blobs::new(data.join("blobs"));
+    let source = scratch.path().join("output");
+    fs::write(&source, "job output").unwrap();
+    assert_eq!(blobs.put(b"x").unwrap_err().kind(), io::ErrorKind::NotFound);
+    assert_eq!(
+        blobs.put_file(&source, |_| {}).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
+    assert!(!data.exists(), "数据目录没建回来");
+    blobs.prepare().unwrap();
+    let hash = blobs.put(b"x").unwrap();
+    assert_eq!(blobs.get(&hash).unwrap(), b"x");
+}

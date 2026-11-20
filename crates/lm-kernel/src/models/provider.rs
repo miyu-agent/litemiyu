@@ -1,0 +1,441 @@
+//! 一家供应商照这一轮的配置和档案合出来的样子（`docs/blueprint/models.md`「怎么走」第一条，施工 8-6、8-7），和一个会话这一次
+//! 请求发给谁（第四条 8-6 那一半）：
+//!
+//! 1. 驱动、地址：先看手写的，没写的看档案（`[providers.<目录里的编号>]`：写了 `catalog` 的是它，没写的是这一家自己的
+//!    编号）。档案也没有的，看它对上的目录里那一家（[`crate::models::matching::recognize`]）的 `api` 和 `npm`，`npm` 照档案的
+//!    `[npm]` 表换成驱动（8-7）。都没有的，这一家用不了，别的照常。认哪一家、取那几格只经查目录的接口
+//!    （[`crate::models::catalog::CatalogLookup::provider_side`]，施工 V-25 上）。
+//! 2. 开关：档案的，没有的用驱动的默认（施工 L-2 登记过手写的 `strict_tools`，施工 FL-1 拆掉了：工具一律全量）。
+//! 3. key：一家一个（施工 8-25）。取不到值的这一家不当候选（由执行器取）。
+//! 4. 本机的服务：手写的 `local`，没写的照地址在不在本机（第二条第 12 条，8-7）。手写的地址是环境变量的引用时查不出来，
+//!    照不在本机算，想算本机的自己写 `local = true`（施工 8-6b）。
+//! 5. 没有模型：`models.chat` 没配、引用解析不出，交 [`NoModel`]，原话照「出错」那张表。引用指到一个模型还是一个池，在
+//!    [`crate::models::reference::resolve`]（施工 8-8）。
+//!
+//! 地址可能是写死的，也可能是一个环境变量的引用（施工 8-6b，[`crate::config::Address`]）：这里只带着引用走，不解出地址
+//! 本身——对目录、本机的服务这两处用得到字面地址的，查不到的就当没有；真要连供应商的那一刻才经 [`resolve_base_url`]
+//! 解出来（`route.rs`、`route/lists.rs`），地址因此不会被这一层的任何输出（`model.list`、`config.get`）带出去。
+//!
+//! 模型的资料照 [`crate::models::facts`]。
+//!
+//! 一家里的模型可以各走各的驱动（施工 8-14，`drivers/openai-chat.md`「接 opencode Zen」）：真发的那个模型照
+//! [`Provider::for_model`] 换成它的样子——驱动照「手写的供应商 `driver` > 第 1、2 层对上的模型的 `npm` > 档案 > 目录里那一家的
+//! `npm`」，`openai-chat` 的思考回传照目录的 `interleaved`（档案写了 `reasoning` 的照档案）。另配的头照档案，值是模板
+//! （[`crate::models::headers`]）。
+
+use crate::config::secret::{Reference as KeyRef, Secret};
+use crate::config::{Address, Values};
+use std::collections::BTreeMap;
+
+use crate::drivers::openai_chat::{Compat, ReasoningField, ReasoningReplay};
+use crate::drivers::{Anthropic, DriverTexts, OpenAiChat, OpenAiResponses};
+
+use crate::models::facts::Wire;
+use crate::models::headers;
+use crate::models::knowledge::Knowledge;
+use crate::models::matching::Recognized;
+use crate::models::profile::ImageTokens;
+use crate::models::settings::{ProviderSettings, UseSettings};
+
+/// 认得的驱动。8-6 有 OpenAI 兼容的对话接口，8-12 加 Anthropic 的消息接口，8-13 加 OpenAI 的 Responses 接口。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Driver {
+    /// `openai-chat`。
+    OpenAiChat,
+    /// `anthropic`（施工 8-12）。
+    Anthropic,
+    /// `openai-responses`（施工 8-13）。
+    OpenAiResponses,
+}
+
+impl Driver {
+    /// 配置、档案里驱动的写法认成现在有的哪一种（施工 8-11 从 [`provider`] 里拿出来，`provider.catalog` 的 `supported` 也照
+    /// 它）；不认识的（档案里写了别的、目录的包名换出来的还没有的）是空的。
+    pub fn parse(name: &str) -> Option<Driver> {
+        match name {
+            "openai-chat" => Some(Driver::OpenAiChat),
+            "anthropic" => Some(Driver::Anthropic),
+            "openai-responses" => Some(Driver::OpenAiResponses),
+            _ => None,
+        }
+    }
+
+    /// 配置、档案里的写法。
+    pub fn as_str(&self) -> std::borrow::Cow<'static, str> {
+        match self {
+            Driver::OpenAiChat => "openai-chat".into(),
+            Driver::Anthropic => "anthropic".into(),
+            Driver::OpenAiResponses => "openai-responses".into(),
+        }
+    }
+
+    /// 造这种驱动（施工 8-12）：`openai-chat` 照开关 `compat`，`anthropic`、`openai-responses` 没有开关；占位是 `texts`。
+    pub fn build(&self, compat: Compat, texts: DriverTexts) -> Box<dyn crate::drivers::Driver> {
+        match self {
+            Driver::OpenAiChat => Box::new(OpenAiChat::new(compat, texts)),
+            Driver::Anthropic => Box::new(Anthropic::new(texts)),
+            Driver::OpenAiResponses => Box::new(OpenAiResponses::new(texts)),
+        }
+    }
+
+    /// 一定要写输出上限（`models.md`「驱动要守的约定」第 11 条，施工 8-12）：`anthropic` 是，路由替它照模型资料填。
+    pub fn needs_max_output(&self) -> bool {
+        *self == Driver::Anthropic
+    }
+}
+
+/// 一家供应商这一轮的样子。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provider {
+    /// 编号：记进 `model.called` 的 `endpoint`。
+    pub id: String,
+    /// 驱动。
+    pub driver: Driver,
+    /// 地址：写死的，或者一个环境变量的引用（施工 8-6b）。真要连供应商时经 [`resolve_base_url`] 解出来。
+    pub base_url: Address,
+    /// `openai-chat` 的开关。
+    pub compat: Compat,
+    /// key（施工 8-25：一家一个）。没写的不带认证头。
+    pub key: Option<KeyRef>,
+    /// 一张图怎么算。
+    pub images: Option<ImageTokens>,
+    /// 查档案时照哪一家：写了 `catalog` 的是它，没写的是编号。
+    pub catalog: String,
+    /// 它在目录里是哪一家（第二条第 4 条第 2 层，8-7）：没认出来、还没有目录的没有。
+    pub recognized: Option<Recognized>,
+    /// 本机的模型服务：价格当 0（8-7）。
+    pub local: bool,
+    /// 驱动是配置里手写的（施工 8-14）：压过目录里模型的 `npm`。
+    pub driver_written: bool,
+    /// 驱动从哪来（施工 8-26）：配置手写的、档案的、目录的，都没有的是默认的 `openai-chat`。`model.list` 的 `driver_from`。
+    pub driver_from: DriverFrom,
+    /// 档案写了思考怎么回传（施工 8-14）：压过目录的 `interleaved`。
+    pub reasoning_written: bool,
+    /// 档案另配的头：名字 → 模板（施工 8-14，[`crate::models::headers`]）。
+    pub headers: BTreeMap<String, String>,
+    /// 档案点名的占位工具（施工 8-14 补）：工具面里缺这几件时补同名的占位声明（`models.md`「八、opencode Zen」第 2 条）。
+    pub placeholders: Vec<String>,
+}
+
+impl Provider {
+    /// 能不能照开关关思考（「怎么走」第十一条第 1 条，施工 8-12）：`openai-chat` 照档案写没写开关（`compat.toggle`），
+    /// `anthropic` 的开关是接口自带的（`thinking` 写 `disabled`）；`openai-responses` 没有开关，`off` 只从目录的 `none` 来（8-13）。
+    pub fn switchable(&self) -> bool {
+        match self.driver {
+            Driver::OpenAiChat => self.compat.toggle.is_some(),
+            Driver::Anthropic => true,
+            Driver::OpenAiResponses => false,
+        }
+    }
+
+    /// 照这一家的驱动和开关造一个驱动，占位是 `texts`（施工 8-12）。
+    pub fn build(&self, texts: DriverTexts) -> Box<dyn crate::drivers::Driver> {
+        self.driver.build(self.compat.clone(), texts)
+    }
+
+    /// 发给模型 `model` 时这一家的样子（施工 8-14）：`wire` 是这个模型照目录怎么说话（只取第 1、2 层对上的，
+    /// [`crate::models::facts::Facts::wire`]），`npm` 是档案的 `[npm]` 表。
+    ///
+    /// - 驱动：手写的照手写的；不然模型写了自己的包名的照它换，换不出现在有的驱动的，这个模型用不了；都没有的照这一家的。
+    /// - 开关：走 `openai-chat`、档案没写 `reasoning` 的，目录写了交错思考的照它回传（`always` 是真的），认不出的字段照旧。
+    ///
+    /// # Errors
+    ///
+    /// 模型的包名换不出现在有的驱动：`model "<供应商>/<模型>" needs driver "<它>", which is not available yet`（「它」是 `[npm]`
+    /// 换出来的名字，表里没有的是包名本身）。
+    pub fn for_model(
+        &self,
+        model: &str,
+        wire: &Wire,
+        npm: &BTreeMap<String, String>,
+    ) -> Result<Provider, NoModel> {
+        let mut speaking = self.clone();
+        if let Some(package) = wire.npm.as_deref().filter(|_| !self.driver_written) {
+            let name = npm.get(package).map_or(package, String::as_str);
+            // 目录的包名换出来的只认内置的（施工 MD-1）。
+            speaking.driver = Driver::parse(name).ok_or_else(|| {
+                NoModel(format!(
+                    "model \"{}/{model}\" needs driver {name:?}, which is not available yet",
+                    self.id
+                ))
+            })?;
+        }
+        let field = match wire.interleaved.as_deref() {
+            Some("reasoning_content") => Some(ReasoningField::ReasoningContent),
+            Some("reasoning") => Some(ReasoningField::Reasoning),
+            _ => None,
+        };
+        if let Some(field) =
+            field.filter(|_| speaking.driver == Driver::OpenAiChat && !self.reasoning_written)
+        {
+            speaking.compat.reasoning = ReasoningReplay::Replay {
+                field,
+                always: true,
+            };
+        }
+        Ok(speaking)
+    }
+
+    /// 发给模型 `model` 时真走的驱动（施工 8-22，温度的上限照它）：照 [`Provider::for_model`]，这个模型用不了的照这一家的
+    /// （发的时候当场 `no_model`）。
+    pub fn driver_for(&self, model: &str, wire: &Wire, npm: &BTreeMap<String, String>) -> Driver {
+        self.for_model(model, wire, npm)
+            .map_or_else(|_| self.driver.clone(), |speaking| speaking.driver)
+    }
+
+    /// 另配的头，照种子 `seed` 换好模板（施工 8-14，[`crate::models::headers`]）：会话的是会话编号，一次性的是用途，`provider.test`
+    /// 是 [`headers::PROBE_SEED`]。照名字排。
+    pub fn headers(&self, seed: &str) -> Vec<(String, String)> {
+        self.headers
+            .iter()
+            .map(|(name, template)| (name.clone(), headers::fill(template, seed)))
+            .collect()
+    }
+
+    /// 占位工具（施工 8-14 补）：档案点名的名字，说明 `text` 是资源目录里那一句（`resources/core/drivers/placeholder-tool.txt`）。
+    /// 说明是空的（测试、老数据根）不补；造请求的一方（`route/placeholder.rs`）照它填。
+    pub fn placeholder_specs(&self, text: &str) -> Vec<(String, String)> {
+        match text.is_empty() {
+            true => Vec::new(),
+            false => self
+                .placeholders
+                .iter()
+                .map(|name| (name.clone(), text.to_string()))
+                .collect(),
+        }
+    }
+}
+
+/// 一次请求发给谁：哪一家、哪个模型。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    /// 那一家。
+    pub provider: Provider,
+    /// 模型名，照供应商那边的叫法。
+    pub model: String,
+}
+
+/// 没有能用的模型：原话（英文，进 `model.called`、运行日志）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoModel(pub String);
+
+/// `models.chat` 没配时的原话（`models.md`「怎么走」第一条第 7 条）。
+pub const NOT_CONFIGURED: &str = "no model configured: set models.chat";
+
+/// 这一轮的 `models.chat`：没配的是空的。
+pub fn chat(values: &Values) -> Option<String> {
+    UseSettings::from(values).chat
+}
+
+/// 配置里有哪几家供应商：照编号排。引用的模型 `p/m`、池的成员照它认 `p` 在不在（施工 8-8）。
+pub fn configured(values: &Values) -> Vec<String> {
+    crate::config::key::names(values.keys(), "providers.<id>", &[])
+}
+
+/// key 的名字：引用的写法 `secret:<名字>`、`env:<变量>`。`model.list` 的 `ref` 用它（施工 8-9 起；8-25 从 `keys` 挪来）。
+pub fn key_name(reference: &KeyRef) -> String {
+    match reference {
+        KeyRef::Secret(name) => format!("secret:{name}"),
+        KeyRef::Env(name) => format!("env:{name}"),
+    }
+}
+
+/// 编号 `id` 这一家这一轮的样子，照手头的资料 `knowledge`（档案、目录）推。
+///
+/// # Errors
+///
+/// 配置里没有这一家；推不出地址（推不出驱动的用 [`DEFAULT_DRIVER`]，施工 8-26）；驱动还没有。
+pub fn provider(values: &Values, knowledge: &Knowledge<'_>, id: &str) -> Result<Provider, NoModel> {
+    if !configured(values).iter().any(|name| name == id) {
+        return Err(NoModel(format!("no provider {id:?}")));
+    }
+    let settings = ProviderSettings::at(values, &[id]);
+    let mut catalog = settings.catalog.clone().unwrap_or_else(|| id.to_string());
+    let by_id = knowledge.profiles.providers.get(&catalog).cloned();
+    let written_url = settings.base_url.clone().or_else(|| {
+        by_id
+            .as_ref()
+            .and_then(|profile| profile.base_url.clone())
+            .map(Address::Literal)
+    });
+    // 对目录只认得出字面地址：是环境变量的引用时查不出来，当没有这一格（第四条第 2 条第 2 层）。
+    let written_text = written_url.as_ref().and_then(literal);
+    // 认目录里的哪一家、取那一家的包名和地址，只经查目录的接口（施工 V-25 上，`catalog/lookup.rs`）。
+    let side = knowledge
+        .lookup
+        .and_then(|lookup| lookup.provider_side(id, written_text, settings.catalog.as_deref()));
+    // 没写 `catalog`、编号也对不上档案的，照认出来的那一家的档案（施工 DM-1）：编号写法不同（`opencodego` 认成 `opencode-go`）、
+    // 照地址认出来的，原来驱动、地址照目录推了，档案另配的头（`x-opencode-session`）、占位工具却没带上，请求被那一家拒掉。
+    let recognized_profile = match (&settings.catalog, &by_id, &side) {
+        (None, None, Some(side)) => knowledge
+            .profiles
+            .providers
+            .get(&side.recognized.provider)
+            .map(|profile| (side.recognized.provider.clone(), profile.clone())),
+        _ => None,
+    };
+    let profile = match recognized_profile {
+        Some((recognized, profile)) => {
+            catalog = recognized;
+            profile
+        }
+        None => by_id.unwrap_or_default(),
+    };
+    let written_url = written_url.or_else(|| profile.base_url.clone().map(Address::Literal));
+    let from_npm = side
+        .as_ref()
+        .and_then(|side| side.npm.as_ref())
+        .and_then(|npm| knowledge.profiles.npm.get(npm).cloned());
+    let driver_written = settings.driver.is_some();
+    let driver_from = match (&settings.driver, &profile.driver, &from_npm) {
+        (Some(_), _, _) => DriverFrom::Config,
+        (None, Some(_), _) => DriverFrom::Profile,
+        (None, None, Some(_)) => DriverFrom::Catalog,
+        (None, None, None) => DriverFrom::Default,
+    };
+    let Some(base_url) = written_url.or_else(|| {
+        side.as_ref()
+            .and_then(|side| side.api.clone())
+            .map(Address::Literal)
+    }) else {
+        return Err(NoModel(format!(
+            "provider {id:?} needs base_url: it matches nothing in the catalog"
+        )));
+    };
+    // 有地址、推不出驱动的照 `openai-chat`（施工 8-26，2026-10-07 项目主人定）：局域网、自建的中转多半说它。配置里照旧不写，
+    // 以后目录对上了照目录的。
+    let driver = settings
+        .driver
+        .or(profile.driver.clone())
+        .or(from_npm)
+        .unwrap_or_else(|| DEFAULT_DRIVER.to_string());
+    // 扩展提供的只认手写的那一格（施工 MD-1，设计 66 第四节第 2 条）：档案、npm 表、默认推出来的只认内置的几种，扩展装上了也接不走
+    // 主人原来配好的供应商。
+    let parsed = match driver_written {
+        true => Driver::parse(&driver),
+        false => Driver::parse(&driver),
+    };
+    let Some(driver_kind) = parsed else {
+        return Err(NoModel(format!(
+            "driver {driver:?} of provider {id:?} is not available yet"
+        )));
+    };
+    // 本机的服务：是环境变量的引用时查不出来，照不在本机算（第四条，施工 8-6b）。
+    let local = settings
+        .local
+        .unwrap_or_else(|| literal(&base_url).is_some_and(on_this_machine));
+    let compat = profile
+        .compat
+        .as_ref()
+        .map(|compat| compat.compat())
+        .unwrap_or_default();
+    Ok(Provider {
+        id: id.to_string(),
+        driver: driver_kind,
+        base_url,
+        compat,
+        key: settings.key,
+        images: profile.image_tokens,
+        catalog,
+        recognized: side.map(|side| side.recognized),
+        local,
+        driver_written,
+        driver_from,
+        reasoning_written: profile
+            .compat
+            .as_ref()
+            .is_some_and(|compat| compat.reasoning.is_some()),
+        headers: profile.headers,
+        placeholders: profile.placeholder_tools,
+    })
+}
+
+/// 推不出驱动时用的（施工 8-26）。
+pub const DEFAULT_DRIVER: &str = "openai-chat";
+
+/// 一家供应商的驱动从哪来（施工 8-26）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriverFrom {
+    /// 配置里手写的。
+    Config,
+    /// 档案（`profiles.toml`）写的。
+    Profile,
+    /// 照目录里那一家的 `npm` 换的。
+    Catalog,
+    /// 都没有，用 [`DEFAULT_DRIVER`]。
+    Default,
+}
+
+impl DriverFrom {
+    /// `model.list` 里的写法：`config`、`profile`、`catalog`、`default`。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DriverFrom::Config => "config",
+            DriverFrom::Profile => "profile",
+            DriverFrom::Catalog => "catalog",
+            DriverFrom::Default => "default",
+        }
+    }
+}
+
+/// 字面地址：写死的就是它，环境变量的引用查不出来（施工 8-6b）。
+fn literal(address: &Address) -> Option<&str> {
+    match address {
+        Address::Literal(text) => Some(text.as_str()),
+        Address::Env(_) => None,
+    }
+}
+
+/// 照 `secret` 取这一家的地址（施工 8-6b）：写死的直接用；是环境变量的引用的照取，`secret` 和取 key 的办法一样（`Reference`
+/// 不分密钥、网址）。没设、设成空的：这一家没有地址，`NoModel`，原话照「有 key 取不到」的样子（`route.rs`、
+/// `route/lists.rs` 真要连供应商时调）。地址不会经这个函数之外的任何路径流出去。
+///
+/// # Errors
+///
+/// 环境变量没设、设成空的（[`NoModel`]）。
+pub fn resolve_base_url(
+    provider: &Provider,
+    secret: &dyn Fn(&KeyRef) -> Option<Secret>,
+) -> Result<String, NoModel> {
+    match &provider.base_url {
+        Address::Literal(text) => Ok(text.clone()),
+        Address::Env(name) => secret(&KeyRef::Env(name.clone()))
+            .map(|secret| secret.expose().to_string())
+            .ok_or_else(|| NoModel(format!("provider {:?} has no usable base_url", provider.id))),
+    }
+}
+
+/// 地址在本机：主机名是 `127.0.0.1`、`localhost`、`::1`（写成 `[::1]`），不分大小写。第一次接入探哪几家也照它（施工 8-11）。
+/// 配好的几家里有没有目录帮得上的（LM-9：目录要联网取，用不着的不取）：models.dev 的目录只记网上的服务，每一家都是本机的服务
+/// （写了 `local = true`，或者写死的地址在本机）、又没手写 `catalog` 的，目录认不出、帮不上。一家都没配的也用不着。地址是
+/// 环境变量的引用、写了 `local = false` 的算网上的。
+pub fn wants_catalog(values: &Values) -> bool {
+    configured(values).iter().any(|id| {
+        let settings = ProviderSettings::at(values, &[id]);
+        if settings.catalog.is_some() {
+            return true;
+        }
+        let local = settings.local.unwrap_or_else(|| match &settings.base_url {
+            Some(Address::Literal(url)) => on_this_machine(url),
+            _ => false,
+        });
+        !local
+    })
+}
+
+pub(crate) fn on_this_machine(base_url: &str) -> bool {
+    let rest = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = match authority.strip_prefix('[') {
+        Some(inside) => inside.split(']').next().unwrap_or_default(),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    ["127.0.0.1", "localhost", "::1"]
+        .iter()
+        .any(|local| host.eq_ignore_ascii_case(local))
+}
+
+#[cfg(test)]
+mod tests;

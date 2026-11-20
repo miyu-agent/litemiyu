@@ -1,0 +1,98 @@
+//! 路由照模型资料（施工 8-7，`docs/blueprint/models.md`「怎么走」第二条）：目录在写了 `ready` 以后才读完，造会话先等它；
+//! 窗口、最大输出照目录交给内核；换上的新目录，新会话当场用。
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::support::Home;
+use crate::support::routing::{configs, routes_with};
+use lm_engine::session::{ModelData, Observed};
+use lm_kernel::models::catalog::{Catalog, CatalogSource, Loaded};
+use lm_kernel::models::matching::Vendors;
+use lm_kernel::models::profile::Profiles;
+
+/// 真目录裁出来的一份（`miyu-models` 的测试也用它）。
+fn trimmed() -> Loaded {
+    let text = include_str!("../../../lm-kernel/testdata/models/models-dev-trimmed.json");
+    Loaded {
+        catalog: Catalog::parse(text).expect("读得进").catalog,
+        source: CatalogSource::Snapshot,
+        fetched: "2026-10-01T03:25:54.000Z".to_string(),
+    }
+}
+
+/// 只配了 key 的 DeepSeek：驱动、地址照档案，资料照目录。
+const DEEPSEEK: &str = "[providers.deepseek]\ndriver = \"openai-chat\"\nbase_url = \"http://unused.invalid\"\n\n[models]\nchat = \"deepseek/deepseek-flash\"\n";
+
+fn pending() -> Arc<ModelData> {
+    Arc::new(ModelData::new(
+        Profiles::default(),
+        Vendors::default(),
+        None,
+    ))
+}
+
+#[tokio::test]
+async fn a_session_waits_for_the_catalog_and_takes_its_window() {
+    let data = pending();
+    let routes = routes_with(Arc::clone(&data), Duration::from_secs(60));
+    let mut home = Home::new();
+    home.configs = configs(DEEPSEEK, &[]);
+    let home = Arc::new(home);
+    let creating = {
+        let (home, routes) = (Arc::clone(&home), routes.clone());
+        tokio::spawn(async move { home.create(&routes).await })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!creating.is_finished(), "目录没读完，造会话等着");
+    data.loaded(Some(trimmed()), Observed::default());
+    let handle = tokio::time::timeout(Duration::from_secs(10), creating)
+        .await
+        .expect("读完了就造好")
+        .expect("没有 panic");
+    assert_eq!(handle.limits().window, Some(1_000_000), "窗口照目录");
+}
+
+#[tokio::test]
+async fn an_empty_catalog_still_lets_sessions_start() {
+    let data = pending();
+    data.loaded(None, Observed::default());
+    let routes = routes_with(data, Duration::from_secs(60));
+    let mut home = Home::new();
+    home.configs = configs(DEEPSEEK, &[]);
+    let handle = home.create(&routes).await;
+    assert_eq!(handle.limits().window, None, "目录读不了：不主动压");
+}
+
+#[tokio::test]
+async fn a_new_catalog_is_used_by_the_next_session() {
+    let data = pending();
+    data.loaded(None, Observed::default());
+    let routes = routes_with(Arc::clone(&data), Duration::from_secs(60));
+    let mut home = Home::new();
+    home.configs = configs(DEEPSEEK, &[]);
+    let before = home.create(&routes).await;
+    data.replace_catalog(trimmed(), None, None);
+    let after = home.create(&routes).await;
+    assert_eq!(before.limits().window, None);
+    assert_eq!(after.limits().window, Some(1_000_000));
+    assert_eq!(
+        data.catalog().map(|loaded| loaded.source),
+        Some(CatalogSource::Snapshot)
+    );
+}
+
+/// 没载入的会话也查得到窗口（施工 9-5 再补，会话列表的 `context`）：照这时的配置、目录；没配的供应商、目录里没有的没有。
+#[test]
+fn a_window_is_looked_up_without_a_session() {
+    use lm_engine::session::Models;
+    let data = pending();
+    data.loaded(Some(trimmed()), Observed::default());
+    let routes = routes_with(data, Duration::from_secs(60));
+    let resolved = crate::support::routing::resolved(DEEPSEEK);
+    assert_eq!(
+        routes.window(&resolved, "deepseek", "deepseek-flash"),
+        Some(1_000_000)
+    );
+    assert_eq!(routes.window(&resolved, "nobody", "deepseek-flash"), None);
+}

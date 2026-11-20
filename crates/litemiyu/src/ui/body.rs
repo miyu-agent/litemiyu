@@ -1,0 +1,485 @@
+//! 正文区：把排好的行放进视口，铺上点开的底色和选区的反色。
+//!
+//! 放得下时从顶上开始；放不下时露出最新的那一截，滚过以后钉在滚到的地方（`body_view.rs`）。
+
+use crate::ui::Frame;
+use crate::ui::rows::Target;
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
+use unicode_width::UnicodeWidthStr;
+
+use super::Areas;
+use super::row_cache::{self, Rows};
+use super::rows::Ctx;
+use super::timeline;
+use crate::app::{Screen, Seen};
+use crate::body_view::Side;
+use crate::theme;
+use crate::transcript::Transcript;
+
+/// 画正文，顺手把这一帧的行记进 `screen.view`，鼠标要用。
+pub fn draw(frame: &mut Frame, areas: Areas, seen: &Seen, screen: &mut Screen) {
+    let area = areas.body;
+    let spinner_ms = seen.config.timeline.spinner_ms.max(1);
+    let transcript = &seen.talk.transcript;
+    // 两格槽紧贴在输入框里的字的左边，和提示符同一列；紧凑版面（框外面那几行贴着窗口左边，`layout.rs`）槽贴着窗口左边、
+    // 字写到最右边（「输入框」第 10 条，2026-10-27 项目主人）。
+    let (indent, width) = if areas.footer.x <= area.x {
+        (0, area.width.saturating_sub(2))
+    } else {
+        (areas.text.x.saturating_sub(area.x + 2), areas.text.width)
+    };
+    let ctx = Ctx {
+        config: seen.config,
+        human: &seen.link.human,
+        indent: " ".repeat(usize::from(indent)),
+        width,
+        hover: screen.view.hover,
+        md: &seen.media.md_cache,
+        sessions: seen.talk.recent.listed.as_deref().unwrap_or_default(),
+        jobs: Some(&seen.talk.jobs),
+        frame: usize::try_from(screen.started.elapsed().as_millis() / u128::from(spinner_ms))
+            .unwrap_or(0),
+    };
+    // 整份重排时一帧只排预算这么多，视口附近先排（蓝图「正文」第 8 条）：翻上去看着的照上一帧视口顶上那一条。
+    let plan = row_cache::Plan {
+        budget: Some(std::time::Duration::from_millis(
+            seen.config.layout.relayout_budget_ms,
+        )),
+        anchor: screen
+            .view
+            .top
+            .and_then(|_| screen.view.rows.entry_at(screen.view.first))
+            .and_then(|id| transcript.entries.iter().position(|e| e.id == id)),
+    };
+    screen.view.text_width = width;
+    let mut rows = row_cache::build(transcript, &ctx, &seen.media.row_cache, plan);
+    // 等她的第一个字：正文末尾先转着（`tui.md`「时间线」第 19 条）。
+    if seen.talk.transcript.waiting() {
+        rows.push(timeline::tail_rows(&ctx).into());
+    }
+    // 还算在看的那段回答：长过视口时停在它的开头（`tui.md`「正文」第 1 条）。在写的那段一律算；写完了的（后面只有收尾
+    // 那一行），上一帧开头还露着才算：后到的图、卡片把它撑高时停住，一口气整段到的、补发来的照旧跟着最新的。
+    let latest = seen.talk.transcript.reading().and_then(|(i, writing)| {
+        let entry = &seen.talk.transcript.entries[i];
+        let start = rows
+            .start_of(entry.id)
+            .filter(|_| super::rows::shown(entry))?;
+        Some((entry.id, start, writing))
+    });
+    screen.view.reading = still_reading(&screen.view, latest);
+    screen.view.latest = latest.map(|(id, start, _)| (id, start));
+    let settled = seen.media.row_cache.borrow().stale == 0;
+    screen.view.live = seen.talk.transcript.running.is_some();
+    // 放掉、读回过段（红线 5）：上面的行数变了，滚到的地方照「在哪一条的第几行」找回来。
+    let reshaped =
+        std::mem::replace(&mut screen.view.reshaped, transcript.reshaped) != transcript.reshaped;
+    let first = first_row(
+        &rows,
+        area,
+        &mut screen.view,
+        (settled, reshaped),
+        transcript,
+    );
+    let height = usize::from(area.height);
+    let indent = u16::try_from(ctx.indent.width()).unwrap_or(0);
+    let shade = shade_span(area, indent, ctx.width);
+    for (i, row) in rows.window(first, height) {
+        let y = area.y + u16::try_from(i - first).unwrap_or(0);
+        // 先铺底色再写字：没带底色的片段留着底下的灰，差异行自己的红底、青底盖在上面。
+        if row.shade {
+            let cells = Rect::new(shade.0, y, shade.1, 1).intersection(area);
+            frame.buffer_mut().set_style(cells, theme::shade());
+        }
+        frame
+            .buffer_mut()
+            .set_line(area.x, y, &row.line, area.width);
+    }
+    screen.view.first = first;
+    flash::paint(
+        frame.buffer_mut(),
+        area,
+        (&rows, first),
+        &mut screen.view,
+        &seen.config.layout.user_bar,
+    );
+    // 鼠标、复制照这一帧的行；共享记着的那一份，不复制。
+    screen.view.rows = rows.clone();
+    // 悬停在链接上：这个链接露出来的每一截都加下划线。
+    if let Some(url) = &screen.view.hover_link {
+        for (i, row) in rows.window(first, height) {
+            let y = area.y + u16::try_from(i - first).unwrap_or(0);
+            for (from, to, _) in row.links.iter().filter(|(_, _, u)| u == url) {
+                let x = area.x + row.content_x + from;
+                let cells = Rect::new(x, y, to - from, 1).intersection(area);
+                let underline = Style::new().add_modifier(Modifier::UNDERLINED);
+                frame.buffer_mut().set_style(cells, underline);
+            }
+        }
+    }
+    for (i, _) in rows.window(first, height) {
+        if let Some((from, to)) = screen.view.selected_cols(i) {
+            let y = area.y + u16::try_from(i - first).unwrap_or(0);
+            let cols = Rect::new(area.x + from, y, to - from, 1).intersection(area);
+            let reversed = Style::new().add_modifier(Modifier::REVERSED);
+            frame.buffer_mut().set_style(cols, reversed);
+        }
+    }
+    bar(frame, area, &screen.view);
+}
+
+/// 滚动条（「正文」第 1a 条，2026-10-22 项目主人照 Pi 要的）：内容放不下、指针停在那一列上或者正拖着时才画（2026-10-23
+/// 项目主人：鼠标不移过去就藏着），在正文这一栏最右边（`BodyView::bar_x`）；暗色细线当轨道，粗的亮块当滑块。记号照主题
+/// （`side`、`block`）。
+fn bar(frame: &mut Frame, area: Rect, view: &crate::body_view::BodyView) {
+    if !(view.bar_hover || view.bar_held()) {
+        return;
+    }
+    bar_at(frame, (view.bar_column(), area.y, area.height), view.bar());
+}
+
+/// 在第 `x` 列从第 `top` 行起画 `height` 格高的滚动条（正文、侧边栏共用，同 Miyu `ui/body.rs` 的 `bar_at`）；放得下的（`None`）
+/// 不画。
+pub(super) fn bar_at(
+    frame: &mut Frame,
+    (x, top, height): (u16, u16, u16),
+    bar: Option<crate::scrollbar::Bar>,
+) {
+    let Some(bar) = bar else {
+        return;
+    };
+    for y in 0..height {
+        // 滑块照八分之一格画（拖动按像素以后跟得上，2026-10-23）：头尾那一格只盖一部分的，从当中开始的画下半截，在当中
+        // 结束的把下半截的记号反着画成上半截。
+        let (cover, starts) = bar.cover(y);
+        let eighths = (cover * 8.0).round() as usize;
+        let (mark, style) = match eighths {
+            0 => (crate::sheet::mark(|m| &m.side), theme::faint()),
+            8.. => (crate::sheet::mark(|m| &m.block), theme::dim()),
+            n if starts => (crate::sheet::mark(|m| &m.chart[n - 1]), theme::dim()),
+            n => (
+                crate::sheet::mark(|m| &m.chart[7 - n]),
+                theme::dim().add_modifier(Modifier::REVERSED),
+            ),
+        };
+        frame.buffer_mut().set_string(x, top + y, mark, style);
+    }
+}
+
+/// 最新的那段回答（编号、第一行、还在不在写）算不算在看：在写的算；写完了的，上一帧（`view.latest`、`view.first`）
+/// 它的开头还露着才算（`tui.md`「正文」第 1 条）。
+fn still_reading(
+    view: &crate::body_view::BodyView,
+    latest: Option<(u64, usize, bool)>,
+) -> Option<(u64, usize)> {
+    let (id, start, writing) = latest?;
+    let seen = view
+        .latest
+        .is_some_and(|(was, top)| was == id && top >= view.first);
+    (writing || seen).then_some((id, start))
+}
+
+/// 点开的一块铺底色的范围（从第几列起、多宽）：左边和你说的话前面的 `┃` 同一列（缩进 `indent` 以后那两格槽），
+/// 右边比字（`text_width` 列）宽出同样两格（`tui.md`「时间线」第 14 条）。
+fn shade_span(area: Rect, indent: u16, text_width: u16) -> (u16, u16) {
+    (area.x + indent, text_width + 4)
+}
+
+/// 点开的是 `clicked`：`row` 这一行算不算它展开的那一块。点一条（撤销那一行）时，它里面能单独点开的小块（改回的文件，
+/// `Details`）也算这一块。
+fn same_block(row: Target, clicked: Target) -> bool {
+    match (row, clicked) {
+        (Target::Details(a, _), Target::Entry(b)) => a == b,
+        _ => row == clicked,
+    }
+}
+
+/// 视口顶上第 `top` 行落在空档（放掉、还没读回的段，行数是估的）里：读回以后照哪一条找回（编号；`None` 是照第 0 行）、
+/// 视口顶比它的开头靠下几行（可以是负的）。上一帧视口 `height` 行高，最后看见的已有内容在空档的 `seen` 那一边。
+///
+/// 规矩（第十三趟）：读回以后，人眼前靠着已有内容的那一边不动。空档的行数是估的，只有离已有内容几行是按键实打实翻出来的：
+/// - 视口里露着空档下面那一条（往上翻进空档）：照离它几行找回，露着的那几行不动，和全留的一样；
+/// - 整屏都是空档（连翻了几屏）：照最后看见的那一边（往上翻进来的照下面，往下翻进来的、到过第 0 行的照上面）；
+/// - 照上面的，照空档上面那一条；上面没有条目的照第 0 行。
+pub(crate) fn gap_anchor(
+    rows: &Rows,
+    top: usize,
+    height: usize,
+    seen: Side,
+) -> Option<(Option<u64>, isize)> {
+    let (start, end) = rows.gap_span(top)?;
+    let side = if end < top.saturating_add(height) {
+        Side::Below
+    } else {
+        seen
+    };
+    let id = match side {
+        Side::Below => Some(rows.entry_at(end)?),
+        Side::Above => rows.entry_before(start),
+    };
+    let base = match id {
+        Some(id) => rows.start_of(id)?,
+        None => 0,
+    };
+    Some((id, signed(top) - signed(base)))
+}
+
+fn signed(n: usize) -> isize {
+    isize::try_from(n).unwrap_or(isize::MAX)
+}
+
+/// 上一帧的第 `row` 行在这一帧是第几行：照它是哪一条的第几行找，那一条短了的停在它的最后一行。落在放掉的段上的照
+/// [`gap_anchor`]（`side`：上一帧视口几行高、最后看见的是哪一边）；那一条不在了的照那一串开头往下第几行找：还放着的照这一帧
+/// 那一串的开头，读回来了的照那一段第一条的开头。
+fn remap(
+    before: &Rows,
+    now: &Rows,
+    row: usize,
+    (transcript, blanks): (&Transcript, bool),
+    (height, seen): (usize, Side),
+) -> usize {
+    if let Some((piece, offset)) = before.gap_at(row) {
+        let anchored = gap_anchor(before, row, height, seen).and_then(|(id, below)| {
+            let base = match id {
+                Some(id) => now.start_of(id)?,
+                None => 0,
+            };
+            Some(usize::try_from(signed(base) + below).unwrap_or(0))
+        });
+        if let Some(at) = anchored {
+            return at.min(now.len().saturating_sub(1));
+        }
+        let start = now.gap_start(piece).or_else(|| {
+            let first = transcript
+                .entries
+                .iter()
+                .find(|e| e.piece >= piece && super::rows::shown(e))?;
+            // 空档的头一行是那一段第一条前面的空行（整份最前面的那一串没有）。
+            let blank = usize::from(before.gap_start(piece).is_some_and(|s| s > 0));
+            now.start_of(first.id).map(|s| s.saturating_sub(blank))
+        });
+        if let Some(start) = start {
+            return (start + offset).min(now.len().saturating_sub(1));
+        }
+    }
+    let Some(entry) = before.entry_at(row) else {
+        return row.min(now.len().saturating_sub(1));
+    };
+    let was = before.start_of(entry).unwrap_or(row);
+    let offset = row.saturating_sub(was);
+    match (now.start_of(entry), now.end_of(entry)) {
+        // 只是放掉、读回了段（行没重折）：落在那一条上面空行里的照它上面差几行找，不挪到那一条开头。
+        (Some(start), Some(_)) if blanks && row < was => start.saturating_sub(was - row),
+        (Some(start), Some(end)) => (start + offset).min(end.saturating_sub(1)),
+        _ => row.min(now.len().saturating_sub(1)),
+    }
+}
+
+/// 底边照「它落在哪一条、从那一条开头往下第几行」跟着走：那一条上面的变短（收起一段长时间线）时底边一起上移，不把上面
+/// 少掉的几百行留成底下的空档；那一条自己变短（一轮结束时间线收起）留的空档照旧留着（2026-10-19 项目主人报：展开上面那段、
+/// 滚上去、再收起，底下空出一大截，Ctrl+End 也只露一点点）。
+fn shift_floor(before: &Rows, now: &Rows, floor_end: usize) -> usize {
+    if floor_end == 0 {
+        return 0;
+    }
+    let last = (floor_end - 1).min(before.len().saturating_sub(1));
+    let Some(entry) = before.entry_at(last) else {
+        return floor_end;
+    };
+    match (before.start_of(entry), now.start_of(entry)) {
+        (Some(was), Some(is)) if was <= floor_end => is + (floor_end - was),
+        _ => floor_end,
+    }
+}
+
+/// 人点开、收起的那一样东西（上一帧在第 `was` 行）和底边落在同一条里、又在底边上面：这一条因此长了、短了几行。底边跟着
+/// 走这么多，不把自己点开又收起的那几十行留成底下的空档（Miyu `832087b1`，发版前 check 33，2026-11-11 项目主人：在跑的那一段
+/// 里点开一步、滚到过底、再收起，下面空出一整屏）；原来就有的空档（一轮结束收起留的）不动。不在同一条的由 [`shift_floor`]
+/// 管，这里是 0。
+fn grown_inside(before: &Rows, now: &Rows, was: usize, floor_end: usize) -> isize {
+    if floor_end == 0 || was >= floor_end {
+        return 0;
+    }
+    let last = (floor_end - 1).min(before.len().saturating_sub(1));
+    let (Some(entry), Some(clicked)) = (before.entry_at(last), before.entry_at(was)) else {
+        return 0;
+    };
+    if entry != clicked {
+        return 0;
+    }
+    let rows_of = |rows: &Rows| Some(rows.end_of(entry)? - rows.start_of(entry)?);
+    match (rows_of(before), rows_of(now)) {
+        (Some(was), Some(is)) => is as isize - was as isize,
+        _ => 0,
+    }
+}
+
+/// 这一轮还在跑，底边落在的那一条（上一帧是最后一条）后面插进了别的（答问题那一条这类）、它自己收起短了：短了几行
+/// （负数）。底边跟着上移，不把收起的几十行留成空档（Miyu `f45126c5`，发版前 check 45，2026-11-12 项目主人：中途答了问题，
+/// 在跑的那一段收起，屏幕上空出一大段）；一轮结束收起留的空档（10-17）不在跑，这里是 0。
+fn shrunk_for_insert(before: &Rows, now: &Rows, floor_end: usize, live: bool) -> isize {
+    if !live || floor_end == 0 {
+        return 0;
+    }
+    let last = (floor_end - 1).min(before.len().saturating_sub(1));
+    let Some(entry) = before.entry_at(last) else {
+        return 0;
+    };
+    let after = |rows: &Rows| rows.end_of(entry).and_then(|end| rows.entry_at(end));
+    if after(before).is_some() || after(now).is_none() {
+        return 0;
+    }
+    let rows_of = |rows: &Rows| Some(rows.end_of(entry)? - rows.start_of(entry)?);
+    match (rows_of(before), rows_of(now)) {
+        (Some(was), Some(is)) if is < was => is as isize - was as isize,
+        _ => 0,
+    }
+}
+
+/// 第一行露出的是第几行：有锚点的照锚点，滚过的照滚到的，别的跟着最新的、只往下走。滚到底了就回到跟着最新的。
+/// 顺手记下这一帧的区域（`view.area`），下一帧照它看窗口宽度变没变。
+fn first_row(
+    rows: &Rows,
+    area: Rect,
+    view: &mut crate::body_view::BodyView,
+    (settled, reshaped): (bool, bool),
+    transcript: &Transcript,
+) -> usize {
+    let height = usize::from(area.height);
+    let bottom = rows.len().saturating_sub(height);
+    // 这一帧点开、收起了一样东西：它在上一帧的第几行（底边照它挪，见下面）。
+    let mut toggled = None;
+    if let Some((target, y)) = view.anchor.take()
+        && let Some(i) = rows.iter().position(|r| r.target == Some(target))
+    {
+        toggled = view.rows.iter().position(|r| r.target == Some(target));
+        let mut top = i.saturating_sub(usize::from(y.saturating_sub(area.y)));
+        // 展开的内容长到视口外面了：往上推到露出来，最多推到被点的那一行顶到最上面（2026-10-02 项目主人报：
+        // 最底下那一行点开以后什么都看不见）。
+        let end = i + rows
+            .iter()
+            .skip(i)
+            .take_while(|r| r.target.is_some_and(|t| same_block(t, target)))
+            .count();
+        if end > top + height {
+            top = (end - height).min(i);
+        }
+        view.top = Some(top);
+        view.auto = false;
+    }
+    // 窗口变宽变窄、或者整份重排还在分帧做（没排到的先用旧行）：行号一帧一个样，上一帧记的对不上了，不守它
+    // （`tui.md`「正文」第 1 条；2026-10-02 项目主人报：最大化以后闪一下就只剩最后一行）。
+    let relaid = view.area.width != area.width || !settled;
+    if relaid {
+        view.floor_end = 0;
+    }
+    // 清屏那一行、滚到的地方也是照行号记的：换成「在哪一条的第几行」，照这一帧的行找回来，不然变宽以后落在内容
+    // 后面，正文全空（同一天项目主人报）。
+    if !view.rows.is_empty() {
+        if !relaid {
+            let grown =
+                toggled.map_or(0, |was| grown_inside(&view.rows, rows, was, view.floor_end));
+            let grown = if grown == 0 {
+                shrunk_for_insert(&view.rows, rows, view.floor_end, view.live)
+            } else {
+                grown
+            };
+            view.floor_end =
+                shift_floor(&view.rows, rows, view.floor_end).saturating_add_signed(grown);
+        }
+        if let Some(at) = view.cleared_at.filter(|&at| at > 0) {
+            let moved = view.rows.entry_at(at - 1).and_then(|e| rows.end_of(e));
+            view.cleared_at = Some(moved.unwrap_or(at).min(rows.len()));
+        }
+        // 落在条目上面空行里的照差几行找，只要字没重新折过（窗口宽度没变）：放掉读回的段分几帧排完（整份重排照预算分帧）
+        // 的那几帧也照这样，不然视口顶在空行上的会挪到那一条开头、差一行（第十二趟，伪终端里 160 列时撞上）。
+        let reflowed = view.area.width != area.width;
+        if (relaid || reshaped)
+            && let Some(top) = view.top
+        {
+            let side = (usize::from(view.area.height), view.seen_side);
+            view.top = Some(remap(&view.rows, rows, top, (transcript, !reflowed), side));
+        }
+        // 选区：字重新折过的（窗口变宽变窄）行列对不上了，不要了；只是上面多了、少了几行（图加载好、一段收起）的，两头
+        // 照「在哪一条的第几行」找回来（review C3，2026-10-11：原来照行号记，反色漂到别处，复制到别的字）。
+        view.select = view.select.filter(|_| !reflowed).map(|(a, b)| {
+            let at = |(row, col): crate::body_view::Point| {
+                let side = (0, Side::Above);
+                (remap(&view.rows, rows, row, (transcript, false), side), col)
+            };
+            (at(a), at(b))
+        });
+    }
+    // `/jump` 跳到刚读回来的一条：这一帧排好了它的行，顶到视口第一行（`app/jump.rs`）。
+    if let Some((id, until)) = view.goto.take() {
+        match rows.start_of(id) {
+            Some(row) => view.jump_to(row, id, until),
+            None => view.goto = Some((id, until)),
+        }
+    }
+    // 一轮结束按住了：视口长高的那几行记进底边，第一行不往回退（`view.hold`）。
+    if std::mem::take(&mut view.hold) && view.floor_end > 0 {
+        view.floor_end += usize::from(area.height.saturating_sub(view.area.height));
+    }
+    // 清过屏的，最底下是清屏那一刻的位置：往下滚还是空的，滚回底又是空的（`tui.md`「按键」Ctrl+L）。
+    let lowest = view
+        .cleared_at
+        .map_or(bottom, |at| bottom.max(at.min(rows.len())));
+    // 跟着最新的时停在哪：不比上一帧靠上（蓝图 tui.md「正文」第 1 条），但总要露出至少一行；清过屏的可以一行都不露。
+    // 滚上去、点开一样东西时也照它算最底下：滚回来、收起来回到同一个地方，底下空着的那一截还在（2026-10-17 项目主人：
+    // 一轮结束时间线收起留的空档，展开再收起、滚上去再滚回来就没了，不符合直觉）。
+    let cap = if view.cleared_at.is_some() {
+        rows.len()
+    } else {
+        rows.len().saturating_sub(1)
+    };
+    let rest = lowest.max(view.floor_end.saturating_sub(height)).min(cap);
+    let first = match view.top {
+        Some(top) => top.min(rest),
+        // 她正在写的一段正文长过视口：第一行顶到最上面就停住，一段只停一次（`tui.md`「正文」第 1 条）。
+        None => match view.reading {
+            Some((id, start)) if rest > start && view.paused != Some(id) => {
+                view.paused = Some(id);
+                view.top = Some(start);
+                view.auto = true;
+                start
+            }
+            _ => rest,
+        },
+    };
+    if first >= rest {
+        view.top = None;
+        view.auto = false;
+    }
+    if view.top.is_none() {
+        view.seen_end = rows.len();
+    }
+    // 内容还放得下（从第一行露起；清过屏的，从清屏那一行露起）时不记：视口变矮时不把开头的行挤出去
+    // （`tui.md`「正文」第 1 条、「按键」Ctrl+L）。
+    // 滚上去、点开着的：底边照旧记着跟着最新时的那一处，不跟着滚到的地方改。
+    let top = view.cleared_at.map_or(0, |at| at.min(rows.len()));
+    view.floor_end = if !settled {
+        0
+    } else if view.top.is_some() {
+        view.floor_end
+    } else if first == top {
+        0
+    } else {
+        first + height
+    };
+    // 最后看见的已有内容在空档的哪一边（[`gap_anchor`]）：顶上是正文的、到了第 0 行的照上面，底下露着空档下面那一条的照
+    // 下面，整屏都是空档的照旧。
+    view.seen_side = match rows.gap_span(first) {
+        None => Side::Above,
+        Some((_, end)) if end < first + height => Side::Below,
+        Some(_) if first == 0 => Side::Above,
+        Some(_) => view.seen_side,
+    };
+    view.area = area;
+    first
+}
+
+mod flash;
+
+#[cfg(test)]
+mod tests;

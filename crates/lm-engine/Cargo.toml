@@ -1,0 +1,137 @@
+[package]
+name = "lm-engine"
+description = "LiteMiyu 的 I/O：文件、存储、发请求、模型和目录（docs/00-设计.md 第四节第 4 条）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+# 事件、序号、会话编号、内容哈希：会话日志一行一条事件。
+lm-kernel = { path = "../lm-kernel" }
+# 会话日志一行一条 JSON：读、写都照它（lm-kernel 本来就带进来的同一版）。MIT 或 Apache-2.0。
+serde_json = "1.0"
+# 读日志时找换行：SIMD 找一个字节，serde_json 本来就带它，不多编一个包（同 Miyu）。MIT 或 Unlicense。
+memchr = "2.8"
+# 配置文件的版本是整份字节的 SHA-256（store::config_file；lm-kernel 本来就带进来的同一版）。MIT 或 Apache-2.0。
+sha2 = { version = "0.11", default-features = false }
+# 打开时不跟随最后一层的链接、不阻塞：O_NOFOLLOW、O_NONBLOCK、ELOOP 的值从这里取，不自己写；只取常量，不调它的函数。
+# MIT 或 Apache-2.0。
+libc = "0.2"
+# 路上一层链接都不跟地打开、相对打开了的目录建临时文件和改名：openat2、openat、renameat 的安全封装，不用自己写 unsafe；
+# `shell` 整组杀命令的 `kill(-pgid)`（process）。
+# Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。
+rustix = { version = "1", features = ["fs", "process"] }
+# 本地时间（`zone`、改配置的记录）。默认功能里只不要 `perf-inline`（多内联、只为快，瘦身 一）。MIT 或 Unlicense。
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tz-fat", "tzdb-zoneinfo"] }
+# 发请求（http，从 miyu-http 搬来）：异步里流式读取、超时、打断最顺；TLS 用 rustls，证书认系统的和 webpki 自带的两份，
+# 不依赖 OpenSSL。MIT 或 Apache-2.0。
+# 不开 gzip、deflate（LM-2 砍了 `web_fetch`，只有抓网页要解压）：请求模型的客户端本来就明确关掉解压（http::client）。
+# 只留 HTTP/1.1，不开 `http2`（项目主人 2026-11-12 定，瘦身 六）：模型的接口基本是一条连接一个流式请求，同时发的几个各开各的
+# 连接；h2 和它那一套程序里要占 194 kB。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
+# 引擎是单线程的异步运行时（docs/00-设计.md 第四节）：只开 `rt`，不开多线程的。`sync`：请求体里的 blob 在阻塞线程里读、
+# 编好一块经通道交过来一块（施工 V-38）。MIT。
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
+# 会话编号：UUIDv7，前 48 位是毫秒时间，随机数取自系统（会话，L3 二）。
+uuid = { version = "1", features = ["v7"] }
+# 空闲时把空着的堆还给系统（会话的 actor，L3 二）。
+lm-heap = { path = "../lm-heap" }
+# 请求体边编边发：自己的流交给 reqwest 要照 `http-body` 的接口，一块块是 `bytes` 的共享缓冲。两个都是 reqwest 本来就带进来的
+# 同一版。MIT。
+bytes = "1"
+http-body = "1"
+# 这一跳走不走代理：reqwest 自己照环境变量走代理用的就是它的 `Matcher`。本来就在依赖图里。MIT。
+hyper-util = { version = "0.1", default-features = false, features = ["client-proxy"] }
+# `Matcher` 收的地址是 `http::Uri`。本来就在依赖图里。MIT 或 Apache-2.0。
+http = "1"
+# 整个进程共用一份 TLS 配置（施工 V-5 上）：照 reqwest 自己的拼法，证书只读一次。都是 reqwest 本来就带进来的同一版。
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+rustls-native-certs = "0.8"
+webpki-roots = "1"
+# 量图片的宽高只看文件头，不解码（tool::picture，从 miyu-tool 搬来）。只开认得的四种：先过了 `picture::kind` 才量（瘦身 一）。MIT。
+imagesize = { version = "0.15", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+# 出厂的供应商档案、认原厂的表是 TOML，读成 JSON 交给 lm-kernel（models，同 Miyu 的 miyu-core；lm-kernel 本来就带进来的同一版）。
+# MIT 或 Apache-2.0。
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
+# 基础工具（basesystem，同 Miyu 的 miyu-basesystem）：edit 宽松那一层的 NFKC 规范化。MIT 或 Apache-2.0。
+unicode-normalization = "0.1"
+# 工具的结果、端口里的几样要照 JSON 写读（tool）。MIT 或 Apache-2.0。
+serde = { version = "1.0", features = ["derive"] }
+# MCP 的网址服务把不是可见 ASCII 的请求头值编成 base64、服务回的图解开（mcp，L5 六）。lm-kernel 本来就带进来的同一版、同样的功能。
+# MIT 或 Apache-2.0。
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+
+# 测试用的 MCP 服务（L5 六，Miyu 的 `miyu-test-mcp`）：会话的测试把它写进配置，让会话真起一个进程说 MCP。只在 `testkit` 开着时编，
+# 不随发行带出去。
+[[bin]]
+name = "lm-test-mcp"
+path = "src/bin/lm-test-mcp.rs"
+required-features = ["testkit"]
+test = false
+doc = false
+
+[features]
+# 测试用的假 HTTP 服务器（`http::testkit`）：别的 crate 的测试要用它，在自己的 dev-dependencies 里打开。
+testkit = ["tokio/io-util", "tokio/net", "tokio/rt", "tokio/sync", "tokio/time"]
+
+[dev-dependencies]
+# 会话日志的测试照真内核跑一个会话，要照剧本回话的替身。
+lm-kernel = { path = "../lm-kernel", features = ["testkit"] }
+# 自己的集成测试用上假服务器。
+lm-engine = { path = ".", features = ["testkit"] }
+# 测试跑在 tokio 上。`test-util`：循环的测试把 tokio 的钟往后拨（`tests/session/looping.rs`），不真等到点；只在测试里开，
+# 发行的程序不带（依赖的功能开关照目标分开算）。
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true
+
+# 一个模块一个测试程序，照 Miyu 原来一个 crate 一个的分法。
+[[test]]
+name = "fs"
+path = "tests/fs/main.rs"
+
+[[test]]
+name = "http"
+path = "tests/http/main.rs"
+
+# 会话的集成测试并成一个程序（照 Miyu `miyu-session/tests/all.rs`）。
+[[test]]
+name = "session"
+path = "tests/session/main.rs"
+
+# 用出来的窗口（原来为接住阻塞线程里发的运行日志单独一个程序；LM-1 #058 去掉运行日志以后照旧分开）。
+[[test]]
+name = "route_learned"
+path = "tests/route_learned/main.rs"
+
+# 读目录、后台更新（models）。
+[[test]]
+name = "models"
+path = "tests/models/main.rs"
+
+# 量红线 5 用的：造 N 轮的会话、在单独的进程里载入它，`bench/history.py` 起它、量它。
+[[example]]
+name = "history"
+required-features = ["testkit"]
+
+# MCP 的客户端（mcp，L5 六）的集成测试并成一个程序（照 Miyu `miyu-mcp/tests/all.rs`）。
+[[test]]
+name = "mcp"
+path = "tests/mcp/main.rs"
+
+# 基础工具（basesystem）的集成测试并成一个程序。
+[[test]]
+name = "basesystem"
+path = "tests/basesystem/main.rs"
+
+[[test]]
+name = "prepared_compaction"
+path = "tests/prepared_compaction/main.rs"
+
+[[test]]
+name = "forged_turn"
+path = "tests/forged_turn/main.rs"

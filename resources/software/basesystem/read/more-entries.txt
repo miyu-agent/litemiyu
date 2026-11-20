@@ -1,0 +1,1 @@
+(Entries {from}-{to} of {total}. Next: offset={next}.)

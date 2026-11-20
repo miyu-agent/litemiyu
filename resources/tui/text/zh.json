@@ -1,0 +1,625 @@
+{
+  "tips": [
+    "Ctrl+R 翻输入历史",
+    "/ 打开命令列表",
+    "Shift+Enter 换行",
+    "↑ 上一条输入",
+    "Ctrl+S 暂存输入，再按一次取回",
+    "拖选正文，松开即复制",
+    "PgUp、PgDn 滚动正文",
+    "Ctrl+Z 挂起，fg 恢复",
+    "/undo 撤销上一轮，/restore 恢复",
+    "有后台命令时，在空输入框按 ↓ 打开后台面板",
+    "Ctrl+G 用编辑器写这一句",
+    "/delete 删除当前会话",
+    "/jump 回到之前说过的话"
+  ],
+  "queued_withdraw": "点击撤回",
+  "copied": "已复制 {count} 个字符",
+  "copy_failed": "复制失败：{reason}",
+  "nothing_to_copy": "没有可复制的回答",
+  "core_failed": "连不上核心：{reason}",
+  "loop_stopped": "上次关闭窗口时循环已停止，输入 /loop 可以重新开始",
+  "refused": "核心拒绝：{reason}",
+  "editing": " 编辑上一条 · Esc 取消 ",
+  "interrupted": "已中断",
+  "failed": "出错：{reason}",
+  "reason_with": "{head}：{message}",
+  "status_hints": {
+    "402": "额度已用完",
+    "404": "未找到：请检查端点地址和模型名",
+    "429": "请求受限或额度不足，请稍后重试"
+  },
+  "retry_after": {
+    "hints": {
+      "402": "额度已用完，约 {wait}后恢复",
+      "429": "请求受限或额度不足，约 {wait}后恢复"
+    },
+    "cooling": "模型都在冷却，约 {wait}后恢复",
+    "seconds": [
+      "{n} 秒",
+      "{n} 秒"
+    ],
+    "minutes": [
+      "{n} 分钟",
+      "{n} 分钟"
+    ],
+    "hours": [
+      "{n} 小时",
+      "{n} 小时"
+    ],
+    "days": [
+      "{n} 天",
+      "{n} 天"
+    ]
+  },
+  "retry": "重试 {attempt}/{limit}：{message}",
+  "done": "{time} · {endpoint}/{model} · {elapsed}",
+  "speed": "{rate} tok/s",
+  "thinking": "思考中",
+  "thought": "已思考",
+  "prepare": "准备{name}",
+  "on_session": "会话 {id}",
+  "via": "{name}（{via}）",
+  "to_parent": "父会话",
+  "attached": "附件：{names}",
+  "to_bottom": "跳转到底部（Ctrl+End）↓",
+  "omitted": "已省略 {count} 行",
+  "shell": {
+    "placeholder": "输入要跑的命令",
+    "no_attachments": "跑命令不能带附件",
+    "running": "运行中",
+    "exited": "退出码 {code} · {elapsed}",
+    "signal": "信号 {signal} · {elapsed}",
+    "timed_out": "超时（120s）",
+    "interrupted": "已打断",
+    "aborted": "LiteMiyu 已退出，命令没有执行完"
+  },
+  "summary": {
+    "ran": [
+      "执行了 1 条命令",
+      "执行了 {count} 条命令"
+    ],
+    "used": [
+      "使用了 1 个工具",
+      "使用了 {count} 个工具"
+    ],
+    "made": [
+      "编辑了 1 处",
+      "编辑了 {count} 处"
+    ],
+    "edits": [
+      "1 处编辑",
+      "{count} 处编辑"
+    ],
+    "tools": [
+      "1 个工具",
+      "{count} 个工具"
+    ],
+    "thoughts": [
+      "1 次思考",
+      "{count} 次思考"
+    ],
+    "errors": [
+      "1 个出错",
+      "{count} 个出错"
+    ],
+    "reports": [["1 个后台命令完成", "{count} 个后台命令完成"], ["1 个后台任务完成", "{count} 个后台任务完成"], ["1 条回报", "{count} 条回报"]],
+    "thought_for": "思考了 {elapsed}",
+    "spawned": [
+      "派出 1 个子代理",
+      "派出 {count} 个子代理"
+    ],
+    "messaged": [
+      "给 1 个子代理留言",
+      "给 {count} 个子代理留言"
+    ],
+    "messaged_sessions": [
+      "给 1 个会话留言",
+      "给 {count} 个会话留言"
+    ],
+    "agents": [
+      "1 个子代理",
+      "{count} 个子代理"
+    ],
+    "messages": [
+      "1 条留言",
+      "{count} 条留言"
+    ]
+  },
+  "home_placeholder": "/ 打开命令列表",
+  "ignored": {
+    "lead": "以下内容无效，已忽略：{list}",
+    "settings": "配置项 {names}",
+    "mcp": "MCP 服务 {names}",
+    "skills": "技能 {names}",
+    "join": "；",
+    "names_join": "、",
+    "more": "{names} 等 {count} 个"
+  },
+  "exit_hint": "按 Ctrl+D 退出",
+  "closing": "正在退出：保存会话和配置…（最多等待 3 秒）",
+  "settings_not_saved": "配置保存失败：{why}",
+  "input_cleared": "已清空 · ↑ 恢复",
+  "side_jumps": "跳转消息",
+  "colors_not_recorded": "未能保存终端的颜色：{error}",
+  "open": {
+    "refused": "不支持打开此地址：{url}",
+    "missing": "文件不存在：{path}",
+    "failed": "无法打开：{reason}",
+    "no_program": "没有能打开它的程序：{path}"
+  },
+  "esc_hint": "再按一次 Esc 中断",
+  "switching": "正在切换会话",
+  "stashed": "> 暂存",
+  "no_clear_running": "回答进行中，无法清屏",
+  "icons_changed": "图标：{name}",
+  "markdown": {
+    "image": "[图片: ",
+    "details": "详细信息",
+    "details_marks": [
+      "▶ ",
+      "▼ "
+    ],
+    "bullets": [
+      "▪",
+      "•",
+      "◦"
+    ]
+  },
+  "refusal_hints": {
+    "path_unreadable": "目录不存在或无法读取",
+    "not_a_directory": "不是目录",
+    "path_forbidden": "该目录不能用作工作区",
+    "owner_only": "仅主人可用",
+    "session_not_found": "会话不存在",
+    "archived": "这是存档，不能接着说",
+    "nothing_to_title": "还没有可以起标题的对话",
+    "nothing_to_delete": "没有可删除的会话",
+    "nothing_to_export": "还没有会话可以导出",
+    "nothing_to_rename": "会话尚未创建，无法重命名",
+    "nothing_to_delete": "没有可删除的会话",
+    "nothing_to_recap": "没有可回顾的内容",
+    "recap_failed": "生成回顾失败",
+    "nothing_to_compact": "没有可压缩的内容",
+    "nothing_to_stop": "没有运行中的任务",
+    "nothing_to_clear": "上下文为空",
+    "not_redoable": "无法重做",
+    "empty_message": "消息为空",
+    "unknown_job": "任务不存在或已结束",
+    "nothing_to_unrevert": "没有可恢复的撤销",
+    "nothing_to_revert": "没有可撤销的回合",
+    "turn_running": "回合进行中",
+    "id_reused": "同一个请求编号换了参数，没有收。请换一个新的编号",
+    "unknown_turn": "回合不存在",
+    "restoring": "正在撤销或恢复",
+    "shell_unavailable": "这个会话不能跑命令",
+    "session_unavailable": "会话暂时无法读取，请稍后重试",
+    "session_read_only": "这个会话只能看，不能接着聊：输入 /new 新开会话",
+    "unknown_command": "命令不存在"
+  },
+  "models": {
+    "replaced": "↻ 原模型不可用，已切换为默认：{from} → {to}"
+  },
+  "done_usage": " · {tokens}(C{percent}%)",
+  "model_panel": {
+    "title": "模型",
+    "count": "  {count} 个",
+    "query": " · 搜索：",
+    "hint": "↑/↓ 选择 · Enter 切换 · Esc 关闭",
+    "hint_vim": "/ 搜索 · j/k 选择 · Enter 切换 · Esc 关闭",
+    "searching": "输入以搜索 · Ctrl+J/K 选择 · Enter 完成 · Esc 取消",
+    "loading": "正在加载模型…",
+    "empty": "无匹配的模型",
+    "no_key": "未设置密钥",
+    "refuse_no_key": "该模型未设置密钥"
+  },
+  "undo": {
+    "undone": "已撤销",
+    "restore_hint": "/restore 恢复",
+    "undo_compactions": "已撤销压缩，上下文恢复到压缩前",
+    "undo_clears": "已撤销清空，上下文恢复到清空前",
+    "stopped_jobs": "已停止 {count} 个任务"
+  },
+  "export": {
+    "saved": "已导出到 {path}（{size}）",
+    "failed": "导出失败：{reason}"
+  },
+  "rename": {
+    "retitling": "正在重新起标题…",
+    "done": "已改名：{title}",
+    "removed": "已清除标题",
+    "too_long": "标题最多 {max} 个字"
+  },
+  "effort": {
+    "title": "思考程度 · {model}",
+    "loading_title": "思考程度",
+    "hint": "↑/↓ 选择 · Enter 切换 · Esc 关闭",
+    "default": "跟随设置",
+    "loading": "正在加载模型…",
+    "none": "该模型没有可选的思考程度"
+  },
+  "menu": {
+    "title": "命令",
+    "count": " {count} 条"
+  },
+  "file_block": {
+    "file": "[{name}]",
+    "folder": "[{name}/]"
+  },
+  "compaction": {
+    "triggered": "已触发上下文压缩",
+    "progress": "正在压缩上下文",
+    "written": " {written}",
+    "percent": " {percent}%",
+    "done": "上下文已压缩：{before} → {after} token",
+    "done_mark": "● ",
+    "cleared": "上下文已清空",
+    "failed": "· 压缩失败：{reason}",
+    "called_a_tool": "摘要请求调用了工具",
+    "isolating": "· 摘要请求调用了工具，改为不带工具重新压缩",
+    "paused_failures": "· 自动压缩连续失败 {n} 次，已暂停",
+    "paused_too_large": "· 第 {entry} 条内容过大，压缩后很快再次占满，自动压缩已暂停",
+    "paused": "· 自动压缩已暂停"
+  },
+  "error_classes": {
+    "output_limit": "回复超过了输出上限",
+    "retryable": "临时错误",
+    "rate_limited": "请求受限",
+    "context_too_long": "上下文太长",
+    "auth": "认证失败",
+    "no_model": "没有可用的模型",
+    "cooling": "模型都在冷却",
+    "content_policy": "被内容策略拦截",
+    "bad_stream": "响应流异常",
+    "empty_reply": "回复为空",
+    "bad_summary": "无法提取摘要",
+    "quota": "额度用完",
+    "compaction_paused": "自动压缩已暂停",
+    "stalled": "模型没有响应",
+    "other": "模型出错"
+  },
+  "usage_cell": {
+    "context": "{used}/{window}({percent}%)",
+    "total": "Σ{tokens}(C{percent}%)",
+    "failed": "上下文压缩失败",
+    "over": "上下文超出窗口",
+    "compact": "压缩",
+    "compacting": "正在压缩上下文"
+  },
+  "status": {
+    "new_title": "新会话",
+    "keys": {
+      "id": "会话 ID",
+      "cwd": "当前工作目录",
+      "model": "模型",
+      "context": "上下文",
+      "compaction": "压缩",
+      "usage": "用量",
+      "hit": "缓存命中",
+      "cost": "花费"
+    },
+    "effort": "思考 {effort}",
+    "window": "窗口 {window}",
+    "average": "平均 {rate} tok/s",
+    "context": "{used} / {window}（{percent}%）",
+    "compactions": "{n} 次",
+    "compaction_line": "到 {line} 自动压缩",
+    "total": "共 {tokens} token",
+    "split": "输入 {input} · 输出 {output}",
+    "aux": "辅助请求 {tokens}",
+    "breaks": "缓存断裂 {n} 次",
+    "hint": "↑/↓ 滚动 · c 复制 · Esc 关闭"
+  },
+  "side": {
+    "id": "#{id}",
+    "cwd": "工作区",
+    "context": "上下文",
+    "context_value": "{used} / {window} · {percent}%",
+    "compactions": "压缩 {n} 次",
+    "usage": "用量",
+    "total": "共 {tokens} token",
+    "split": "输入 {input} · 输出 {output}",
+    "hit": "缓存命中 {percent}%",
+    "breaks": "缓存断裂 {n} 次",
+    "cost": "花费 {amounts}"
+  },
+  "sessions": {
+    "title": "会话",
+    "count": "  {count} 个",
+    "query": " · 搜索：",
+    "hint": "↑/↓ 选择 · Enter 切换 · 空格 勾选 · Ctrl+D 删除 · Esc 关闭",
+    "hint_vim": "/ 搜索 · j/k 选择 · Enter 切换 · 空格 勾选 · Ctrl+D 删除 · Esc 关闭",
+    "searching": "输入以搜索 · Ctrl+J/K 选择 · Enter 完成 · Esc 取消",
+    "loading": "正在加载会话…",
+    "empty": "无匹配的会话",
+    "now": "刚才",
+    "minutes": "{n} 分钟前",
+    "hours": "{n} 小时前",
+    "days": "{n} 天前",
+    "side_recent": "最近会话",
+    "untitled": "未命名会话",
+    "open_elsewhere": "已在其他窗口打开",
+    "busy_elsewhere": "在其他窗口运行中",
+    "closed": "未打开",
+    "taken": "此会话已在其他窗口打开",
+    "open_failed": "无法打开此会话：{reason}",
+    "read_only": "会话日志第 {line} 行坏了，只能看到这一行以前的内容，不能接着聊。要继续请新开一个会话。",
+    "read_only_placeholder": "这个会话只能看，输入 /new 新开会话",
+    "unavailable_retry": "会话暂时无法读取，{wait}后自动重试",
+    "unavailable_gave_up": "会话暂时无法读取，请稍后重试",
+    "list_failed": "无法列出会话：{reason}",
+    "deleted": "已删除「{title}」",
+    "ticked": " · 已选 {count}",
+    "delete_again": "再按一次 Ctrl+D 删除「{title}」",
+    "delete_many": "再按一次 Ctrl+D 删除 {count} 个会话",
+    "deleted_many": "已删除 {count} 个会话",
+    "groups": ["最近", "近 7 天", "近 30 天", "30 天前"],
+    "delete_running": "回答进行中：先打断再删除当前会话",
+    "delete_failed": "无法删除此会话：{reason}",
+    "new_tier": "/new 的参数只能是 bare（无功能）或 full（全部功能）"
+  },
+  "history": {
+    "title": "历史",
+    "count": "  {count} 条",
+    "placeholder": "筛选历史…",
+    "empty": "无匹配项",
+    "lines": " · +{count} 行",
+    "more": "⋮ 还有 {count} 行",
+    "hints": "↑/↓ 选择 · Enter 填入输入框 · Esc 关闭",
+    "hints_vim": "/ 搜索 · j/k 选择 · Enter 填入输入框 · Esc 关闭",
+    "searching": "输入以搜索 · Ctrl+J/K 选择 · Enter 完成 · Esc 取消",
+    "now": "刚才",
+    "minutes": "{n} 分钟前",
+    "hours": "{n} 小时前",
+    "days": "{n} 天前",
+    "none": "暂无历史记录"
+  },
+  "jump": {
+    "title": "跳到",
+    "count": "  {count} 条",
+    "placeholder": "筛选说过的话…",
+    "empty": "无匹配项",
+    "lines": " · +{count} 行",
+    "more": "⋮ 还有 {count} 行",
+    "hints": "↑/↓ 选择 · Enter 跳过去 · Esc 关闭",
+    "hints_vim": "/ 搜索 · j/k 选择 · Enter 跳过去 · Esc 关闭",
+    "searching": "输入以搜索 · Ctrl+J/K 选择 · Enter 完成 · Esc 取消",
+    "now": "刚才",
+    "minutes": "{n} 分钟前",
+    "hours": "{n} 小时前",
+    "days": "{n} 天前",
+    "none": "还没有说过的话"
+  },
+  "help": {
+    "title": "帮助",
+    "hint": "↑/↓ 滚动 · Esc 关闭",
+    "commands": "命令",
+    "keys_title": "按键",
+    "keys": [
+      [
+        "Enter",
+        "发送；列表打开时执行选中项"
+      ],
+      [
+        "Shift+Enter、Ctrl+J",
+        "换行（也可用 Alt+Enter）"
+      ],
+      [
+        "↑ ↓",
+        "在首行、末行时浏览输入历史"
+      ],
+      [
+        "Ctrl+R",
+        "输入历史列表"
+      ],
+      [
+        "Ctrl+A",
+        "回到输入框开头"
+      ],
+      [
+        "Ctrl+← Ctrl+→",
+        "按词移动"
+      ],
+      [
+        "Ctrl+W、Alt+Backspace",
+        "删除前一个词"
+      ],
+      [
+        "Ctrl+C",
+        "复制选中内容；清空输入框（↑ 恢复）；回答时中断"
+      ],
+      [
+        "Ctrl+G",
+        "在外部编辑器中编辑（$VISUAL、$EDITOR）"
+      ],
+      [
+        "Ctrl+Enter",
+        "回答时立即发送排队的消息（含输入框）"
+      ],
+      [
+        "Esc Esc",
+        "回答时中断并发送排队的消息"
+      ],
+      [
+        "Ctrl+S",
+        "暂存输入，再按一次取回"
+      ],
+      [
+        "Ctrl+V",
+        "粘贴"
+      ],
+      [
+        "↓（输入框为空时）",
+        "聚焦后台按钮、子代理状态行"
+      ],
+      [
+        "PgUp PgDn",
+        "滚动正文"
+      ],
+      [
+        "Ctrl+End",
+        "跳到正文底部"
+      ],
+      [
+        "Ctrl+L",
+        "清屏"
+      ],
+      [
+        "Ctrl+Z",
+        "挂起，fg 恢复"
+      ],
+      [
+        "Ctrl+D",
+        "输入框为空时退出"
+      ]
+    ]
+  },
+  "drawer": {
+    "agent": "子代理 {name}",
+    "asking": "{who} 在问",
+    "preview": "预览",
+    "hazard": "高危命令",
+    "auto_deny": "{time} 后自动拒绝",
+    "answered_tab": " ✓",
+    "review_tab": "确认",
+    "pointer": "› ",
+    "unchecked": "[ ] ",
+    "checked": "[✓] ",
+    "other": "输入其他答案",
+    "notes_label": "补充",
+    "decisions": [
+      "允许本次",
+      "此目录不再询问",
+      "不允许"
+    ],
+    "decision_prefix": "此目录下以 `{prefix}` 开头的命令不再询问",
+    "reason_hint": "理由（可选）",
+    "reason_key": "n 编写理由",
+    "command_above": "↑ 上面还有 {n} 行",
+    "command_below": "↓ 还有 {n} 行",
+    "keys_scroll": "Ctrl+J/K 滚动命令",
+    "keys_scroll_preview": "Ctrl+J/K 滚动预览",
+    "preview_below": "下面还有 {n} 行",
+    "access": {
+      "execute": "运行一条命令",
+      "write": "写入 {count} 个文件",
+      "read": "读取 {count} 个文件",
+      "exec": "运行 {tool}"
+    },
+    "access_other": "使用 {tool}",
+    "outside": "工作区外",
+    "private": "私密目录",
+    "protected": "受保护",
+    "unanswered": "未回答",
+    "keys": "↑/↓ 选择 · Enter 提交 · n 补充 · Esc ×2 取消",
+    "keys_multi": "↑/↓ 选择 · Space 勾选 · Enter 提交 · n 补充 · Esc ×2 取消",
+    "keys_approve": "↑/↓ 选择 · Enter 确定 · Esc ×2 取消",
+    "keys_review": "Enter 提交 · Esc ×2 取消",
+    "keys_edit": "Enter 保存 · Esc 退出编辑",
+    "keys_reason": "Enter 提交 · Esc 退出编辑",
+    "keys_tabs": " · ←/→ 换题",
+    "answered_head": "你回答了 {n} 个问题",
+    "answered_line": "{label} → {answer}",
+    "notes_suffix": "（补充：{notes}）",
+    "denied_with": "不允许 · {reason}",
+    "cancel_hint": "再按一次 Esc 取消"
+  },
+  "clipboard_unreadable": "无法读取剪贴板：请使用终端的粘贴（kitty 为 Ctrl+Shift+V）",
+  "clipboard_text_only": "这里只能粘贴文字",
+  "clipboard_empty": "剪贴板为空",
+  "paste_label": "[已粘贴 {lines} 行]",
+  "loops": {
+    "title": "循环",
+    "next": "下次 {time}",
+    "dynamic": "动态间隔",
+    "every": [
+      "每 {n} 秒",
+      "每 {n} 分钟",
+      "每 {n} 小时",
+      "每 {n} 天"
+    ]
+  },
+  "jobs": {
+    "from_session": "从会话 {id}「{title}」收到消息",
+    "from_session_untitled": "从会话 {id} 收到消息",
+    "from_agent": "从子代理 {job} 收到消息",
+    "from_main": "从主会话收到消息",
+    "received": "{from} · {text}",
+    "peer_who": "{id}「{title}」",
+    "peer_who_untitled": "{id} ",
+    "peer_idle": "会话 {who}回复",
+    "peer_expired": "会话 {who}12 小时内未空闲，已停止等待",
+    "peer_gone": "会话 {who}已不存在，已停止等待",
+    "peer_closed": "会话 {who}未打开，已停止等待",
+    "peer_other": "会话 {who}· {reason}",
+    "already_ended": "任务已结束",
+    "fell_behind": "子代理的消息可能不完整",
+    "button": "{count} 个后台命令",
+    "title": "后台",
+    "active": "{count} 个运行中的命令",
+    "hint": "↑/↓ 选择 · Enter 展开 · x 停止 · Esc 关闭",
+    "running": "（运行中 {elapsed}）",
+    "done": "（完成 {elapsed}）",
+    "failed": "（失败 · 退出码 {code}）",
+    "killed": "（失败 · 信号 {signal}）",
+    "stopped": "（已停止）",
+    "undone": "（撤销时已停止）",
+    "restarted": "（上次退出时已停止）",
+    "timed_out": "（超时已停止）",
+    "too_large": "（输出太大已停止）",
+    "too_chatty": "（输出太频繁已停止）",
+    "done_note": "后台命令完成 · {title} · {elapsed}",
+    "failed_note": "后台命令失败 · {title} · 退出码 {code}",
+    "killed_note": "后台命令失败 · {title} · 信号 {signal}",
+    "stopped_note": "后台命令已停止 · {title}{why}",
+    "agent_note": "后台任务完成 · {title} · {elapsed}",
+    "agent_stopped_note": "后台任务已停止 · {title}{why}",
+    "why_undone": " · 撤销时已停止",
+    "why_restarted": " · 上次退出时已停止",
+    "why_timed_out": " · 超时已停止",
+    "why_too_large": " · 输出太大已停止",
+    "why_too_chatty": " · 输出太频繁已停止",
+    "ok_mark": "● ",
+    "fail_mark": "✗ ",
+    "stop_mark": "● ",
+    "lines_mark": "◆ ",
+    "lines_note": "监视 · {title} · {lines} 行",
+    "no_output": "没有输出",
+    "more_ended": "已收起 {count} 个",
+    "less_ended": "收起已结束的",
+    "main": "主会话",
+    "finished": "完成",
+    "more": "还有 {count} 个",
+    "doing_thinking": "思考中",
+    "doing_replying": "回答中",
+    "child_tag": " 子代理 · {title} "
+  },
+  "rescue": {
+    "tag": " 应急模式 ",
+    "config_unreadable": "无法读取配置（{why}），已使用环境变量和命令行提供的供应商",
+    "no_key": "未提供密钥（{name}），请求不带认证",
+    "unavailable": "应急模式下不可用：不保存任何内容到磁盘",
+    "missing": "litemiyu --rescue：没有可用的模型，缺少 {missing}。",
+    "missing_sep": "、",
+    "missing_config": "配置也无法读取：{why}",
+    "bad": "litemiyu --rescue：{name} 的值无效。",
+    "help": [
+      "用法：litemiyu [config] [--bare] [--rescue [--base-url <地址>] [--model <名字>]\n                [--api <接口>]] | --version | --help",
+      "",
+      "  litemiyu            打开对话（全部功能）",
+      "  litemiyu config     打开配置界面",
+      "  litemiyu --bare     第一个会话为无功能会话：不提供工具，不注入任何内容",
+      "  litemiyu --rescue   应急模式：不保存任何内容到磁盘（包括会话日志、配置、\n                      输入历史），只提供文件和命令工具；关闭后会话不保留",
+      "  litemiyu --version  显示版本后退出（也可以写 -V）",
+      "",
+      "应急模式的供应商（命令行选项覆盖环境变量，两者都覆盖配置；\n都未提供时使用配置中的 models.chat）：",
+      "  LITEMIYU_RESCUE_BASE_URL  --base-url <地址>  供应商的地址，路径由驱动补在后面\n                            （例如 https://api.deepseek.com/v1）",
+      "  LITEMIYU_RESCUE_MODEL     --model <名字>     模型名",
+      "  LITEMIYU_RESCUE_API       --api <接口>       openai-chat（默认）、anthropic、\n                                               openai-responses",
+      "  LITEMIYU_RESCUE_API_KEY   （仅环境变量）     密钥；未提供时请求不带认证",
+      "",
+      "例如：LITEMIYU_RESCUE_API_KEY=sk-… litemiyu --rescue \\\n        --base-url https://api.deepseek.com/v1 --model deepseek-chat"
+    ]
+  }
+}

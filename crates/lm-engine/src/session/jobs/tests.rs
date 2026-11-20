@@ -1,0 +1,491 @@
+//! 任务表的测试（施工 7-3）：用假的后台进程（`crate::tool::testkit::Held`），三个平台一样。编号照日志往后数；输出一段段
+//! 写进 `jobs/<编号>.out`；自己退出了整份存成 blob、交回 actor，`by` 是起它的那次调用，`cause` 是那一轮的；交进内核、
+//! 落了盘才从表里拿掉；停下时在跑的报 `restarted`、已经报了的不再报，杀掉的是还在跑的；actor 停了整组杀掉、不再收新的。
+
+use std::path::Path;
+use std::sync::atomic::AtomicU64;
+use std::time::Duration;
+
+use crate::tool::Exit;
+use crate::tool::testkit::Held;
+use lm_kernel::kernel::id::ContentHash;
+
+use super::*;
+
+mod early;
+
+/// 一个用完就删的临时目录：会话目录是 `session/`，blob 在 `blobs/`。
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Scratch {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("litemiyu-jobs-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(dir.join("session")).unwrap();
+        Scratch(dir)
+    }
+
+    fn blobs(&self) -> Blobs {
+        Blobs::new(self.0.join("blobs"))
+    }
+
+    fn output(&self, job: u64) -> PathBuf {
+        crate::store::jobs::output_path(&self.0.join("session"), &JobId::new(job).unwrap())
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        // 删到一半撞上后台写入（任务的输出）的过一会儿再删（施工 TMP-1，Miyu `miyu_store::testkit::remove_tree`）。
+        for _ in 0..100 {
+            if std::fs::remove_dir_all(&self.0).is_ok() || !self.0.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+/// 一张表、一个会话的那一份：编号从 `used` 往后数；交回 actor 的收件箱。
+fn session(
+    scratch: &Scratch,
+    table: &Arc<Jobs>,
+    used: u64,
+) -> (SessionJobs, mpsc::UnboundedReceiver<Back>) {
+    let (backs, back) = mpsc::unbounded_channel();
+    let kit = Kit {
+        table: Arc::clone(table),
+        dir: scratch.0.join("session"),
+        blobs: scratch.blobs(),
+        ids: Arc::new(JobIds::starting_after(None, used)),
+        roster: Roster::default(),
+        agents: None,
+        cut: lm_kernel::kernel::session::Reports {
+            chars: lm_kernel::kernel::session::LINE_CHARS,
+            omitted: lm_kernel::kernel::template::Template::parse("").expect("空的合写法"),
+        },
+    };
+    let jobs = SessionJobs::new(kit, backs);
+    (jobs, back)
+}
+
+fn call() -> CallId {
+    CallId::parse("call_5_1").unwrap()
+}
+
+fn cause() -> Option<CommandId> {
+    Some(CommandId::parse("cmd-1").unwrap())
+}
+
+/// 起任务的那次调用（[`call`]）的结果落了盘，带着 `started` 这几个的 `job.started`（`effects` 照 `tool.result` 的写法）：之后
+/// 它们的结束、行才交给 actor（引擎线第九趟，`gate.rs`）。
+fn landed(jobs: &SessionJobs, started: &[&JobId]) {
+    let effects: Vec<String> = started
+        .iter()
+        .map(|job| {
+            format!(r#"{{"kind":"job.started","job":"{job}","what":"command","title":"t"}}"#)
+        })
+        .collect();
+    let line = format!(
+        r#"{{"seq":9,"at":"2026-09-25T07:04:07.905Z","kind":"tool.result","turn":3,"by":{{"kind":"tool","call_id":"{call}"}},"cause":"cmd-1","body":{{"call_id":"{call}","status":"ok","blocks":[],"effects":[{effects}]}}}}"#,
+        call = call(),
+        effects = effects.join(","),
+    );
+    jobs.note(&[Event::from_line(&line).expect("工具结果合写法")]);
+}
+
+/// 宽松的上限：一小时、出厂的输出上限，平常的测试碰不到。
+fn roomy() -> JobLimits {
+    JobLimits {
+        running: Duration::from_secs(3600),
+        output: super::limits::OUTPUT_LIMIT,
+    }
+}
+
+fn at() -> Timestamp {
+    Timestamp::from_unix_millis(0).unwrap()
+}
+
+/// 等收件箱里来一条结束，最多十秒。
+async fn next_end(back: &mut mpsc::UnboundedReceiver<Back>) -> Ended {
+    let waited = tokio::time::timeout(Duration::from_secs(10), back.recv()).await;
+    match waited.expect("十秒内报了结束").expect("收件箱没关") {
+        Back::Job(ended) => ended,
+        other => panic!("只该有任务的结束：{other:?}"),
+    }
+}
+
+/// 等到 `path` 的内容是 `want`，最多十秒。
+async fn until_written(path: &Path, want: &str) {
+    for _ in 0..2000 {
+        if std::fs::read_to_string(path).is_ok_and(|text| text == want) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("十秒内 {} 没写成 {want:?}", path.display());
+}
+
+#[tokio::test]
+async fn a_job_counts_on_writes_its_output_and_reports_when_it_exits() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (mut jobs, mut back) = session(&scratch, &table, 2);
+    let held = Held::new(&["第一行\n", "second\n"]);
+    let job = jobs
+        .port(call(), cause(), roomy())
+        .start(held.background())
+        .unwrap();
+    assert_eq!(job.to_string(), "j3", "照日志里用过的往后数");
+    landed(&jobs, &[&job]);
+    until_written(&scratch.output(3), "第一行\nsecond\n").await;
+    assert!(table.running(), "在跑");
+    held.end(Exit::Code(3));
+    let ended = next_end(&mut back).await;
+    let Input::JobEnded {
+        by,
+        cause: got,
+        reported,
+        ..
+    } = jobs.arrived(at(), ended)
+    else {
+        panic!("写成后台命令结束")
+    };
+    assert_eq!(by, By::Tool(Tool { call_id: call() }), "起它的那次调用");
+    assert_eq!(got, cause(), "那一轮的 cause");
+    assert_eq!(reported.job, job);
+    assert_eq!(reported.reason, JobReason::Exited);
+    assert_eq!(reported.exit_code, Some(3));
+    assert_eq!(reported.signal, None);
+    assert!(reported.duration_ms.is_some());
+    let whole = "第一行\nsecond\n".as_bytes();
+    assert_eq!(reported.output, Some(ContentHash::of(whole)));
+    assert_eq!(reported.chars, Some(11), "按字数，不按字节");
+    assert_eq!(
+        reported.tail.as_deref(),
+        Some("第一行\nsecond\n"),
+        "不长的整份带上（施工 7-13）"
+    );
+    assert_eq!(scratch.blobs().get(&ContentHash::of(whole)).unwrap(), whole);
+    assert!(table.running(), "落盘之前还算在跑");
+    jobs.land();
+    assert!(!table.running(), "落了盘就拿掉");
+    assert_eq!(held.killed(), 0);
+}
+
+#[tokio::test]
+async fn a_signal_is_reported_and_an_empty_output_has_no_characters() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let held = Held::new(&[]);
+    let job = jobs
+        .port(call(), None, roomy())
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    held.end(Exit::Signal(15));
+    let ended = next_end(&mut back).await;
+    assert_eq!(ended.reported.job.to_string(), "j1");
+    assert_eq!(ended.reported.signal, Some(15));
+    assert_eq!(ended.reported.exit_code, None);
+    assert_eq!(ended.reported.chars, Some(0));
+    assert_eq!(ended.cause, None);
+}
+
+#[tokio::test]
+async fn stopping_reports_the_running_ones_and_then_kills_only_them() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let running = Held::new(&["half\n"]);
+    let exited = Held::new(&[]);
+    let first = jobs
+        .port(call(), cause(), roomy())
+        .start(running.background())
+        .unwrap();
+    let second = jobs
+        .port(call(), cause(), roomy())
+        .start(exited.background())
+        .unwrap();
+    landed(&jobs, &[&first, &second]);
+    until_written(&scratch.output(1), "half\n").await;
+    exited.end(Exit::Code(0));
+    // 等它报了（交进收件箱），再停下：它不再报成 restarted。
+    let early = next_end(&mut back).await;
+    assert_eq!(early.reported.job.to_string(), "j2");
+    let restarted = jobs.restarted(at()).await;
+    assert_eq!(restarted.len(), 1, "只报还在跑的：{restarted:?}");
+    let Input::JobEnded {
+        by,
+        cause: got,
+        reported,
+        ..
+    } = &restarted[0]
+    else {
+        panic!("写成后台命令结束")
+    };
+    assert_eq!(*by, By::Kernel);
+    assert_eq!(*got, None);
+    assert_eq!(reported.job.to_string(), "j1");
+    assert_eq!(reported.reason, JobReason::Restarted);
+    assert!(reported.duration_ms.is_some());
+    assert_eq!(reported.output, Some(ContentHash::of(b"half\n")));
+    assert_eq!(reported.exit_code, None, "报的时候还没杀");
+    assert_eq!(running.killed(), 0, "落盘之前不杀");
+    running.end(Exit::Signal(9));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        back.try_recv().is_err(),
+        "报过 restarted 的，自己结束了也不再报"
+    );
+    let later = Held::new(&[]);
+    jobs.port(call(), cause(), roomy())
+        .start(later.background())
+        .unwrap();
+    jobs.close().await;
+    assert_eq!(later.killed(), 1, "还在跑的整组杀掉");
+    assert_eq!(exited.killed(), 0, "已经结束的不杀");
+    assert!(!table.running());
+    let refused = Held::new(&[]);
+    assert!(
+        jobs.port(call(), cause(), roomy())
+            .start(refused.background())
+            .is_err(),
+        "停了以后不收新的"
+    );
+    assert_eq!(refused.killed(), 1, "收不下的整组杀掉");
+}
+
+#[tokio::test]
+async fn an_actor_going_away_kills_its_jobs_and_leaves_the_others() {
+    let scratch = Scratch::new();
+    let other = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, _back) = session(&scratch, &table, 0);
+    let (others, _other_back) = session(&other, &table, 0);
+    let mine = Held::new(&[]);
+    let theirs = Held::new(&[]);
+    let port = jobs.port(call(), cause(), roomy());
+    port.start(mine.background()).unwrap();
+    others
+        .port(call(), cause(), roomy())
+        .start(theirs.background())
+        .unwrap();
+    drop(jobs);
+    assert_eq!(mine.killed(), 1, "actor 停了，它的整组杀掉");
+    assert_eq!(theirs.killed(), 0, "别的会话的不动");
+    assert!(table.running(), "别的会话的还在跑");
+    let late = Held::new(&[]);
+    assert!(
+        port.start(late.background()).is_err(),
+        "actor 停了以后交来的不收"
+    );
+    assert_eq!(late.killed(), 1);
+    drop(others);
+    assert!(!table.running());
+}
+
+#[tokio::test]
+async fn an_output_file_that_cannot_be_made_refuses_the_job() {
+    let scratch = Scratch::new();
+    // `jobs` 那里是个文件：建不了目录。
+    std::fs::write(scratch.0.join("session").join("jobs"), b"").unwrap();
+    let table = Arc::new(Jobs::new());
+    let (jobs, _back) = session(&scratch, &table, 0);
+    let held = Held::new(&[]);
+    assert!(
+        jobs.port(call(), cause(), roomy())
+            .start(held.background())
+            .is_err()
+    );
+    assert_eq!(held.killed(), 1, "收不下的整组杀掉");
+    assert!(!table.running());
+}
+
+/// 她、人停的（施工 7-4）：还在表里、还没人报过的才停。
+fn who() -> Who {
+    Who {
+        by: By::Tool(Tool { call_id: call() }),
+        cause: cause(),
+        why: Why::Stopped { by_model: true },
+    }
+}
+
+#[tokio::test]
+async fn stopping_after_it_ended_on_its_own_does_nothing() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let held = Held::new(&[]);
+    let job = jobs
+        .port(call(), cause(), roomy())
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    held.end(Exit::Code(0));
+    // 自己退出的已经报了、还没落盘：表里还有它，停也不再杀、不再报第二条。
+    let ended = next_end(&mut back).await;
+    assert!(table.running(), "还没落盘，还在表里");
+    assert!(jobs.stop_command(job, who()).await.is_none(), "只认先到的");
+    assert_eq!(held.killed(), 0);
+    assert_eq!(ended.reported.reason, JobReason::Exited);
+}
+
+#[tokio::test]
+async fn a_stopped_job_is_not_reported_again_when_its_process_ends() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let held = Held::new(&["x\n"]);
+    let job = jobs
+        .port(call(), cause(), roomy())
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    until_written(&scratch.output(1), "x\n").await;
+    let stopped = jobs.stop_command(job, who()).await.expect("在跑，停得了");
+    assert_eq!(stopped.reported.reason, JobReason::Stopped);
+    assert!(stopped.reported.by_model);
+    assert_eq!(stopped.reported.chars, Some(2), "带到这时的输出");
+    assert_eq!(held.killed(), 1);
+    // 杀掉以后等着它的那一头照常去报：表里已经记成报了，收件箱里什么都不来。
+    let later = tokio::time::timeout(Duration::from_millis(300), back.recv()).await;
+    assert!(later.is_err(), "不交第二次：{later:?}");
+}
+
+/// 上限（施工 7-12 下）：跑到最长时间的停掉、报 `timed_out`；输出写过上限的停掉、报 `too_large`，存下的是停的那一刻写了的；
+/// 两种都照起它的那次调用报、整组杀一次。早结束的不会再被停一次。
+#[tokio::test]
+async fn a_job_over_its_limits_is_stopped() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let short = JobLimits {
+        running: Duration::from_millis(200),
+        ..roomy()
+    };
+    let held = Held::new(&["一行\n"]);
+    let job = jobs
+        .port(call(), cause(), short)
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    let ended = next_end(&mut back).await;
+    assert_eq!(ended.reported.reason, JobReason::TimedOut);
+    assert_eq!(ended.by, By::Tool(Tool { call_id: call() }));
+    assert_eq!(ended.cause, cause());
+    assert!(!ended.reported.by_model);
+    assert_eq!(held.killed(), 1);
+
+    let small = JobLimits {
+        output: 10,
+        ..roomy()
+    };
+    let held = Held::new(&["0123456789", "AB", "后面的"]);
+    let job = jobs
+        .port(call(), cause(), small)
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    let ended = next_end(&mut back).await;
+    assert_eq!(ended.reported.reason, JobReason::TooLarge);
+    assert_eq!(held.killed(), 1);
+    let kept = b"0123456789AB";
+    assert_eq!(
+        ended.reported.output,
+        Some(ContentHash::of(kept)),
+        "写过上限的那一段写了，之后的不写"
+    );
+
+    let held = Held::new(&[]);
+    let job = jobs
+        .port(call(), cause(), short)
+        .start(held.background())
+        .unwrap();
+    landed(&jobs, &[&job]);
+    held.end(Exit::Code(0));
+    assert_eq!(next_end(&mut back).await.reported.reason, JobReason::Exited);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(back.try_recv().is_err(), "结束了的不再报");
+    assert_eq!(held.killed(), 0);
+}
+
+/// 回报带的最后一段（施工 7-13）：不长的整份；长的取最后几个字，切在行首；后一半里没有换行的照字切；开头切在一个字中间的
+/// 不出乱码。
+#[test]
+fn the_tail_is_the_last_lines() {
+    use super::output::tail_of;
+    assert_eq!(tail_of(b"a\nb\n", 10), "a\nb\n");
+    assert_eq!(tail_of(b"line one\nline two\n", 12), "line two\n");
+    assert_eq!(tail_of(b"abcdefghij", 4), "ghij");
+    // 末尾的字节从「猫」的第二个字节起：照字取最后两个，坏掉的那一个不在里面。
+    let cut = "猫狗".as_bytes()[1..].to_vec();
+    assert_eq!(tail_of(&cut, 1), "狗");
+}
+
+/// 监视的命令（施工 MN-1 上）：标准输出的那一份攒成批交给 actor，写成内核的输入时 `by`、`cause` 照起它的那次调用；跑到最长
+/// 时间照样停掉报 `timed_out`。
+#[tokio::test]
+async fn a_watched_job_hands_its_lines_over_and_still_times_out() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, mut back) = session(&scratch, &table, 0);
+    let held = Held::new(&["one\ntwo\n"]);
+    let mut background = held.background();
+    background.lines = Some(Box::new(vec!["one\ntwo\n".to_string()].into_iter()));
+    let short = JobLimits {
+        running: Duration::from_secs(1),
+        ..roomy()
+    };
+    let job = jobs.port(call(), cause(), short).start(background).unwrap();
+    landed(&jobs, &[&job]);
+    let waited = tokio::time::timeout(Duration::from_secs(10), back.recv()).await;
+    let Some(Back::JobLines(seen)) = waited.expect("十秒内交了一批") else {
+        panic!("先交的是那一批行");
+    };
+    let Input::JobLines {
+        by,
+        cause: got,
+        lines,
+        ..
+    } = SessionJobs::lines(at(), seen)
+    else {
+        panic!("写成监视的行");
+    };
+    assert_eq!(by, By::Tool(Tool { call_id: call() }), "起它的那次调用");
+    assert_eq!(got, cause());
+    assert_eq!(lines.job, job);
+    assert_eq!(
+        (lines.text.as_str(), lines.lines, lines.omitted),
+        ("one\ntwo", 2, 0)
+    );
+    let ended = next_end(&mut back).await;
+    assert_eq!(ended.reported.reason, JobReason::TimedOut, "到时照样停");
+    assert_eq!(held.killed(), 1);
+}
+
+/// 太吵（施工 MN-1 上）：内核数满了让停，报 `too_chatty`，不带 `by_model`，整组杀一次。
+#[tokio::test]
+async fn a_chatty_watch_is_stopped_as_too_chatty() {
+    let scratch = Scratch::new();
+    let table = Arc::new(Jobs::new());
+    let (jobs, _back) = session(&scratch, &table, 0);
+    let held = Held::new(&["x\n"]);
+    let job = jobs
+        .port(call(), cause(), roomy())
+        .start(held.background())
+        .unwrap();
+    until_written(&scratch.output(1), "x\n").await;
+    let chatty = Who {
+        by: By::Tool(Tool { call_id: call() }),
+        cause: cause(),
+        why: Why::TooChatty,
+    };
+    let stopped = jobs.stop_command(job, chatty).await.expect("在跑，停得了");
+    assert_eq!(stopped.reported.reason, JobReason::TooChatty);
+    assert!(!stopped.reported.by_model);
+    assert_eq!(stopped.by, By::Tool(Tool { call_id: call() }));
+    assert_eq!(held.killed(), 1);
+}

@@ -1,0 +1,284 @@
+//! 效果的测试（施工 4-6 上）：三种认识的读写一字不差；一行都没显示的不写 `lines`，新建的 `before` 写成
+//! `null`；不认识的种类整块原样留着；缺了 `kind`、认识的种类缺了字段，报错。`job.started`（施工 7-1）：两种任务
+//! 读写一字不差，不认识的 `what` 原样留着，后台命令不写 `session`。`job.messaged`（施工 7-7）、`peer.watch`（施工 C-1）
+//! 读写一字不差。
+
+use super::*;
+
+/// 一个字母 `a` 的内容哈希。
+const A: &str = "sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb";
+/// 空内容的哈希。
+const EMPTY: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+fn hash(text: &str) -> ContentHash {
+    serde_json::from_str(&format!("\"{text}\"")).unwrap()
+}
+
+/// 读进来，再写出去：一字不差。交回读到的。
+fn round_trip(json: &str) -> Effect {
+    let effect: Effect = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&effect).unwrap(), json);
+    effect
+}
+
+#[test]
+fn the_three_kinds_round_trip() {
+    let read = format!(
+        r#"{{"kind":"file.read","path":"/home/me/src/lib.rs","lines":[1,37],"hash":"{A}"}}"#
+    );
+    assert_eq!(
+        round_trip(&read),
+        Effect::FileRead(FileRead {
+            path: "/home/me/src/lib.rs".to_string(),
+            lines: Some([1, 37]),
+            hash: hash(A),
+            skill: None,
+            display_name: Default::default(),
+        })
+    );
+    let changed = format!(
+        r#"{{"kind":"file.changed","path":"/home/me/src/lib.rs","before":"{A}","after":"{EMPTY}"}}"#
+    );
+    assert_eq!(
+        round_trip(&changed),
+        Effect::FileChanged(FileChanged {
+            path: "/home/me/src/lib.rs".to_string(),
+            before: Some(hash(A)),
+            after: hash(EMPTY),
+            before_text: None,
+            after_text: None,
+        })
+    );
+    let trashed = r#"{"kind":"file.trashed","path":"/home/me/notes.md","trash":"/home/me/.local/share/Trash/files/notes.md"}"#;
+    assert_eq!(
+        round_trip(trashed),
+        Effect::FileTrashed(FileTrashed {
+            path: "/home/me/notes.md".to_string(),
+            trash: "/home/me/.local/share/Trash/files/notes.md".to_string(),
+        })
+    );
+}
+
+#[test]
+fn nothing_shown_has_no_lines_and_a_new_file_has_a_null_before() {
+    let empty = Effect::FileRead(FileRead {
+        path: "/e".to_string(),
+        lines: None,
+        hash: hash(EMPTY),
+        skill: None,
+        display_name: Default::default(),
+    });
+    assert_eq!(
+        serde_json::to_string(&empty).unwrap(),
+        format!(r#"{{"kind":"file.read","path":"/e","hash":"{EMPTY}"}}"#)
+    );
+    let created = Effect::FileChanged(FileChanged {
+        path: "/n".to_string(),
+        before: None,
+        after: hash(A),
+        before_text: None,
+        after_text: None,
+    });
+    assert_eq!(
+        serde_json::to_string(&created).unwrap(),
+        format!(r#"{{"kind":"file.changed","path":"/n","before":null,"after":"{A}"}}"#)
+    );
+    // 没写 `before` 的，当新建读。
+    let without: Effect = serde_json::from_str(&format!(
+        r#"{{"kind":"file.changed","path":"/n","after":"{A}"}}"#
+    ))
+    .unwrap();
+    assert_eq!(without, created);
+}
+
+/// 改了的文件的小内容（施工 V-18）：写了的读写一字不差，排在哈希后面；没写的不写这两格，字节和以前一样。
+#[test]
+fn small_contents_ride_along_and_are_left_out_when_absent() {
+    let with = format!(
+        r#"{{"kind":"file.changed","path":"/n","before":null,"after":"{A}","after_text":"a"}}"#
+    );
+    assert_eq!(
+        round_trip(&with),
+        Effect::FileChanged(FileChanged {
+            path: "/n".to_string(),
+            before: None,
+            after: hash(A),
+            before_text: None,
+            after_text: Some("a".to_string()),
+        })
+    );
+    let both = format!(
+        r#"{{"kind":"file.changed","path":"/m","before":"{EMPTY}","after":"{A}","before_text":"","after_text":"a"}}"#
+    );
+    match round_trip(&both) {
+        Effect::FileChanged(changed) => {
+            assert_eq!(changed.before_text.as_deref(), Some(""));
+            assert_eq!(changed.after_text.as_deref(), Some("a"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// 图纸上的两条（`agents.md`「对外的样子」）：一个子代理带着会话，一个后台命令没有。
+#[test]
+fn a_started_job_round_trips() {
+    let agent = r#"{"kind":"job.started","job":"j2","what":"agent","title":"查 CI 为什么红","session":"01a0d78c-ca52-7d19-8b64-0e3f5a7c2d91"}"#;
+    assert_eq!(
+        round_trip(agent),
+        Effect::JobStarted(JobStarted {
+            foreground: false,
+            fork: false,
+            job: JobId::parse("j2").unwrap(),
+            what: JobKind::Agent,
+            title: "查 CI 为什么红".to_string(),
+            session: Some(SessionId::parse("01a0d78c-ca52-7d19-8b64-0e3f5a7c2d91").unwrap()),
+        })
+    );
+    let command = Effect::JobStarted(JobStarted {
+        foreground: false,
+        fork: false,
+        job: JobId::parse("j1").unwrap(),
+        what: JobKind::Command,
+        title: "跑全部测试".to_string(),
+        session: None,
+    });
+    let json = r#"{"kind":"job.started","job":"j1","what":"command","title":"跑全部测试"}"#;
+    assert_eq!(
+        serde_json::to_string(&command).unwrap(),
+        json,
+        "没有会话的不写这一格"
+    );
+    assert_eq!(round_trip(json), command);
+    // 写成 null 的当没有。
+    let null: Effect = serde_json::from_str(&json.replace("}", r#","session":null}"#)).unwrap();
+    assert_eq!(null, command);
+    // fork 子代理（施工 A-F 补）：写 `fork: true`；不是的不写（上面两条），以前的日志没有这一格照读成不是。
+    let forked = r#"{"kind":"job.started","job":"j3","what":"agent","title":"数标题","session":"01a0d78c-ca52-7d19-8b64-0e3f5a7c2d91","fork":true}"#;
+    let Effect::JobStarted(started) = round_trip(forked) else {
+        panic!("是 job.started");
+    };
+    assert!(started.fork);
+}
+
+/// 新版本才有的任务种类：原样留着，写出去还是原样；会话照写着的读。
+#[test]
+fn an_unknown_job_kind_is_kept_as_it_is() {
+    let json = r#"{"kind":"job.started","job":"j3","what":"cron","title":"每天八点"}"#;
+    match round_trip(json) {
+        Effect::JobStarted(started) => assert_eq!(started.what, JobKind::Other("cron".to_string())),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn an_unknown_kind_is_kept_as_it_is() {
+    let json = r#"{"kind":"diagram.drawn", "file" : "a.svg","scale":1.50}"#;
+    let effect = round_trip(json);
+    assert!(matches!(effect, Effect::Unknown(_)), "{effect:?}");
+}
+
+/// 旧日志里 `show` 报的 `file.shown`（2026-11-14 砍了 `show`）：读成不认识的种类，整块原样留着。
+#[test]
+fn an_old_file_shown_is_kept_as_it_is() {
+    let json = r#"{"kind":"file.shown","path":"/home/u/work/pic.png","blob":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","name":"pic.png","media_type":"image/png","size":68,"width":2,"height":1}"#;
+    let effect = round_trip(json);
+    assert!(matches!(effect, Effect::Unknown(_)), "{effect:?}");
+}
+
+/// 旧日志里 `todowrite` 报的 `todo.written`（2026-11-14 砍了 `todowrite`）：读成不认识的种类，整块原样留着，带着做完的
+/// 那一份的也一样。
+#[test]
+fn an_old_todo_written_is_kept_as_it_is() {
+    for json in [
+        r#"{"kind":"todo.written","todos":[{"content":"读代码","status":"completed"},{"content":"写测试","status":"in_progress"}]}"#,
+        r#"{"kind":"todo.written","todos":[],"done":[{"content":"读代码","status":"completed"}]}"#,
+    ] {
+        let effect = round_trip(json);
+        assert!(matches!(effect, Effect::Unknown(_)), "{effect:?}");
+    }
+}
+
+/// 给子代理留了言（施工 7-7）：只带编号，读写一字不差。
+#[test]
+fn a_message_to_a_subagent_round_trips() {
+    assert_eq!(
+        round_trip(r#"{"kind":"job.messaged","job":"j2"}"#),
+        Effect::JobMessaged(JobMessaged {
+            job: JobId::new(2).unwrap()
+        })
+    );
+}
+
+/// 订了「空了告诉我」（施工 C-1，`cross-session.md`「效果 peer.watch」）：只带被等的会话的整个编号，读写一字不差。
+#[test]
+fn a_watch_on_another_session_round_trips() {
+    assert_eq!(
+        round_trip(r#"{"kind":"peer.watch","session":"0192f3a0-2222-7abc-8def-5566778899aa"}"#),
+        Effect::PeerWatch(PeerWatch {
+            session: SessionId::parse("0192f3a0-2222-7abc-8def-5566778899aa").unwrap()
+        })
+    );
+}
+
+#[test]
+fn broken_effects_are_errors() {
+    for json in [
+        r#"{"path":"/a"}"#,
+        r#"{"kind":"file.read","path":"/a"}"#,
+        r#"{"kind":"file.changed","path":"/a","before":null}"#,
+        r#"{"kind":"file.read","path":"/a","hash":"md5:00"}"#,
+        r#"{"kind":"file.trashed","path":"/a"}"#,
+        r#"{"kind":"job.started","what":"command","title":"t"}"#,
+        r#"{"kind":"job.started","job":"j0","what":"command","title":"t"}"#,
+        r#"{"kind":"job.started","job":"1","what":"command","title":"t"}"#,
+        r#"{"kind":"job.started","job":"j1","title":"t"}"#,
+        r#"{"kind":"job.started","job":"j1","what":"command"}"#,
+        r#"{"kind":"job.started","job":"j1","what":"agent","title":"t","session":"s-1"}"#,
+        r#"{"kind":"job.messaged"}"#,
+        r#"{"kind":"job.messaged","job":"j0"}"#,
+        r#"{"kind":"peer.watch"}"#,
+        r#"{"kind":"peer.watch","session":"22334455"}"#,
+        r#"{"kind":"peer.watch","session":null}"#,
+    ] {
+        assert!(serde_json::from_str::<Effect>(json).is_err(), "{json}");
+    }
+}
+
+/// 读的是技能的 `SKILL.md`（施工 X-10 下）：多一格 `skill`，照原样读回来；别的文件不写这一格（上面几条）。
+#[test]
+fn a_skill_read_carries_the_skill_name() {
+    let read = format!(
+        r#"{{"kind":"file.read","path":"/d/skills/notes/SKILL.md","lines":[1,9],"hash":"{A}","skill":"notes"}}"#
+    );
+    assert_eq!(
+        round_trip(&read),
+        Effect::FileRead(FileRead {
+            path: "/d/skills/notes/SKILL.md".to_string(),
+            lines: Some([1, 9]),
+            hash: hash(A),
+            skill: Some("notes".to_string()),
+            display_name: Default::default(),
+        })
+    );
+}
+
+/// 读技能的那一刻记下它给人看的名字（施工 9-8 五补）：多一格 `display_name`，照原样读回来；没写的不写这一格（上一条）。
+#[test]
+fn a_skill_read_can_carry_its_display_names() {
+    let read = format!(
+        r#"{{"kind":"file.read","path":"/d/skills/notes/SKILL.md","hash":"{A}","skill":"notes","display_name":{{"en":"Notes","zh":"记笔记"}}}}"#
+    );
+    assert_eq!(
+        round_trip(&read),
+        Effect::FileRead(FileRead {
+            path: "/d/skills/notes/SKILL.md".to_string(),
+            lines: None,
+            hash: hash(A),
+            skill: Some("notes".to_string()),
+            display_name: std::collections::BTreeMap::from([
+                ("en".to_string(), "Notes".to_string()),
+                ("zh".to_string(), "记笔记".to_string()),
+            ]),
+        })
+    );
+}

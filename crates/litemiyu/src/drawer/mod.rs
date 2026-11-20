@@ -1,0 +1,360 @@
+//! 确认和提问的抽屉（蓝图 `tui.md`「确认和提问的抽屉」，设计 13 第四节）：选到哪、勾了哪些、写了什么，
+//! 交出去的回答。纯状态，不碰终端；按键在 `keys.rs`，画在 `ui/drawer/`。
+
+mod event;
+pub mod expiry;
+mod keys;
+/// 多少字节写成给人看的（引导下载语义模型也用，同软件包页）。
+mod report;
+mod texts;
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::VecDeque;
+use std::time::{Duration, Instant};
+
+mod asks;
+
+pub use asks::Asks;
+pub use event::{Answer, Answered, Approval, Asked, Decided, Decision, Question};
+pub use report::{Report, inline, said};
+pub use texts::Texts;
+
+/// 问的是什么。
+#[derive(Debug, Clone)]
+pub enum Ask {
+    /// 她的提问：一道道题。
+    Questions(Vec<Question>),
+    /// 权限确认（装包的带着核心看一眼的那一份，比提问大得多：装箱）。
+    Approval(Box<Approval>),
+}
+
+/// 一页上的一项。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Item {
+    /// 第几个选项。
+    Choice(usize),
+    /// 「输入其他答案」：`Enter` 进编辑。
+    Other,
+    /// 确认的一种回答。
+    Decision(Decision),
+}
+
+/// 正在写什么（第 3 条）：编辑时按键都进字里，`Enter` 保存、`Esc` 退出编辑。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edit {
+    /// 「输入其他答案」。
+    Other,
+    /// 按 `n` 写的补充。
+    Notes,
+    /// 「不允许」的理由。
+    Reason,
+}
+
+/// 了结的方式。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// 交了（没答的那道是空的回答）。
+    Answered(Answered),
+    /// 确认定了。
+    Decided(Decided),
+    /// 按两下 `Esc` 取消：提问算没回答，确认算跳过（第 5 条）。
+    Cancelled,
+}
+
+/// 按了一下以后怎么样。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// 还开着。
+    Stay,
+    /// 按了 `Esc`（没在编辑）：两下之间够不够快由外面看时刻定，见 `escape`。
+    Escape,
+    /// 了结了。
+    Done(Outcome),
+}
+
+/// 确认要跑的命令一次露几行，多的滚着看（`ui/drawer/command.rs`，2026-10-22 项目主人）。
+pub const COMMAND_ROWS: usize = 8;
+
+/// 一个抽屉。
+#[derive(Debug, Clone)]
+pub struct Drawer {
+    /// 问的那个会话的整个编号，主会话的也写：作答交给它，调用编号只在一个会话里唯一，认抽屉要连它一起认
+    /// （2026-10-07 项目主人报：`/new` 以后新会话的 `call_31_1` 被当成旧会话了结过的，没开抽屉）。演示的是空的。
+    pub owner: String,
+    /// 抽屉第一行写谁在问（子代理问的：`子代理 名字`）；主会话问的是 `None`。
+    pub who: Option<String>,
+    /// 确认要跑的那条命令：短标题（她调 shell 时写的几个字，当问题行）、原文（下面暗色一行行写），没有的是 `None`。
+    pub command: Option<(Option<String>, String)>,
+    /// 调用编号：作答照它交回去。
+    pub call_id: String,
+    /// 问的是什么。
+    pub ask: Ask,
+    /// 在第几页：一道题一页，两道题及以上最后多一页「确认」（第 `pages()` 页）。
+    pub tab: usize,
+    /// 每一页选到第几项。
+    pub cursor: Vec<usize>,
+    /// 每一页勾上了哪几个选项（能多选的）。
+    pub checked: Vec<Vec<bool>>,
+    /// 每一页「输入其他答案」写的字；确认是「不允许」的理由。
+    pub typed: Vec<String>,
+    /// 每一页按 `n` 写的补充。
+    pub notes: Vec<String>,
+    /// 每一道的回答；还没答的是 `None`。
+    pub answers: Vec<Option<Answer>>,
+    /// 正在写什么；没在编辑是 `None`。
+    pub editing: Option<Edit>,
+    /// 按过一下 `Esc` 的时刻：时限里再按一下取消，按键提示那一行换成「再按一次 Esc 取消」。
+    pub armed: Option<Instant>,
+    /// 放不下时选项从第几行露起：画的时候跟着选中的那一项定。
+    pub scroll: usize,
+    /// 命令那一块滚到第几行（`ui/drawer/command.rs`）。
+    pub command_top: usize,
+    /// 命令排成几行：画的时候记下，滚的时候照它停在最后一段。
+    pub command_rows: usize,
+    /// 命令一次露几行：最多 [`COMMAND_ROWS`]，抽屉放不下时画的时候收窄（空行、问题留着，命令能滚）。
+    pub command_window: usize,
+}
+
+impl Drawer {
+    /// 要跑的命令（提问的是选中那一项的预览）放不下、能滚（画的时候记下排成几行）。
+    pub fn command_scrolls(&self) -> bool {
+        self.command_rows > self.command_window
+    }
+
+    /// 命令那一块往下、往上滚一行（滚轮、`Ctrl+J` `Ctrl+K`、`Ctrl+↓` `Ctrl+↑`）；放得下的不动。
+    pub fn scroll_command(&mut self, down: bool) {
+        let last = self.command_rows.saturating_sub(self.command_window);
+        self.command_top = if down {
+            (self.command_top + 1).min(last)
+        } else {
+            self.command_top.saturating_sub(1).min(last)
+        };
+    }
+
+    /// 她的提问。
+    pub fn question(asked: Asked) -> Self {
+        let pages = asked.questions.len().max(1);
+        let mut checked: Vec<Vec<bool>> = asked
+            .questions
+            .iter()
+            .map(|q| vec![false; q.options.len()])
+            .collect();
+        // 一道题都没有的（照常碰不到）：留一页，只能写「其他」。
+        checked.resize(pages, Vec::new());
+        Self::new(asked.call_id, Ask::Questions(asked.questions), checked)
+    }
+
+    /// 权限确认。跑命令的，短标题、命令照核心的 `detail`（核心 D-4）。
+    pub fn approval(approval: Approval) -> Self {
+        let command = approval.detail.as_ref().and_then(|d| {
+            let command = d.command.clone()?;
+            Some((d.title.clone().filter(|t| !t.trim().is_empty()), command))
+        });
+        let mut drawer = Self::new(
+            approval.call_id.clone(),
+            Ask::Approval(Box::new(approval)),
+            vec![Vec::new()],
+        );
+        drawer.command = command;
+        drawer
+    }
+
+    /// 这一次确认的命令被核心认成高危的（`detail.hazard`，核心 5-17）：抽屉写一行红字。
+    pub fn hazardous(&self) -> bool {
+        matches!(&self.ask, Ask::Approval(a) if a.detail.as_ref().is_some_and(|d| d.hazard.is_some()))
+    }
+
+    fn new(call_id: String, ask: Ask, checked: Vec<Vec<bool>>) -> Self {
+        let pages = checked.len();
+        Self {
+            owner: String::new(),
+            who: None,
+            command: None,
+            call_id,
+            ask,
+            tab: 0,
+            cursor: vec![0; pages],
+            checked,
+            typed: vec![String::new(); pages],
+            notes: vec![String::new(); pages],
+            answers: vec![None; pages],
+            editing: None,
+            armed: None,
+            scroll: 0,
+            command_top: 0,
+            command_rows: 0,
+            command_window: COMMAND_ROWS,
+        }
+    }
+
+    /// 几道题（确认算一页）。
+    pub fn pages(&self) -> usize {
+        self.cursor.len()
+    }
+
+    /// 有「确认」页：两道题及以上（第 3 条）。
+    pub fn has_review(&self) -> bool {
+        self.pages() > 1
+    }
+
+    /// 在「确认」页上。
+    pub fn on_review(&self) -> bool {
+        self.tab >= self.pages()
+    }
+
+    /// 是提问（不是确认）。
+    pub fn is_question(&self) -> bool {
+        matches!(self.ask, Ask::Questions(_))
+    }
+
+    /// 这一道题；确认是 `None`。
+    pub fn question_at(&self, page: usize) -> Option<&Question> {
+        match &self.ask {
+            Ask::Questions(qs) => qs.get(page),
+            Ask::Approval(_) => None,
+        }
+    }
+
+    /// 这一道在标签、「确认」页、留下的引用块里叫什么：短名，没有的写问题。
+    pub fn label(&self, page: usize) -> String {
+        self.question_at(page).map_or_else(String::new, |q| {
+            q.header
+                .clone()
+                .unwrap_or_else(|| q.question.trim().to_string())
+        })
+    }
+
+    /// 这一页能不能多选。
+    pub fn multiple(&self, page: usize) -> bool {
+        self.question_at(page).is_some_and(|q| q.multiple)
+    }
+
+    /// 这一页的各项，照画的先后；「确认」页没有项。
+    pub fn items(&self, page: usize) -> Vec<Item> {
+        match &self.ask {
+            Ask::Questions(qs) => qs.get(page).map_or_else(Vec::new, |q| {
+                (0..q.options.len())
+                    .map(Item::Choice)
+                    .chain([Item::Other])
+                    .collect()
+            }),
+            // 请求没提放行规则的不给「此目录不再询问」（核心会回 `no_rule`）。
+            Ask::Approval(a) if page == 0 => Decision::ALL
+                .into_iter()
+                .filter(|d| *d != Decision::Session || a.rule.is_some())
+                .map(Item::Decision)
+                .collect(),
+            Ask::Approval(_) => Vec::new(),
+        }
+    }
+
+    /// 这一页的选项带文字画：抽屉可以高过半屏（第 2 条）。
+    pub fn has_preview(&self) -> bool {
+        self.question_at(self.tab)
+            .is_some_and(|q| q.options.iter().any(|o| o.preview.is_some()))
+    }
+
+    /// 选中的那一项。
+    pub fn current(&self) -> Option<Item> {
+        let at = *self.cursor.get(self.tab)?;
+        self.items(self.tab).get(at).copied()
+    }
+
+    /// 按了一下 `Esc`：上一下还在时限里就取消，不然记下这一下（第 5 条）。
+    pub fn escape(&mut self, now: Instant, window: Duration) -> Step {
+        if self.armed(now, window) {
+            self.armed = None;
+            return Step::Done(Outcome::Cancelled);
+        }
+        self.armed = Some(now);
+        Step::Stay
+    }
+
+    /// 按过一下 `Esc`，还在时限里。
+    pub fn armed(&self, now: Instant, window: Duration) -> bool {
+        self.armed
+            .is_some_and(|at| now.saturating_duration_since(at) <= window)
+    }
+
+    /// 交回去的整份：没答的那道是空的回答，补充的话接进各道。
+    fn answered(&self) -> Answered {
+        let answers = (0..self.pages())
+            .map(|p| {
+                let mut a = self.answers[p].clone().unwrap_or_default();
+                let notes = self.notes[p].trim();
+                a.notes = (!notes.is_empty()).then(|| notes.to_string());
+                a
+            })
+            .collect();
+        Answered {
+            call_id: self.call_id.clone(),
+            answers,
+        }
+    }
+}
+
+/// 排着的抽屉：一次开一个，了结一个开下一个（第 1 条）。不是正在看的这棵会话树（主会话和它派出去的子代理）问的先搁着，
+/// 不弹；切过去时放回来（第 10 条，2026-10-18 项目主人）。
+#[derive(Debug, Default)]
+pub struct Drawers {
+    /// 现在开着的这一个。
+    pub current: Option<Drawer>,
+    queue: VecDeque<Drawer>,
+    /// 别的会话问的，先搁着。
+    held: Vec<Drawer>,
+}
+
+impl Drawers {
+    /// 来了一个：没有开着的就开它，有就排在后面。
+    pub fn push(&mut self, drawer: Drawer) {
+        if self.current.is_none() {
+            self.current = Some(drawer);
+        } else {
+            self.queue.push_back(drawer);
+        }
+    }
+
+    /// 开着一个。
+    pub fn open(&self) -> bool {
+        self.current.is_some()
+    }
+
+    /// 开着的那一个正在编辑。
+    pub fn editing(&self) -> bool {
+        self.current.as_ref().is_some_and(|d| d.editing.is_some())
+    }
+
+    /// 开着的那一个的命令能滚：`Ctrl+J` `Ctrl+K` 归它，不当上下（`app/vim.rs`）。
+    pub fn command_scrolls(&self) -> bool {
+        self.current.as_ref().is_some_and(Drawer::command_scrolls)
+    }
+
+    /// 这一次调用了结了（别的头答了、打断了、补发里一问一答都在）：开着的收起、排着的、搁着的拿掉；交回收起的是不是开着的
+    /// 那个。
+    pub fn settle(&mut self, owner: &str, call_id: &str) -> bool {
+        let this = |d: &Drawer| d.owner == owner && d.call_id == call_id;
+        self.queue.retain(|d| !this(d));
+        self.held.retain(|d| !this(d));
+        if self.current.as_ref().is_some_and(this) {
+            self.current = self.queue.pop_front();
+            return true;
+        }
+        false
+    }
+
+    /// 交了被拒、要重新打开的：放回最前面，开着的那个排到它后面。
+    pub fn reopen(&mut self, drawer: Drawer) {
+        if let Some(open) = self.current.replace(drawer) {
+            self.queue.push_front(open);
+        }
+    }
+
+    /// 了结现在这一个，交回它；排着的下一个打开。
+    pub fn finish(&mut self) -> Option<Drawer> {
+        let done = self.current.take();
+        self.current = self.queue.pop_front();
+        done
+    }
+}

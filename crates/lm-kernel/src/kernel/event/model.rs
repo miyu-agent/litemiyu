@@ -1,0 +1,316 @@
+//! 模型调用的事件（`docs/designs/03-事件模型.md` 第三节「模型调用怎么写」）。
+
+use serde::{Deserialize, Serialize};
+
+use crate::kernel::event::{CompactTrigger, Cost};
+use crate::kernel::id::{ContentHash, ModelName, ProviderId, Seq};
+use crate::kernel::request::{Difference, Role};
+use crate::kernel::text_enum::text_enum;
+
+/// `model.called`：一次模型请求的记录，出错的也记（`08-上下文投影.md` 第七节）。
+/// `by` 是内核：请求是内核发的。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelCalled {
+    /// 这次请求看到了第几条为止，也是这次请求的名字；有回复的，和回复的 `seen` 一样。
+    pub seen: Seq,
+    /// 请求发给了哪个供应商。没发出去就失败了的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<ProviderId>,
+    /// 请求发给了哪个模型。没发出去就失败了的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelName>,
+    /// 驱动编码以后的请求字节的 SHA-256（`05-内核接口.md` 第七节）。没编码就失败了的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<ContentHash>,
+    /// 真发出去的字节的 SHA-256（施工 MD-2，设计 66 第七节第 3 条）：扩展提供的驱动在回答里报的（线上的字节是它编的，核心看不见），
+    /// 挨着 `request` 记。内置驱动、没报的没有；以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent: Option<ContentHash>,
+    /// 统一的请求里有几条消息。
+    pub messages: u64,
+    /// 和这个会话上一次请求比，第一处不同在哪。只是接着加的、前面没有请求可比的，没有。装在盒子里（施工 3-8 四补）：多半
+    /// 没有，放在事件里平白占地方；`purpose` 加进来以后，`model.called` 比别的种类大出两百字节，clippy 的
+    /// `large_enum_variant` 拦下了。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_difference: Option<Box<FirstDifference>>,
+    /// 用量。供应商没报的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    /// 金额（施工 8-15，`models.md`「事件」）：执行器照这一次真发给的模型的价格、倍率算好交来的，内核原样记下；以后目录
+    /// 更新、人改倍率，已经记下的不重算。没有用量的、哪一项用了却没有价格的、单写了思考价的算不出，没有。以前的日志没有
+    /// 这一格。装在盒子里：照 `first_difference`，`model.called` 不再变大。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Box<Cost>>,
+    /// 从请求发出去到第一段增量用了多少毫秒。没发出去的、一段增量都没来的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_token_ms: Option<u64>,
+    /// 从请求发出去到说完用了多少毫秒。没发出去的，没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// 回复里每一块的起止，照这次请求写成的 `message.assistant` 的块的先后，一块一项（施工 2-3 补，
+    /// `kernel/events-bodies.md`）。头照它写「已思考 N 秒」，刷新、重开也算得出来。没写回复的没有；以前的日志没有
+    /// 这一格，照读。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<Vec<BlockSpan>>,
+    /// 结果。
+    pub result: CallResult,
+    /// 出错的分类和原话，只在出错时有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<CallError>,
+    /// 这是哪一种压缩的摘要请求（施工 6-6 上）；主请求没有。日志里靠它认出摘要请求，失败照它数（`compaction.md`
+    /// 第十条第 3 条）。以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction: Option<CompactTrigger>,
+    /// 辅助请求的用途（施工 3-8 四补，`26-提示词.md` J6）：回顾 `recap`、起标题 `title`（施工 3-8 五补）、提前压好的摘要
+    /// `compaction`（施工 6-11 上）；主请求、当场压的摘要请求没有。以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<Purpose>,
+    /// 回复写到了输出上限、没写完（施工 3-10）：驱动报的，照写；没有的不写，以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// 旁路请求退过（施工 Q-2，设计 43 第三节第 3 条）：登记的档位池的成员全在冷却或者都出错了，这一次退到了会话的模型。
+    /// 没退的不写，以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fell_back: bool,
+    /// 回复里截掉的「模型编的下一轮」（施工 FT-1，`kernel/session.md`「截掉模型编的下一轮」）：一块字截了一处记一项，照块的
+    /// 先后。截掉的原文不记，日志里那条 `message.assistant` 只有截剩下的。没截的不写，以前的日志没有这一格。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cut: Vec<ForgedCut>,
+}
+
+/// 回复的一块字里截掉的那一段（施工 FT-1）：模型在回答后面写出一个角色词，接着照这一次请求里人这一边的样子编了一条别人说的话。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgedCut {
+    /// 流里的第几块（同 `model.delta` 的 `index`、`message.assistant` 的 `indexes`）：整块都是编的，回复里就没有这一块了。
+    pub block: u64,
+    /// 从这一块原文的第几个字节起截掉：角色词那一行的行首。
+    pub at: u64,
+    /// 截掉了多少字节：从 `at` 到这一块原文的末尾。截完以后末尾的空白另去掉，不算在里面。
+    pub bytes: u64,
+    /// 那个角色词，写成小写。
+    pub role: ForgedRole,
+}
+
+text_enum!(
+    /// 模型编下一轮时写的角色词（施工 FT-1）。
+    ForgedRole {
+        /// `user`。
+        User = "user",
+        /// `assistant`。
+        Assistant = "assistant",
+        /// `system`。
+        System = "system",
+        /// `human`。
+        Human = "human",
+        /// `tool`。
+        Tool = "tool",
+    }
+);
+
+impl ModelCalled {
+    /// 是一次辅助请求（施工 3-8 四补）：带着用途的，不认识的用途也算。它和主
+    /// 对话无关：她没在这次请求里听到什么、它报的用量也不是主对话的大小，所以用量的锚、排队的消息听到没有、压缩的边界、渲染时
+    /// 回合开始的那几块，都不看它。
+    pub fn aside(&self) -> bool {
+        self.purpose.is_some()
+    }
+}
+
+text_enum!(
+    /// 辅助请求的用途（施工 3-8 四补）。
+    Purpose {
+        /// 回顾：`session.recap` 要的一句（`docs/blueprint/kernel/session.md`「回顾」）。
+        Recap = "recap",
+        /// 起标题：没起名的会话一轮答完以后内核自己要的（施工 3-8 五补，`docs/blueprint/kernel/session.md`「起标题」）。
+        Title = "title",
+        /// 提前压好：用量过了起压线，内核在后台先要的摘要（施工 6-11 上，`docs/blueprint/compaction.md` 第十五条）。
+        Compaction = "compaction",
+    }
+);
+
+/// 第一处不同在哪：工具面、system，或者第几条消息。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FirstDifference {
+    /// 哪一部分。
+    pub part: Part,
+    /// 第几条消息，从 0 数起。只有消息才有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<u64>,
+    /// 那一条的角色；这一次少了的，是上一次那一条的角色。只有消息才有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<MessageRole>,
+}
+
+text_enum!(
+    /// 请求的哪一部分。
+    Part {
+        /// 工具面。
+        Tools = "tools",
+        /// system。
+        System = "system",
+        /// 一条消息。
+        Message = "message",
+    }
+);
+
+text_enum!(
+    /// 消息的角色，和统一的请求里的写法一样（`08-上下文投影.md` 第二节）。
+    MessageRole {
+        /// `user`。
+        User = "user",
+        /// `assistant`。
+        Assistant = "assistant",
+        /// `tool`。
+        Tool = "tool",
+    }
+);
+
+impl From<Difference> for FirstDifference {
+    fn from(difference: Difference) -> FirstDifference {
+        let (part, index, role) = match difference {
+            Difference::Tools => (Part::Tools, None, None),
+            Difference::System => (Part::System, None, None),
+            Difference::Message { index, role } => {
+                let role = match role {
+                    Role::User => MessageRole::User,
+                    Role::Assistant => MessageRole::Assistant,
+                    Role::Tool => MessageRole::Tool,
+                };
+                (Part::Message, Some(index as u64), Some(role))
+            }
+        };
+        FirstDifference { part, index, role }
+    }
+}
+
+/// 回复里一块的起止（施工 2-3 补）：都是从请求发出去算起的毫秒数，和 `first_token_ms` 同一个起点。时钟往回拨了，
+/// 早于发出去的算 0。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockSpan {
+    /// 这一块第一段增量到的时刻。
+    pub start_ms: u64,
+    /// 这一块最后一段增量到的时刻，不早于 `start_ms`。收块的 `End` 不算：驱动流完了才一起收块，算上它，每一块都
+    /// 收在流的末尾。
+    pub end_ms: u64,
+}
+
+/// 用量，四项都是 token 数；思考占了多少另记一格（施工 2-3 再补）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Usage {
+    /// 没命中缓存的输入。
+    pub uncached: u64,
+    /// 缓存读取。
+    pub cache_read: u64,
+    /// 缓存写入。
+    pub cache_write: u64,
+    /// 输出，含思考。
+    pub output: u64,
+    /// 输出里思考占了多少（施工 2-3 再补）：供应商报了、不是 0 才有，已经算在 `output` 里，头照它写「思考 N 词元」。不报的
+    /// （Anthropic 的思考算在输出里不另报）、以前的日志没有这一格；没有的不写，旧日志读进来再写出去一字不差。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<u64>,
+}
+
+impl Usage {
+    /// 输入一共多少：三种输入加起来。供应商报的是任意数，加起来封顶不溢出（施工 B-5）。
+    pub fn input(&self) -> u64 {
+        self.uncached
+            .saturating_add(self.cache_read)
+            .saturating_add(self.cache_write)
+    }
+
+    /// 输入、输出一共多少，封顶不溢出。
+    pub fn total(&self) -> u64 {
+        self.input().saturating_add(self.output)
+    }
+
+    /// 两份各项加起来，封顶不溢出；思考两份都没报的照旧没有。
+    #[must_use]
+    pub fn plus(&self, more: &Usage) -> Usage {
+        Usage {
+            uncached: self.uncached.saturating_add(more.uncached),
+            cache_read: self.cache_read.saturating_add(more.cache_read),
+            cache_write: self.cache_write.saturating_add(more.cache_write),
+            output: self.output.saturating_add(more.output),
+            reasoning: match (self.reasoning, more.reasoning) {
+                (None, None) => None,
+                (a, b) => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
+            },
+        }
+    }
+}
+
+text_enum!(
+    /// 一次请求的结果。
+    CallResult {
+        /// 说完了。
+        Ok = "ok",
+        /// 出错。
+        Error = "error",
+        /// 被人打断：用量没有，用时算到打断为止。
+        Interrupted = "interrupted",
+        /// 排队的消息到了、一个字都还没回，撤掉了带上新消息重发（施工 4-15）：用量没有，用时算到撤掉为止。
+        Superseded = "superseded",
+    }
+);
+
+/// 出错的分类、原话，有的话还有 HTTP 状态码。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallError {
+    /// 分类。
+    pub class: ErrorClass,
+    /// 原话，给查问题的人看，不进上下文。
+    pub message: String,
+    /// 供应商回的 HTTP 状态码（施工 3-5 三补）：头照它分 429、402、404 说人话，不从原话里抠。连不上的、流里报的、
+    /// 内核自己查出来的没有；以前的日志没有这一格，照读。分类不看它：分类管的是内核怎么办。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// 供应商说了还要等多久才能再来，毫秒（施工 3-5 四补）：`retry-after-ms`、`retry-after` 头，原话里的 `try again in …`；
+    /// 池里的都在冷却的（`cooling`），是最早恢复的那一个还要多久。给头告诉人什么时候回来，不拿来等：内核等不等照端口交的
+    /// 要等多久，最多 2 分钟（`session/retry.rs`）。没说的没有；以前的日志没有这一格，照读。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<u64>,
+}
+
+text_enum!(
+    /// 出错的分类：驱动分的六种（`05-内核接口.md` 第七节），加上内核自己查出来的几种，和端口没发出去就说完的
+    /// `no_model`（施工 8-6）、`cooling`（施工 8-9，`models.md`「事件」）。
+    ErrorClass {
+        /// 可重试。
+        Retryable = "retryable",
+        /// 卡住了（施工 YC-3，压测 F3）：连上了却一直不出新的内容，等满空闲超时；驱动扩展长时间没动静也是。照可重试再来，可同一步
+        /// 连着两次卡住就不再来（`session/retry.rs`）：原来照可重试再来 5 次，一轮要挂 18 分钟。
+        Stalled = "stalled",
+        /// 限速。
+        RateLimited = "rate_limited",
+        /// 上下文超长。
+        ContextTooLong = "context_too_long",
+        /// 认证失败。
+        Auth = "auth",
+        /// 额度、余额用完（施工 Q-4 中，设计 43 第三节第 5 条第 3 款）：402、各家余额码。账号级的事，重试没用；池里冷却照供应商
+        /// 说的重置时刻，换别的成员。以前归在 `auth` 里。
+        Quota = "quota",
+        /// 被内容策略拦截。
+        ContentPolicy = "content_policy",
+        /// 其他：驱动分不进上面五种的。变体不叫 `Other`，那个名字留给读到的不认识的分类。
+        Unclassified = "other",
+        /// 增量对不上，或者执行器的回报先后不对：驱动或执行器的错。
+        BadStream = "bad_stream",
+        /// 回复里一个块都没有。
+        EmptyReply = "empty_reply",
+        /// 摘要请求的回复里取不出摘要：是空的，或者调了工具（`compaction.md` 第三条第 6、7 条）。
+        BadSummary = "bad_summary",
+        /// 自动压缩暂停着，这一次请求明知放不下，没发（`compaction.md` 第二条第 5 条，施工 6-6 上）。
+        CompactionPaused = "compaction_paused",
+        /// 没有能用的模型：`models.chat` 没配、会话的引用解析不出（施工 8-6）。端口当场说完，没发出去；内核不再来。
+        NoModel = "no_model",
+        /// 候选不止一个，全在冷却（施工 8-9，`models.md`「怎么走」第五条第 6 条）：端口当场说完，没发出去。能再来：等到
+        /// 最早恢复的那一个（`wait_ms`）。LM-8 砍了模型池以后不再有这一类，留着读旧日志。
+        Cooling = "cooling",
+        /// 回复连着几次写到输出上限（施工 3-10，`session/truncated.rs`）：内核当场查出的，不再来。
+        OutputLimit = "output_limit",
+    }
+);
+
+#[cfg(test)]
+mod tests;

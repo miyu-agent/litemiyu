@@ -1,0 +1,12 @@
+{
+  "tools": {
+    "shell": "$",
+    "load_tools": "⇣",
+    "schedule_wakeup": "◷"
+  },
+  "tool": "⚙",
+  "think": "✳",
+  "error": "✗",
+  "stash": "▤ ",
+  "loop": "◷ "
+}

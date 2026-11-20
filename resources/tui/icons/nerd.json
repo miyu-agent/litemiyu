@@ -1,0 +1,24 @@
+{
+  "tools": {
+    "shell": "\uf489",
+    "edit": "",
+    "write": "",
+    "read": "",
+    "history": "",
+    "subagent": "",
+    "jobs": "",
+    "send_message": "",
+    "sessions": "",
+    "ask_user": "",
+    "session_usage": "",
+    "packages": "",
+    "package": "",
+    "load_tools": "",
+    "schedule_wakeup": ""
+  },
+  "tool": "",
+  "think": "",
+  "error": "",
+  "stash": " ",
+  "loop": " "
+}

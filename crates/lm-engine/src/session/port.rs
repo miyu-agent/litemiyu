@@ -1,0 +1,413 @@
+//! 请求模型的端口（`02-内核.md` 第四节「执行器怎么回动作」里「请求模型」那一行）：actor 把请求交给
+//! 它，它的回报送回 actor 的收件箱。3-7（下）接上驱动和 HTTP 执行器，以后资源调度夹在中间；测试里
+//! 照剧本回。
+
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use tokio::sync::{mpsc, oneshot};
+
+use crate::store::blob::Blobs;
+use lm_kernel::drivers::DriverTexts;
+use lm_kernel::kernel::accumulate::Delta;
+use lm_kernel::kernel::event::{CallError, Cost, EffortInUse, Purpose, Usage};
+use lm_kernel::kernel::id::{ContentHash, Seq, SessionId};
+use lm_kernel::kernel::origin::Model;
+use lm_kernel::kernel::request::Request;
+use lm_kernel::kernel::session::{Limits, Replaced};
+use lm_kernel::models::price::Tariff;
+
+use crate::session::config::TurnConfig;
+
+/// 给一个会话造请求模型的端口（施工 3-7 下）。造会话、载入时，拿到了这个会话的策略快照再造：驱动的
+/// 占位冻结在快照里，核心升级改了字，老会话照样逐字节重现当时的请求（施工 3-6 上）。
+pub trait Models: Send + Sync {
+    /// 等造端口要的都备好了（施工 8-7：目录在写了 `ready` 以后才读完）。造会话、载入时在造端口之前等它。默认马上好。
+    fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(std::future::ready(()))
+    }
+
+    /// 造这个会话的端口。
+    fn port(&self, session: ForSession) -> Arc<dyn ModelPort>;
+
+    /// 能留着的一份（L5 二）：会话表造子会话、载入子会话时要再造端口，造主会话时交进来的只是借的。造不出的（默认）没有，
+    /// 这个会话派不了子代理。
+    fn owned(&self) -> Option<Arc<dyn Models>> {
+        None
+    }
+
+    /// 供应商 `provider` 的模型 `model` 照配置 `resolved` 的上下文窗口（施工 9-5 再补：会话列表的 `context` 要，会话没载入也
+    /// 查得到）。不知道的没有；测试的端口没有。
+    fn window(
+        &self,
+        _resolved: &lm_kernel::config::merge::Resolved,
+        _provider: &str,
+        _model: &str,
+    ) -> Option<u64> {
+        None
+    }
+}
+
+/// 造端口时交进来的，这个会话自己的。
+#[derive(Debug, Clone)]
+pub struct ForSession {
+    /// 会话编号。
+    pub id: SessionId,
+    /// 路由挑 key、换另配的头（opencode 的会话头）照哪个会话的编号（施工 8-6，`models.md` 第一条第 6 条）：一般是自己；分叉
+    /// 出来的照来源会话（施工 FC-1）：前缀和来源会话一样，上游认同一个会话头才吃得到它的缓存。
+    pub seed: SessionId,
+    /// 造会话、载入时取的那一份配置（施工 8-6）：会话用哪个模型、限额照它定。
+    pub config: TurnConfig,
+    /// 驱动的占位：取自这个会话的策略快照。
+    pub texts: DriverTexts,
+    /// blob：编码要用的图、文件在这里。
+    pub blobs: Blobs,
+    /// 会话记着的引用（施工 8-8）：`<供应商>/<模型>`（LM-8 以前的日志里可能是 `@池`，路由认不出、退回 `models.chat`）。造会话的是 `session.created` 的 `model`；载入的是内核从日志算的
+    /// （`Session::reference()`，施工 8-10：被后来带 `model` 的 `session.policy_changed` 盖掉）。以前的日志没有这一格的、
+    /// 造的时候连 `models.chat` 都没配的是空的：照造端口这一刻的 `models.chat`。
+    pub reference: Option<String>,
+    /// 会话记的思考强度（施工 SM-1，设计 51）：造会话的没有；载入的是内核从日志算的（`Session::effort()`）。
+    pub effort: Option<String>,
+    /// 会话的上下文上限（施工 CTX-1，设计 68）：造会话、分叉的没有；载入的是内核从日志算的（`Session::context()`）。
+    pub context: Option<u64>,
+}
+
+/// 辅助请求的总时限（施工 TT-3，2026-11-13 项目主人定）：起标题、回顾从交给端口起最多等 180 秒，到时没说完当失败；提前压
+/// 的摘要不管（`actor/model/overdue.rs` 的名单）。主请求不受它管，照旧只有路由的空闲超时（[`crate::session::route::IDLE`]）和它的十倍总时限。是常量，不进配置。
+pub const ASIDE_LIMIT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// 请求模型的端口。
+pub trait ModelPort: Send + Sync {
+    /// 发给哪个端点的哪个模型：记进运行日志的 `request` 那一行。路由的是这个会话钉着的、上一次解析出来的那一个（施工 8-6：
+    /// 回合开始时照新的配置可能换，真发给谁记在 `model.called` 里）。
+    fn model(&self) -> Model;
+
+    /// 会话这时生效的引用（施工 8-8）：模型或 `@池`。派子代理不写池时，子会话记下它（`models.md` 第三条第 4 条）。路由的是
+    /// 钉着的那一个；不知道的（测试的端口）没有。
+    fn reference(&self) -> Option<String> {
+        None
+    }
+
+    /// 回合开始（施工 8-10，`models.md`「怎么走」第六条第 3 条）：照这一轮的配置 `config` 重新解析会话的引用 `reference`
+    /// （内核交的，以前的会话没有的照端口自己记着的）；端点、限额跟着换。钉着的没了、退回了这一轮的 `models.chat` 的，
+    /// 交回原来的和退回的，内核记下。会话记的思考强度换成内核交的 `effort`（施工 SM-1）。不重新解析的（测试的端口）什么都
+    /// 不做。
+    fn turn(
+        &self,
+        _config: &TurnConfig,
+        _reference: Option<&str>,
+        _effort: Option<&str>,
+    ) -> Option<Replaced> {
+        None
+    }
+
+    /// 会话的上下文上限换了（施工 CTX-1，设计 68 第四节）：以后交的限额的窗口取模型的和它里小的（[`Limits::capped`]），下一次
+    /// 请求起生效，不等下一轮。会话 actor 照内核从日志算的交，交完照 [`ModelPort::limits`] 再交给内核。不管上限的（测试的端口）
+    /// 什么都不做。
+    fn cap(&self, _context: Option<u64>) {}
+
+    /// 接下来那个模型真用的思考强度（施工 8-18，`models.md`「怎么走」第十一条第 7 条）：给头看的，`subscribe`、
+    /// `model.changed` 照它写，会话记的压着配置的（施工 SM-1）。轮换的池、什么都不带的、不知道的（测试的端口）没有。
+    fn effort(&self) -> Option<EffortInUse> {
+        None
+    }
+
+    /// 这个模型的限额：窗口、最大输出、一张图怎么算（施工 6-3 上）。会话 actor 造会话、载入以后交给内核。不知道的
+    /// 都是没有：不主动压。
+    fn limits(&self) -> Limits {
+        Limits {
+            model: self.model(),
+            window: None,
+            max_output: None,
+            images: None,
+            blind: false,
+            identity: None,
+        }
+    }
+
+    /// 辅助请求（起标题、回顾）最多等多久（施工 TT-3）：从交给端口起算，到时没说完 actor 叫停它、照出错交给
+    /// 内核。出厂的端口都是 `ASIDE_LIMIT`；只有测试的端口设短的，不用真等。
+    fn aside_limit(&self) -> std::time::Duration {
+        ASIDE_LIMIT
+    }
+
+    /// 换快照了（施工 P-1 三补）：驱动的占位换成新快照的 `texts`，以后的请求照它写。测试的端口不管。
+    fn retext(&self, _texts: DriverTexts) {}
+
+    /// 会话歇着了（红线 5，`actor/shelf.rs`）：留着的编好的历史（驱动的备忘录）放掉，下一次主请求整份重编。默认的什么都不留。
+    fn rest(&self) {}
+
+    /// 替看不了图的模型看图（施工 8-17，`docs/blueprint/models.md`「怎么走」第十三条第 4 条）：照这一轮的配置 `config` 把
+    /// `request` 经一次性入口发给 `models.vision`，说完了交给 `sight`。马上返回，在别的任务里发，带上当前的 span。没有一次性
+    /// 入口的（测试的端口）当场交没成。
+    fn describe(&self, request: Request, config: &TurnConfig, sight: Sight) {
+        let _ = (request, config);
+        sight.unseen("this model port cannot describe images".to_string());
+    }
+
+    /// 发一次请求。马上返回，在别的任务里发：actor 不等它。`config` 是这一轮的配置（回合开始时冻结的，施工 8-4）：这一轮
+    /// 的每一次请求都照它，中途改了配置下一轮才用上。
+    ///
+    /// 回报照先后交给 `reports`：先报发出去了，再一段段交增量，最后报说完了；没发出去就失败了的，
+    /// 直接报说完了。`cancel` 叫停了就停下，什么都不再报：会话不要这次请求了，或者会话停了。在别的
+    /// 任务里发的，带上当前的 span（`tracing::Span::current()`），发出来的日志才带着会话编号。
+    fn call(
+        &self,
+        seen: Seq,
+        request: Request,
+        config: &TurnConfig,
+        reports: Reports,
+        cancel: Cancel,
+    );
+}
+
+/// 一次请求的回报送回哪里。
+#[derive(Debug)]
+pub struct Reports {
+    seen: Seq,
+    /// 辅助请求的用途（施工 3-8 四补的回顾、五补的起标题）：回报另走一路，不和主请求的 `seen` 撞。主请求没有。
+    purpose: Option<Purpose>,
+    /// 这一次真发给的模型的价格（施工 8-15，[`Reports::billed`]）：说完了照用量算金额。没有的不算。
+    tariff: Option<Tariff>,
+    /// 旁路请求退到了会话的模型（施工 Q-2，[`Reports::fell_back`]）：随发出去了报给内核。
+    fell_back: bool,
+    /// 真发出去的字节的哈希（施工 MD-2，[`Reports::wired`]）：扩展驱动在结尾报的，随说完了交给内核。
+    wire: Option<ContentHash>,
+    back: mpsc::UnboundedSender<Back>,
+}
+
+impl Reports {
+    pub(crate) fn new(seen: Seq, back: mpsc::UnboundedSender<Back>) -> Reports {
+        Reports {
+            seen,
+            purpose: None,
+            tariff: None,
+            fell_back: false,
+            wire: None,
+            back,
+        }
+    }
+
+    /// 辅助请求的回报（施工 3-8 四补、五补）：名字是用途和它照到的那一条 `upto`。
+    pub(crate) fn aside(purpose: Purpose, upto: Seq, back: mpsc::UnboundedSender<Back>) -> Reports {
+        Reports {
+            seen: upto,
+            purpose: Some(purpose),
+            tariff: None,
+            fell_back: false,
+            wire: None,
+            back,
+        }
+    }
+
+    /// 这一次照 `tariff` 算金额（施工 8-15，`docs/blueprint/models.md`「怎么走」第九条第 3 条）：端口挑定了真发给的模型以后
+    /// 交，说完了照报的用量算好，随说完了交给内核。不交的（测试的剧本）不算，`model.called` 不写 `cost`。
+    #[must_use]
+    pub fn billed(mut self, tariff: Option<Tariff>) -> Reports {
+        self.tariff = tariff;
+        self
+    }
+
+    /// 这一次是旁路请求退到了会话的模型（施工 Q-2，设计 43 第三节第 3 条）：登记的档位池全在冷却、都出错了。端口挑定了
+    /// 以后交，`model.called` 写 `fell_back`。
+    #[must_use]
+    pub fn fell_back(mut self) -> Reports {
+        self.fell_back = true;
+        self
+    }
+
+    /// 是哪一种辅助请求；主请求没有（施工 3-8 五补）。端口照请求发，用不着它；测试的端口照它分剧本。
+    pub fn purpose(&self) -> Option<&Purpose> {
+        self.purpose.as_ref()
+    }
+
+    /// 发出去了：发给了哪个模型，请求字节的哈希。
+    pub fn sent(&self, model: Model, request: ContentHash) {
+        self.send(Report::Sent {
+            model,
+            request,
+            fell_back: self.fell_back,
+        });
+    }
+
+    /// 一段增量。
+    pub fn delta(&self, delta: Delta) {
+        self.send(Report::Delta(delta));
+    }
+
+    /// 说完了：正常说完的带用量，出错的带分类和原话，供应商说了要等多久的带上毫秒数，超长的带上超了多少 token
+    /// （施工 6-6 中）。
+    pub fn ended(
+        self,
+        usage: Option<Usage>,
+        error: Option<CallError>,
+        wait_ms: Option<u64>,
+        excess: Option<u64>,
+    ) {
+        let cost = self.cost(usage.as_ref());
+        self.send(Report::Ended {
+            usage,
+            cost,
+            error,
+            wait_ms,
+            excess,
+            sent: self.wire.clone(),
+        });
+    }
+
+    /// 照交来的价格和报的用量算金额：没有价格、没报用量、算不出的没有。
+    fn cost(&self, usage: Option<&Usage>) -> Option<Box<Cost>> {
+        self.tariff.as_ref()?.cost(usage?).map(Box::new)
+    }
+
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "会话停了就送不进去：回报没人要了，丢掉"
+    )]
+    fn send(&self, report: Report) {
+        let back = match &self.purpose {
+            Some(purpose) => Back::Aside {
+                purpose: purpose.clone(),
+                upto: self.seen,
+                report,
+            },
+            None => Back::Report {
+                seen: self.seen,
+                report,
+            },
+        };
+        let _ = self.back.send(back);
+    }
+}
+
+/// 一次转述的结果送回哪里（施工 8-17）：成了的交替它看的模型和转述，没成的交为什么。都送回 actor 的收件箱。
+#[derive(Debug)]
+pub struct Sight {
+    blob: ContentHash,
+    back: mpsc::UnboundedSender<Back>,
+}
+
+impl Sight {
+    pub(crate) fn new(blob: ContentHash, back: mpsc::UnboundedSender<Back>) -> Sight {
+        Sight { blob, back }
+    }
+
+    /// 转述成了：替它看的是 `model`，转述是 `text`（去掉了前后空白，不是空的）。
+    pub fn seen(self, model: Model, text: String) {
+        self.send(Ok((model, text)));
+    }
+
+    /// 转述没成：为什么，记进运行日志。
+    pub fn unseen(self, why: String) {
+        self.send(Err(why));
+    }
+
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "会话停了就送不进去：转述没人要了，丢掉"
+    )]
+    fn send(self, seen: Result<(Model, String), String>) {
+        let _ = self.back.send(Back::Described {
+            blob: self.blob,
+            seen,
+        });
+    }
+}
+
+/// 叫停一次请求：会话不要这次请求了，或者会话停了（actor 放下了叫停的那一头）。会话停了就没人要
+/// 结果了，接着读只是白花 token。说完了以后放下的，请求已经不在读了，停不停都一样。
+#[derive(Debug)]
+pub struct Cancel(oneshot::Receiver<()>);
+
+impl Cancel {
+    pub(crate) fn new(receiver: oneshot::Receiver<()>) -> Cancel {
+        Cancel(receiver)
+    }
+
+    /// 等到被叫停。
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "明着叫停和放下了一个意思：都是叫停"
+    )]
+    pub async fn wait(self) {
+        let _ = self.0.await;
+    }
+}
+
+/// 请求的一样回报。
+#[derive(Debug)]
+pub(crate) enum Report {
+    /// 发出去了。
+    Sent {
+        model: Model,
+        request: ContentHash,
+        /// 旁路请求退到了会话的模型（施工 Q-2）。
+        fell_back: bool,
+    },
+    /// 一段增量。
+    Delta(Delta),
+    /// 说完了。
+    Ended {
+        usage: Option<Usage>,
+        /// 装在盒子里：照 `model.called` 的那一格，回报不平白变大。
+        cost: Option<Box<Cost>>,
+        error: Option<CallError>,
+        wait_ms: Option<u64>,
+        excess: Option<u64>,
+        /// 真发出去的字节的哈希（施工 MD-2）：扩展驱动报的。
+        sent: Option<ContentHash>,
+    },
+}
+
+/// 执行器送回 actor 的：请求的回报、到点了、工具的回报。
+#[derive(Debug)]
+pub(crate) enum Back {
+    /// 等不到会话 `session` 空下来了（L7 三，`peers/watches.rs`）：到点、不在了、没开着。
+    WatchEnded {
+        session: lm_kernel::kernel::id::SessionId,
+        reason: lm_kernel::kernel::event::IdleReason,
+    },
+    /// 请求 `seen` 的一样回报。
+    Report { seen: Seq, report: Report },
+    /// 辅助请求（用途 `purpose`、照到 `upto`）的一样回报（施工 3-8 四补、五补）。
+    Aside {
+        purpose: Purpose,
+        upto: Seq,
+        report: Report,
+    },
+    /// 辅助请求（用途 `purpose`、照到 `upto`、`asked` 那一刻交给端口的）到了总时限（施工 TT-3，`actor/model/overdue.rs`）。
+    AsideOverdue {
+        purpose: Purpose,
+        upto: Seq,
+        asked: std::time::Instant,
+    },
+    /// 为请求 `seen` 等的时刻到了。
+    Woke { seen: Seq },
+    /// 第 `call_id` 次调用等确认等到了截止的时刻（Miyu 施工 CD-1，`actor/back.rs`）。
+    ApprovalExpired {
+        call_id: lm_kernel::kernel::id::CallId,
+    },
+    /// 跑工具的任务送回来的（施工 4-2）。
+    Tool(crate::session::tools::ToolBack),
+    /// `schedule_wakeup` 要改、要停这个会话的循环（L5 四，`tools/schedules.rs`）：actor 当场答。
+    Schedule {
+        ask: crate::tool::ScheduleAsk,
+        reply: tokio::sync::oneshot::Sender<
+            Result<crate::tool::ScheduleAnswer, crate::tool::ScheduleRefused>,
+        >,
+    },
+    /// 循环的第 `generation` 代定时器到点了（L5 四，`actor/looping.rs`）。
+    LoopDue { generation: u64 },
+    /// 一条后台命令结束了（施工 7-3）：`job.reported` 要的。
+    Job(crate::session::jobs::Ended),
+    /// 监视的命令攒好了一批行（施工 MN-1 上）：`job.lines` 要的。
+    JobLines(crate::session::jobs::Lines),
+    /// 人用 `!` 打的一条命令跑完了（施工 SH-1 上，`tools/person.rs`）。
+    Shell(lm_kernel::kernel::event::ShellRan),
+    /// 替它看图回来了（施工 8-17）：哪一张图，成了的替它看的模型和转述，没成的为什么。
+    Described {
+        blob: ContentHash,
+        seen: Result<(Model, String), String>,
+    },
+}

@@ -1,0 +1,4 @@
+{
+  "description": "Search or read back earlier parts of this conversation, including what compaction moved out of context. Entries are numbered in log order.",
+  "parameters": {"type":"object","properties":{"query":{"type":"string","description":"Without it, entries are listed in order."},"from":{"type":"integer"},"to":{"type":"integer"},"since":{"type":"string","description":"Like 2026-09-29 14:00."},"until":{"type":"string"},"by":{"type":"string","enum":["user","assistant","tool"]},"limit":{"type":"integer","description":"Default 20."},"session":{"type":"string","description":"Another session's id to read."}}}
+}

@@ -1,0 +1,18 @@
+{
+  "fallback": "en",
+  "auto_summary": "en",
+  "languages": [
+    {
+      "code": "zh",
+      "locales": [
+        "zh"
+      ]
+    },
+    {
+      "code": "en",
+      "locales": [
+        "en"
+      ]
+    }
+  ]
+}

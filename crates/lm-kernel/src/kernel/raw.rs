@@ -1,0 +1,119 @@
+//! 原样的 JSON：一个字节都不改，写出去还是原样。
+//!
+//! 两处要用：驱动私有数据（`docs/designs/03-事件模型.md` 第九节），和读到不认识的种类时
+//! 整块留着（第八节）。只能从 serde_json 读，这正是它能一字不差的原因。
+
+use std::collections::BTreeMap;
+
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::de::StrRead;
+use serde_json::value::RawValue;
+
+use crate::kernel::json::Objects;
+
+/// 原样的一块 JSON，一个字节都不改：空格、数字的写法（`1.50`）、字段的先后都留着。
+///
+/// 只能从 serde_json 读，因为它记下的是读到的原文；写出去就是这段原文。
+#[derive(Debug, Clone)]
+pub struct RawJson(Box<RawValue>);
+
+impl RawJson {
+    /// 照一个值写成的一块（施工 W-11）：写成紧凑的 JSON，键照 serde_json 的先后。写不成的（不会有）没有。
+    pub fn of(value: &serde_json::Value) -> Option<RawJson> {
+        serde_json::value::to_raw_value(value).ok().map(RawJson)
+    }
+
+    /// `null`（施工 V-39 上补：只解要的种类时，不解的种类的 `body` 记成它）。
+    pub(crate) fn null() -> RawJson {
+        RawJson(RawValue::NULL.to_owned())
+    }
+
+    /// 原样的 JSON 文本。
+    pub fn get(&self) -> &str {
+        self.0.get()
+    }
+}
+
+/// 两块原样的 JSON，文本一字不差才算相等。
+impl PartialEq for RawJson {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl Eq for RawJson {}
+
+/// 照原文算（同 [`PartialEq`]）：请求的指纹照它比（施工 V-12）。
+impl std::hash::Hash for RawJson {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.get().hash(state);
+    }
+}
+
+impl Serialize for RawJson {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RawJson {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Box::<RawValue>::deserialize(d).map(RawJson)
+    }
+}
+
+/// [`read_tagged`] 交给 `known` 的读法：照截下来的那一块新起的一个。
+pub(crate) type Tagged<'a, 'b> = Objects<&'a mut serde_json::Deserializer<StrRead<'b>>>;
+
+/// 按 `field` 这个字段（`type` 或 `kind`）分派的读法：先把整块原样读下来，看这个字段的值；
+/// `known` 认识这个值就照它读（交给它照这一块新起的读法，读完这里查后面没字），返回 `None` 表示不认识，整块原样交给
+/// `unknown`。读法只起一个、只查一次（LM-10：以前每认识一种各内联一份「新起读法、读、查后面没字」）。
+pub(crate) fn read_tagged<'de, D, T>(
+    d: D,
+    field: &'static str,
+    known: for<'a, 'b> fn(&str, Tagged<'a, 'b>) -> Option<serde_json::Result<T>>,
+    unknown: fn(RawJson) -> T,
+) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = RawJson::deserialize(d)?;
+    let tag = match leading_tag(raw.get(), field) {
+        Some(tag) => tag.to_string(),
+        None => {
+            let fields: BTreeMap<String, &RawValue> =
+                crate::kernel::json::from_str(raw.get()).map_err(D::Error::custom)?;
+            let value = fields
+                .get(field)
+                .ok_or_else(|| D::Error::custom(format!("missing field `{field}`")))?;
+            crate::kernel::json::from_str(value.get()).map_err(D::Error::custom)?
+        }
+    };
+    let mut json = serde_json::Deserializer::from_str(raw.get());
+    match known(&tag, Objects(&mut json)) {
+        Some(read) => {
+            let value = read.map_err(D::Error::custom)?;
+            json.end().map_err(D::Error::custom)?;
+            Ok(value)
+        }
+        None => Ok(unknown(raw)),
+    }
+}
+
+/// 快路（施工 V-10）：标签是开头第一个字段、写成不带转义的字的（核心自己写的都是这样，`{"type":"text",…`），不用把整块
+/// 解成一张表就认得出。别的写法交回没有，照整表认：结果一样。
+fn leading_tag<'a>(json: &'a str, field: &str) -> Option<&'a str> {
+    let rest = json.trim_start().strip_prefix('{')?.trim_start();
+    let rest = rest
+        .strip_prefix('"')?
+        .strip_prefix(field)?
+        .strip_prefix('"')?;
+    let rest = rest.trim_start().strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find(['"', '\\'])?;
+    (rest.as_bytes()[end] == b'"').then(|| &rest[..end])
+}
+
+#[cfg(test)]
+mod tests;

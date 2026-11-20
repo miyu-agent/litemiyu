@@ -1,0 +1,223 @@
+//! 排着队的话（蓝图 `tui.md`「运行状态行和排队的消息」第 5 条）：回答进行中发的话先排着，记在正文末尾但不画。
+//! 核心下一次请求就带上它（`kernel/session.md`「排队的消息」第 1 条）：哪一次请求推来的字里 `seen` 够着它的
+//! 序号，它就被听到了，前面那段时间线收起，它进正文，接着的步另起一段。没被听到、这一轮就结束了的，由下一轮的
+//! `turn.started` 带进来（`turn.rs`）。
+
+use super::{Chip, Entry, Kind, Slot, Starting, StepKind, Transcript};
+
+impl Transcript {
+    /// 没发出去：撤掉最后一条还没落盘（没有序号、没归到哪一轮）的你说的话。
+    pub fn drop_unsent(&mut self) {
+        self.starting = Starting::No;
+        let unsent = self
+            .entries
+            .iter()
+            .rposition(|e| e.kind == Kind::User && e.seq.is_none() && e.turn.is_none());
+        if let Some(at) = unsent {
+            self.entries.remove(at);
+            self.removed(at);
+        }
+    }
+
+    /// 正文里最后一条不是排着队的：在进行的那一段、在写的回答照它找。排着的话没进正文，不算。
+    pub(super) fn tail(&self) -> Option<usize> {
+        self.entries.iter().rposition(|e| !e.queued)
+    }
+
+    /// 这一轮的一次请求发出去了，带上了第 `seen` 条为止（`model.called`）。没出字就被打断的那次请求里带上的话核心不退回、
+    /// 也推不来「听到了」（出第一个字才推）：收尾时照它带进这一轮（`turn.rs` 的 `end`），不然一直挂在「排着」（2026-10-23
+    /// 验收：她刚开始答就插话、马上按 Ctrl+C）。
+    pub(super) fn took(&mut self, seen: u64) {
+        if self.turn.is_some() {
+            self.seen = self.seen.max(seen);
+        }
+    }
+
+    /// 你发的话照先后落盘：序号配给最早那句还没有序号的。序号推回得比请求带上它晚的，配上就带进这一轮。
+    pub(super) fn stamped(&mut self, seq: u64) {
+        let first = self
+            .entries
+            .iter_mut()
+            .find(|e| e.kind == Kind::User && e.seq.is_none());
+        if let Some(entry) = first {
+            entry.seq = Some(seq);
+            if entry.queued && seq <= self.seen && self.running.is_some() {
+                self.heard(self.seen);
+            }
+        }
+    }
+
+    /// 这一轮的一次请求看到了第 `seen` 条为止：排着的话序号不超过它的，这次请求带上了。
+    pub(super) fn heard(&mut self, seen: u64) {
+        let Some(turn) = self.turn.filter(|_| self.running.is_some()) else {
+            return;
+        };
+        let picked: Vec<usize> = (0..self.entries.len())
+            .filter(|&j| {
+                let e = &self.entries[j];
+                e.queued && e.seq.is_some_and(|s| s <= seen)
+            })
+            .collect();
+        if picked.is_empty() {
+            return;
+        }
+        // 前面那段时间线收起，这几句接在后面，接着的步另起一段。
+        self.close_open_blocks();
+        self.finish_segment();
+        self.bring_in(&picked, turn);
+    }
+
+    /// 把 `picked` 这几条归到第 `turn` 轮：排着的挪到正文末尾，按先后拼成你说的一段话，一条一行；本来不是排着的
+    /// 留在原位（`tui.md`「运行状态行和排队的消息」第 5 条）。
+    pub(super) fn bring_in(&mut self, picked: &[usize], turn: u64) {
+        let mut moved: Vec<Entry> = Vec::new();
+        for &j in picked.iter().rev() {
+            if self.entries[j].queued {
+                moved.push(self.entries.remove(j));
+                self.removed(j);
+            } else {
+                self.entries[j].turn = Some(turn);
+            }
+        }
+        // 一句一句记着：Ctrl+C 打断、她还没开口的，照这个放回输入框（`takeback`）。
+        self.opened_by = moved
+            .iter()
+            .rev()
+            .map(|e| (e.typed(), e.pasted.clone()))
+            .collect();
+        // 挨着的几句话拼成一段；跑命令的各自一条（结果照序号挂回去，「人自己跑命令 `!`」第 4 条）。
+        let mut joined: Option<Entry> = None;
+        for mut next in moved.into_iter().rev() {
+            next.turn = Some(turn);
+            next.queued = false;
+            if next.shell.is_some() {
+                self.entries.extend(joined.take());
+                self.entries.push(next);
+                continue;
+            }
+            match &mut joined {
+                Some(first) => {
+                    first.text.push('\n');
+                    first.text.push_str(&next.text);
+                    first.pasted.extend(next.pasted);
+                }
+                None => joined = Some(next),
+            }
+        }
+        self.entries.extend(joined);
+    }
+
+    /// 排着队、还在框上面画着的话，照先后（运行状态行下面那几行 `↳`）。
+    pub fn queued(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter().filter(|e| e.queued && !e.hidden)
+    }
+
+    /// 排着的这几句被退回了（序号 `seqs`）：拿出正文，字和粘贴块记着放回输入框。一条条删、记着的下标跟着往前挪：这一轮
+    /// 后面才开的回答、步排在它们后面（review B7，2026-10-11：原来整个 `retain`，接着来的字落到了别的条目上）。
+    pub(super) fn withdraw(&mut self, seqs: &[u64]) {
+        let back = |e: &Entry| e.seq.is_some_and(|s| seqs.contains(&s));
+        self.returned.extend(
+            self.entries
+                .iter()
+                .filter(|e| back(e))
+                .map(|e| (e.typed(), e.pasted.clone())),
+        );
+        for j in (0..self.entries.len()).rev() {
+            if back(&self.entries[j]) {
+                self.entries.remove(j);
+                self.removed(j);
+            }
+        }
+    }
+
+    /// 留着的排队话（`/stop`，核心 O-6 的 `keep`）不再接着发：用了命令（`command.ran`）、没在回答的时候挪到正文末尾，
+    /// 一条条照你说的画。`command.ran` 在日志里、排在那一轮结束后面，补发时也照这样
+    /// （蓝图「斜杠命令」`/stop`）。
+    pub(super) fn settle(&mut self) {
+        if self.running.is_none() {
+            self.unqueue_to_end();
+        }
+    }
+
+    /// 还排着的话一条条挪到正文末尾、照你说的画（接在收尾、打断、断开那一行后面），不归到哪一轮。
+    pub(super) fn unqueue_to_end(&mut self) {
+        let leftover: Vec<usize> = (0..self.entries.len())
+            .filter(|&j| self.entries[j].queued)
+            .collect();
+        let mut moved = Vec::with_capacity(leftover.len());
+        for &j in leftover.iter().rev() {
+            let mut entry = self.entries.remove(j);
+            self.removed(j);
+            entry.queued = false;
+            moved.push(entry);
+        }
+        self.entries.extend(moved.into_iter().rev());
+    }
+
+    /// 这一轮是排着的话开的、她还没开口（没说字、没做步，只在想也算没开口）：交回开它的那几句（字和粘贴块）。
+    /// Ctrl+C 打断以后撤掉这一轮，那几句放回输入框（蓝图 `tui.md`「按键」`Ctrl+C`，2026-09-30 项目主人定只退回排着的）。
+    pub fn takeback(&self) -> Option<Vec<(String, Vec<Chip>)>> {
+        if self.opened_by.is_empty() || self.started_work() {
+            return None;
+        }
+        Some(self.opened_by.clone())
+    }
+
+    /// 她还没开始做事的这一轮：交回开它的那几句，直接发的那一句也算（两下 `Esc` 打断以后撤掉、放回输入框，蓝图「按键」
+    /// `Esc`，2026-10-07 项目主人定）。
+    pub fn untouched(&self) -> Option<Vec<(String, Vec<Chip>)>> {
+        let turn = self.turn?;
+        if self.started_work() {
+            return None;
+        }
+        if !self.opened_by.is_empty() {
+            return Some(self.opened_by.clone());
+        }
+        let opening: Vec<(String, Vec<Chip>)> = self
+            .entries
+            .iter()
+            .filter(|e| e.kind == Kind::User && e.turn == Some(turn))
+            .map(|e| (e.typed(), e.pasted.clone()))
+            .collect();
+        (!opening.is_empty()).then_some(opening)
+    }
+
+    /// 这一轮在回答，她已经开始做事了：说了字或者调了工具（只在想不算）；没在回答的也算做了（不撤）。
+    fn started_work(&self) -> bool {
+        let (Some(_), Some(turn)) = (self.running, self.turn) else {
+            return true;
+        };
+        self.entries
+            .iter()
+            .filter(|e| e.turn == Some(turn))
+            .any(|e| {
+                (e.kind == Kind::Reply && !e.text.trim().is_empty())
+                    || e.segment.as_ref().is_some_and(|s| {
+                        s.steps
+                            .iter()
+                            .any(|st| matches!(st.kind, StepKind::Tool { .. }))
+                    })
+            })
+    }
+
+    /// 第 `at` 条从正文里拿走了：记着的下标（在接的块、还没配上编号的调用、调用编号到那一步、正在压缩那一行）
+    /// 在它后面的往前挪一格。
+    pub(super) fn removed(&mut self, at: usize) {
+        let shift = |i: &mut usize| {
+            if *i > at {
+                *i -= 1;
+            }
+        };
+        for slot in self.blocks.values_mut() {
+            match slot {
+                Slot::Reply(i) | Slot::Step(i, _) => shift(i),
+            }
+        }
+        for (i, _) in self.unnamed.iter_mut().chain(self.calls.values_mut()) {
+            shift(i);
+        }
+        if let Some(i) = self.compacting.as_mut() {
+            shift(i);
+        }
+    }
+}

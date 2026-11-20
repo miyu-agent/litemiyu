@@ -1,0 +1,43 @@
+{
+  "kinds": {
+    "shell": "command",
+    "edit": "edit",
+    "write": "edit",
+    "subagent": "agent",
+    "send_message": "message"
+  },
+  "path_tools": [
+    "read",
+    "edit",
+    "write"
+  ],
+  "bodies": {
+    "send_message": "message"
+  },
+  "spinner_ms": 80,
+  "session_arg": "session",
+  "preview_rows": 10,
+  "thought_rows": 15,
+  "limit_live": true,
+  "fold": true,
+  "expand": {
+    "thought": false,
+    "command": false,
+    "edit": false
+  },
+  "spinner": [
+    "⠋",
+    "⠙",
+    "⠹",
+    "⠸",
+    "⠼",
+    "⠴",
+    "⠦",
+    "⠧",
+    "⠇",
+    "⠏"
+  ],
+  "line": "│",
+  "queued": "·",
+  "omitted": "⋮"
+}

@@ -1,0 +1,153 @@
+//! 收尾行和用量（蓝图 `tui.md`「正文」第 4 条）：`✻ 时刻 · 端点/模型 · 用时 · 本轮用量(C命中%)`。
+
+use super::apply;
+use crate::core::{EndReason, Push, Usage};
+use crate::transcript::{Kind, Transcript};
+
+#[test]
+fn a_completed_turn_ends_with_the_done_line() {
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::Model {
+                endpoint: "deepseek".into(),
+                model: "deepseek-flash".into(),
+            },
+            Push::TurnStarted(1, None),
+            Push::TurnEnded(crate::core::EndReason::Completed),
+        ],
+    );
+    let done = t.entries.last().unwrap();
+    assert_eq!(done.kind, Kind::Done);
+    // `HH:MM · 模型 · 用时`，不到一秒的也带一位小数，不写成 0 秒。
+    let parts: Vec<&str> = done.text.split(" · ").collect();
+    assert_eq!(parts.len(), 3, "{}", done.text);
+    assert_eq!(parts[0].len(), "01:43".len());
+    assert_eq!(parts[1], "deepseek/deepseek-flash", "端点/模型");
+    assert!(
+        parts[2].starts_with("0.") && parts[2].ends_with('s'),
+        "{}",
+        done.text
+    );
+}
+
+#[test]
+fn usage_adds_up_and_context_is_the_last_call() {
+    let mut t = Transcript::default();
+    let call = |input, output| {
+        Push::Usage(Usage {
+            uncached: input,
+            output,
+            ..Usage::default()
+        })
+    };
+    apply(&mut t, vec![call(100, 10), call(200, 20)]);
+    assert_eq!((t.total.input(), t.total.output, t.context), (300, 30, 220));
+}
+
+#[test]
+fn the_done_line_counts_this_turn_and_its_cache_hits() {
+    let call = |uncached, cache_read, output| {
+        Push::Usage(Usage {
+            uncached,
+            cache_read,
+            cache_write: 0,
+            output,
+            aux: 0,
+        })
+    };
+    let turn = |n, calls: Vec<Push>| {
+        let mut pushes = vec![Push::TurnStarted(n, None)];
+        pushes.extend(calls);
+        pushes.push(Push::TurnEnded(EndReason::Completed));
+        pushes
+    };
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![Push::Model {
+            endpoint: "deepseek".into(),
+            model: "deepseek-flash".into(),
+        }],
+    );
+    // 一轮两次请求：输入 1000 + 1020，输出 50 + 30，一共 2100；命中 1900 ÷ 2020 = 94%。
+    apply(
+        &mut t,
+        turn(1, vec![call(100, 900, 50), call(20, 1000, 30)]),
+    );
+    let done = &t.entries.last().unwrap().text;
+    assert!(done.ends_with(" · 2.1k(C94%)"), "{done}");
+    // 下一轮重新算，不带上一轮的。
+    apply(&mut t, turn(2, vec![call(0, 1000, 0)]));
+    let done = &t.entries.last().unwrap().text;
+    assert!(done.ends_with(" · 1k(C100%)"), "{done}");
+    // 一次模型都没调成的，不写这一截。
+    apply(&mut t, turn(3, Vec::new()));
+    let done = &t.entries.last().unwrap().text;
+    assert_eq!(done.split(" · ").count(), 3, "{done}");
+}
+
+#[test]
+fn the_last_reply_is_still_read_after_the_turn_ends_until_something_follows() {
+    // 2026-10-02 项目主人报：mermaid 画出来把回答顶上去。写完了以后才画出来的图把回答撑高时，也照「固顶」停在开头
+    // （蓝图「正文」第 1 条）：这一轮的最后一段回答、后面只有收尾那一行，还算在看它。
+    let mut t = Transcript::default();
+    let reply = |index| {
+        vec![
+            Push::BlockStart {
+                index,
+                block: crate::core::Block::Text,
+            },
+            Push::Delta {
+                index,
+                text: "回答".into(),
+            },
+            Push::BlockEnd(index),
+        ]
+    };
+    apply(&mut t, vec![Push::TurnStarted(1, None)]);
+    apply(&mut t, reply(0));
+    let at = t.entries.len() - 1;
+    assert_eq!(t.reading(), Some((at, true)), "在写的那一段");
+    apply(&mut t, vec![Push::TurnEnded(EndReason::Completed)]);
+    assert_eq!(t.entries.last().unwrap().kind, Kind::Done);
+    assert_eq!(t.reading(), Some((at, false)), "写完了、后面只有收尾那一行");
+    // 下一轮开始了：上一轮的那段不再算。
+    apply(&mut t, vec![Push::TurnStarted(2, None)]);
+    apply(&mut t, vec![Push::TurnEnded(EndReason::Completed)]);
+    assert_eq!(t.reading(), None, "最后一段不是回答");
+}
+
+#[test]
+fn the_done_line_ends_with_how_fast_this_turn_wrote() {
+    // 2026-10-26 项目主人：收尾那一行接这一轮的出字速度「· 46 tok/s」（同网页、核心 SP-1）：这一轮主请求出的 token ÷ 用时。
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::Speed {
+                output: 100,
+                ms: 1000,
+            },
+            Push::Speed {
+                output: 300,
+                ms: 1000,
+            },
+            Push::TurnEnded(EndReason::Completed),
+        ],
+    );
+    let done = t.entries.last().unwrap();
+    assert!(done.text.ends_with(" · 200 tok/s"), "{}", done.text);
+    // 下一轮从头算；一次都没记下的不写。
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(2, None),
+            Push::TurnEnded(EndReason::Completed),
+        ],
+    );
+    let done = t.entries.last().unwrap();
+    assert!(!done.text.contains("tok/s"), "{}", done.text);
+}

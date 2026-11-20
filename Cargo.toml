@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "AGPL-3.0-or-later"
+publish = false
+
+# 照 Miyu 的规矩（Miyu 仓库 Cargo.toml、AGENTS.md「代码的规矩」）。
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+unwrap_used = "deny"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+
+# 发出去的、量尺量的都是这一份：整个程序一起优化、一份代码单元、照体积优化（同 Miyu）。
+# 崩了直接退出（项目主人 2026-11-12 定，docs/00-设计.md 第九节）：一个进程一个窗口，后台任务崩了界面还活着比退出更糟；
+# 展开表不要了。还原终端的钩子照旧先跑。测试是 dev 配置，照旧展开。
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = true
+panic = "abort"

@@ -1,0 +1,216 @@
+# 发版（照 Miyu 仓库 .github/workflows/release.yml）：推 `v<版本>` 标签（版本是 Cargo.toml 的
+# [workspace.package] version；演练用 `v<版本>-rc.N` 的预发布标签，编之前在 CI 机器上把工作区版本临时改成标签里的版本）时，
+# 三个发行目标各在自己的机器上 `cargo xtask dist` 打包、`cargo xtask dist-check` 查包，查不过的这一趟不发；三个都过了写 SHA256SUMS、
+# 加构建出处证明，建一个**草稿** Release 把这些传上去。发不发由项目主人看过草稿以后自己点，这里不发布。
+#
+# 三份（LM-7，docs/00-设计.md 第二节「平台」）：
+# - linux-x86_64：x86_64-unknown-linux-musl，ubuntu-24.04；
+# - linux-aarch64：aarch64-unknown-linux-musl，ubuntu-24.04-arm（原生 arm64，不交叉）；
+# - macos-aarch64：aarch64-apple-darwin，macos-15（arm64）。
+# Linux 两份是全静态的单文件（静态 PIE），排过函数、去了符号，同 `cargo xtask measure` 量的做法（bench/order.py 在 qemu 的用户态
+# 模拟器里照剧本跑一遍记下先后，链接器照它排；aarch64 宿主上跑 aarch64 的客户机照样是模拟）。排函数的轨迹是空的，`dist` 报错停下，
+# 不出一份没排过的。链接器是工具链自带的 rust-lld（`-fuse-ld=lld`，order.py 找工具链里的 gcc-ld/ld.lld），不另装。
+# macOS 那一份不排函数（qemu 用户态只模拟 Linux 的程序，链接器是苹果的 ld），照平常的 release 编（`xtask dist` 自己分）。
+#
+# 不推标签也能演练到出包、查包：手动触发（workflow_dispatch，工作流要先在 main 上）时，三份照样编、打、查、写 SHA256SUMS，传成这一趟
+# 的产物（留 3 天）；建草稿 Release、构建出处证明只在推 `v*` 标签时做。版本照 Cargo.toml（不查年.月.序号的写法）。LM-7 在分支上演练时
+# 临时加过分支的 push 触发，合之前收回了。
+#
+# 不用任何密钥：只用 Actions 自带的 github.token（建草稿 Release）和 id-token（构建出处证明）。Miyu 用发版钥匙签 SHA256SUMS
+# （密钥 MIYU_RELEASE_KEY、变量 MIYU_RELEASE_PUBLIC），这里没签，要不要签交项目主人定。只用 GitHub 官方的 action。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dist:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            platform: linux-aarch64
+          - os: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: 标签和版本对得上
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          tag="$GITHUB_REF_NAME"
+          # rc 后面只许是数（审计 #072：原来照 `-rc.[0-9]*` 通配，`-rc.1abc` 也过）。
+          rc="${tag#"v${version}-rc."}"
+          if [ "${tag}" != "v${version}" ] && { [ "${rc}" = "${tag}" ] || ! [[ "${rc}" =~ ^(0|[1-9][0-9]*)$ ]]; }; then
+            echo "::error::标签 ${tag} 和 Cargo.toml 的版本 ${version} 对不上（要 v${version} 或者 v${version}-rc.N）"; exit 1
+          fi
+          # 版本号照 Miyu：年.月.这个月第几版（Miyu 设计 59 第十节）：年四位，月 1 到 12，月、序号不补零。
+          # 写错了停下：先把 Cargo.toml 的 [workspace.package] version 改好再打标签（演练也是）。
+          if ! [[ "${version}" =~ ^[1-9][0-9]{3}\.([1-9]|1[0-2])\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Cargo.toml 的版本 ${version} 不是 年.月.序号（例如 2026.11.0，月、序号不补零）"
+            exit 1
+          fi
+          echo "标签 ${tag}，版本 ${version}"
+      - name: 装上 rust-toolchain.toml 钉住的工具链和发行目标
+        run: |
+          rustup toolchain install
+          rustup target add "${{ matrix.target }}"
+      # 演练标签（v<版本>-rc.N）：只在这台机器上把工作区版本改成标签里的版本，不提交（同 Miyu）。压缩包照它起名、程序里记的
+      # 版本照它。改完跑一次 `cargo metadata` 把 Cargo.lock 里工作区自己那几个 crate 的版本跟着刷新。正式标签什么都不动。
+      # `sed -i` 后面紧跟后缀：GNU、BSD（macOS）的 sed 都认这种写法（同 Miyu）。
+      - name: 演练标签用标签里的版本
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          tag="${GITHUB_REF_NAME}"
+          if [ "${tag}" = "v${version}" ]; then
+            echo "正式标签：版本照 Cargo.toml 的 ${version}"
+            exit 0
+          fi
+          wanted="${tag#v}"
+          echo "演练标签：工作区版本临时改成 ${wanted}（只在这台机器上，不提交）"
+          sed -i.orig '/^\[workspace\.package\]/,/^\[/s/^version = ".*"$/version = "'"${wanted}"'"/' Cargo.toml
+          rm Cargo.toml.orig
+          now=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          [ "${now}" = "${wanted}" ] || { echo "::error::工作区版本没改成 ${wanted}，现在是 ${now}"; exit 1; }
+          cargo metadata --format-version 1 > /dev/null
+      # Linux：排函数要 qemu 的用户态模拟器（qemu-x86_64、qemu-aarch64）记轨迹；ring 的 C、汇编用 musl-gcc 编（musl-tools）。
+      # python3、binutils（strip、readelf、nm）、GNU tar、gzip 机器上本来就有。
+      - name: 装排函数要的模拟器和 musl-gcc
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user musl-tools
+          "qemu-$(uname -m)" --version
+      # macOS：打包、看包用 GNU tar（gtar，机器上本来就有，xtask 照它；自带的 bsdtar 不认 --sort、--mtime），先确认在。
+      - name: 有 gtar
+        if: runner.os == 'macOS'
+        run: gtar --version | head -n 1
+      # bench/order.py、xtask 编的时候带 --offline：依赖先照 Cargo.lock 取下来。
+      - name: 取依赖
+        run: cargo fetch --locked
+      - name: 打包
+        run: cargo xtask dist --target "${{ matrix.target }}"
+      - name: 查包
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=(target/dist/litemiyu-*-"${{ matrix.platform }}".tar.gz)
+          [ "${#found[@]}" -eq 1 ] || { echo "::error::target/dist/ 里该有 1 个压缩包，有 ${#found[@]} 个：${found[*]}"; exit 1; }
+          cargo xtask dist-check "${found[0]}" --target "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.platform }}
+          path: target/dist/litemiyu-*-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  # 三份都查过了才走到这里：写 SHA256SUMS（`sha256sum` 的格式，`<哈希>  <文件名>`，照文件名排）。演练也写、也传，看得到这一步成不成。
+  sums:
+    needs: dist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -1 litemiyu-*.tar.gz | sort > files
+          want="linux-aarch64 linux-x86_64 macos-aarch64"
+          got=$(sed -E 's/^litemiyu-.*-((linux|macos)-(x86_64|aarch64))\.tar\.gz$/\1/' files | sort | tr '\n' ' ' | sed 's/ $//')
+          [ "${got}" = "${want}" ] || { echo "::error::要三个压缩包（${want}），拿到的是：$(tr '\n' ' ' < files)"; exit 1; }
+          xargs sha256sum < files > SHA256SUMS
+          rm files
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3
+
+  # 只在推 `v*` 标签时：构建出处证明、草稿 Release。
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: sums
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: sums
+          path: dist
+      - name: 核对 SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256SUMS
+          [ "$(wc -l < SHA256SUMS)" -eq 3 ] || { echo "::error::SHA256SUMS 该有 3 行"; exit 1; }
+      - name: 构建出处证明
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/litemiyu-*.tar.gz
+            dist/SHA256SUMS
+      - name: 草稿 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          files=(dist/litemiyu-*.tar.gz dist/SHA256SUMS)
+          prerelease=()
+          case "$tag" in *-rc.*) prerelease=(--prerelease);; esac
+          {
+            echo "草稿：${tag}（打包的提交 ${GITHUB_SHA}）。"
+            echo
+            echo "核对：\`sha256sum -c SHA256SUMS\`（macOS：\`shasum -a 256 -c SHA256SUMS\`）；构建出处：\`gh attestation verify <文件> -R $GITHUB_REPOSITORY\`。"
+            echo "三份：\`linux-x86_64\`、\`linux-aarch64\`（musl 全静态，任何发行版都能跑）、\`macos-aarch64\`（Apple 芯片）。"
+            echo "解开以后把 \`litemiyu\` 放进 PATH；Arch 上也可以装 AUR 的 \`litemiyu\`。"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > notes.md
+          if state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" != "true" ]; then
+              echo "::error::$tag 的 Release 已经发布了，不覆盖"
+              exit 1
+            fi
+            gh release edit "$tag" --notes-file notes.md "${prerelease[@]}"
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" --draft --verify-tag --title "LiteMiyu $tag" --notes-file notes.md "${prerelease[@]}" "${files[@]}"
+          fi

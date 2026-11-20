@@ -1,0 +1,352 @@
+//! 瞬时事件的样本（`docs/designs/samples/transient/`，`03-事件模型.md` 第五节「瞬时事件的外壳」）：
+//! 样本会话里 44 号请求的回复，一段段推给头的样子。
+//!
+//! - 代码里造出同样的几条，写出去和样本一字不差；
+//! - 这几段增量交给累积器，拼出来的就是样本里 45 号回复的内容块：推给头的和写进日志的对得上；
+//! - 45 号回复里那次 `read` 执行中的一段输出（`tool.progress`）；
+//! - 44 号请求出了限速的错，等 1 秒再来的状态（`status`，施工 3-5 下）；117 号请求的限速带着 HTTP 状态码
+//!   （施工 3-5 三补）；人换了模型、下一轮开始时引用没了退回默认，推的 `model.changed`（`why` 是 `turn`，施工 8-10）。原来还有
+//!   池里一个成员限速、换到下一个当场再来的状态（带 `failover`）和换过去成了推的 `model.changed`（施工 8-9），LM-8 砍了模型池删了；
+//! - 54 号压缩写摘要时的两段进度（`compaction.progress`，施工 6-2 上），和压好了的那一条（`compaction.done`，
+//!   施工 6-3 下）；另一个会话过了起压线、在后台提前压的那一次发出去了（`compaction.started`，施工 6-11 再补），到线时
+//!   换上了它（带 `prepared`，施工 6-11 上）。
+//!
+//! 瞬时事件内核只推不读，所以样本在代码里照着造，不从文件读回来。
+
+use std::fs;
+use std::path::PathBuf;
+
+use lm_kernel::kernel::accumulate::{Accumulator, Delta, Kind};
+use lm_kernel::kernel::event::{
+    Body, ChangeWhy, CompactTrigger, CompactionDone, CompactionProgress, CompactionStarted,
+    EffortInUse, EffortSource, ErrorClass, Event, ModelChanged, ModelDelta, Piece, Retry, Status,
+    ToolProgress, Transient, TransientBody, Usage,
+};
+use lm_kernel::kernel::id::{CallId, CommandId, ModelName, ProviderId, Seq, TurnId};
+use lm_kernel::kernel::origin::{By, Model, Tool};
+use lm_kernel::kernel::session::ContextLimits;
+use lm_kernel::kernel::time::Timestamp;
+
+/// 样本目录：这个 crate 的目录往上两级是仓库根。
+fn samples() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/designs/samples")
+}
+
+/// 一份样本的每一行，去掉行尾的换行。
+fn lines(path: &str) -> Vec<String> {
+    let path = samples().join(path);
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("读不了 {}：{e}", path.display()));
+    text.lines().map(str::to_string).collect()
+}
+
+/// 44 号请求的回复，驱动交来的增量和它们到的时刻，照先后。
+fn stream() -> Vec<(&'static str, Delta)> {
+    vec![
+        (
+            "2026-09-25T07:04:05.942Z",
+            Delta::Start {
+                index: 0,
+                kind: Kind::Text,
+            },
+        ),
+        (
+            "2026-09-25T07:04:06.210Z",
+            Delta::Text {
+                index: 0,
+                text: "我先".to_string(),
+            },
+        ),
+        (
+            "2026-09-25T07:04:06.480Z",
+            Delta::Text {
+                index: 0,
+                text: "看一下目录。".to_string(),
+            },
+        ),
+        ("2026-09-25T07:04:06.481Z", Delta::End { index: 0 }),
+        (
+            "2026-09-25T07:04:06.690Z",
+            Delta::Start {
+                index: 1,
+                kind: Kind::ToolCall {
+                    name: "read".to_string(),
+                },
+            },
+        ),
+        (
+            "2026-09-25T07:04:07.320Z",
+            Delta::Text {
+                index: 1,
+                text: r#"{"path":"src"}"#.to_string(),
+            },
+        ),
+        ("2026-09-25T07:04:07.880Z", Delta::End { index: 1 }),
+    ]
+}
+
+/// 一段增量推给头的样子：42 号回合，deepseek 说的，由 `cmd-7f3a` 引起。
+fn pushed(at: &str, delta: &Delta) -> Transient {
+    let (index, piece) = match delta {
+        Delta::Start { index, kind } => (*index, Piece::Start(kind.clone())),
+        Delta::Text { index, text } => (*index, Piece::Text(text.clone())),
+        Delta::End { index } => (*index, Piece::End),
+        Delta::Private { .. } | Delta::Truncated => panic!("私有数据、写到上限都不推"),
+    };
+    Transient {
+        at: Timestamp::parse(at).expect("样本的时刻合写法"),
+        turn: Some(TurnId::new(Seq::new(42).expect("42 是合法的序号"))),
+        by: By::Model(Model {
+            endpoint: ProviderId::parse("deepseek").expect("供应商的名字合写法"),
+            model: ModelName::parse("deepseek-v4").expect("模型的名字合写法"),
+        }),
+        cause: Some(CommandId::parse("cmd-7f3a").expect("命令编号合写法")),
+        body: TransientBody::ModelDelta(ModelDelta {
+            seen: Seq::new(44).expect("44 是合法的序号"),
+            index,
+            piece,
+        }),
+    }
+}
+
+#[test]
+fn the_samples_are_written_exactly() {
+    let lines = lines("transient/model.delta.jsonl");
+    let stream = stream();
+    assert_eq!(lines.len(), stream.len(), "样本和增量一样多");
+    for (line, (at, delta)) in lines.iter().zip(&stream) {
+        assert_eq!(&pushed(at, delta).to_line(), line);
+    }
+}
+
+#[test]
+fn the_pushed_pieces_add_up_to_the_reply_in_the_log() {
+    let mut accumulator = Accumulator::default();
+    for (_, delta) in stream() {
+        accumulator.apply(delta).expect("样本的增量对得上");
+    }
+    let reply = lines("events/message.assistant.jsonl")
+        .iter()
+        .map(|line| Event::from_line(line).expect("样本读得出来"))
+        .find(|event| event.seq.get() == 45)
+        .expect("样本会话里有 45 号回复");
+    let Body::MessageAssistant(reply) = reply.body else {
+        panic!("45 号应该是回复");
+    };
+    let seq = Seq::new(45).expect("45 是合法的序号");
+    assert_eq!(accumulator.finish(seq), reply.blocks);
+}
+
+#[test]
+fn the_tool_progress_sample_is_written_exactly() {
+    let call_id = CallId::parse("call_45_1").expect("样本里的调用编号合写法");
+    let progress = Transient {
+        at: Timestamp::parse("2026-09-25T07:04:07.901Z").expect("样本的时刻合写法"),
+        turn: Some(TurnId::new(Seq::new(42).expect("42 是合法的序号"))),
+        by: By::Tool(Tool { call_id }),
+        cause: Some(CommandId::parse("cmd-7f3a").expect("命令编号合写法")),
+        body: TransientBody::ToolProgress(ToolProgress {
+            call_id,
+            text: "lib.rs\n".to_string(),
+        }),
+    };
+    assert_eq!(lines("transient/tool.progress.jsonl"), [progress.to_line()]);
+}
+
+/// 第一行是连不上、可以重试的，没有 HTTP 状态码，不写那一格；第二行是 118 号 `model.called` 的限速，带着 429
+/// （施工 3-5 三补）。（原来第三行是池里一个成员限速、换到下一个当场再来，带 `failover`：LM-8 砍了模型池，那一行删了。）
+#[test]
+fn the_status_sample_is_written_exactly() {
+    let status = |at: &str,
+                  (turn, cause, seen): (u64, &str, u64),
+                  (class, message): (ErrorClass, &str),
+                  status: Option<u16>,
+                  wait_ms: u64| {
+        Transient {
+            at: Timestamp::parse(at).expect("样本的时刻合写法"),
+            turn: Some(TurnId::new(Seq::new(turn).expect("合法的序号"))),
+            by: By::Kernel,
+            cause: Some(CommandId::parse(cause).expect("命令编号合写法")),
+            body: TransientBody::Status(Status {
+                seen: Seq::new(seen).expect("合法的序号"),
+                retry: Retry {
+                    attempt: 1,
+                    limit: 5,
+                    wait_ms,
+                    class,
+                    message: message.to_string(),
+                    status,
+                },
+            }),
+        }
+        .to_line()
+    };
+    assert_eq!(
+        lines("transient/status.jsonl"),
+        [
+            status(
+                "2026-09-25T07:04:07.200Z",
+                (42, "cmd-7f3a", 44),
+                (ErrorClass::Retryable, "connection reset by peer"),
+                None,
+                1000
+            ),
+            status(
+                "2026-09-25T07:58:12.400Z",
+                (117, "cmd-d4e7", 117),
+                (ErrorClass::RateLimited, "HTTP 429: Rate limit reached"),
+                Some(429),
+                1000
+            ),
+        ]
+    );
+}
+
+/// （原来第一条是池里换过去的成员成了、钉过去推的 `model.changed`，LM-8 砍了模型池，删了。）样本会话 143 号
+/// 回合开始时池 `free` 没了、退回 `models.chat` 的那一次（施工 8-10，和 144 号 `session.policy_changed` 对得上），带着
+/// `deepseek/deepseek-v4` 配置的默认思考强度，从哪来是配置的哪一层（施工 8-18；8-18（补）起不再认会话那一层）。会话 actor
+/// 造，内核不推。
+#[test]
+fn the_model_changed_sample_is_written_exactly() {
+    let turned = Transient {
+        at: Timestamp::parse("2026-09-25T21:00:00.000Z").expect("样本的时刻合写法"),
+        turn: Some(TurnId::new(Seq::new(143).expect("合法的序号"))),
+        by: By::Kernel,
+        cause: Some(CommandId::parse("cmd-2e30").expect("命令编号合写法")),
+        body: TransientBody::ModelChanged(Box::new(ModelChanged {
+            reference: Some("deepseek/deepseek-v4".to_string()),
+            endpoint: Some(ProviderId::parse("deepseek").expect("合编号的写法")),
+            model: Some(ModelName::parse("deepseek-v4").expect("合模型名的写法")),
+            effort: Some(EffortInUse {
+                level: "high".to_string(),
+                from: EffortSource::Session,
+            }),
+            limits: ContextLimits {
+                window: Some(1_000_000),
+                compaction_line: Some(850_000),
+                context: None,
+            },
+            why: ChangeWhy::Turn,
+        })),
+    };
+    assert_eq!(lines("transient/model.changed.jsonl"), [turned.to_line()]);
+}
+
+#[test]
+fn the_compaction_progress_sample_is_written_exactly() {
+    let progress = |at: &str, written: u64| {
+        Transient {
+            at: Timestamp::parse(at).expect("样本的时刻合写法"),
+            turn: None,
+            by: By::Kernel,
+            cause: Some(CommandId::parse("cmd-b5e2").expect("命令编号合写法")),
+            body: TransientBody::CompactionProgress(CompactionProgress {
+                seen: Seq::new(53).expect("53 是合法的序号"),
+                trigger: CompactTrigger::Auto,
+                written,
+                expected: 20000,
+            }),
+        }
+        .to_line()
+    };
+    assert_eq!(
+        lines("transient/compaction.progress.jsonl"),
+        [
+            progress("2026-09-25T07:29:58.400Z", 412),
+            progress("2026-09-25T07:29:59.100Z", 957),
+        ]
+    );
+}
+
+#[test]
+fn the_compaction_started_sample_is_written_exactly() {
+    let started = Transient {
+        at: Timestamp::parse("2026-10-08T03:12:21.500Z").expect("样本的时刻合写法"),
+        turn: Some(TurnId::new(Seq::new(84).expect("84 是合法的序号"))),
+        by: By::Kernel,
+        cause: Some(CommandId::parse("cmd-c7a1").expect("命令编号合写法")),
+        body: TransientBody::CompactionStarted(CompactionStarted {
+            seen: Seq::new(88).expect("88 是合法的序号"),
+            prepared: true,
+        }),
+    };
+    assert_eq!(
+        lines("transient/compaction.started.jsonl"),
+        [started.to_line()]
+    );
+}
+
+#[test]
+fn the_compaction_done_sample_is_written_exactly() {
+    let done = Transient {
+        at: Timestamp::parse("2026-09-25T07:30:00.000Z").expect("样本的时刻合写法"),
+        turn: None,
+        by: By::Kernel,
+        cause: Some(CommandId::parse("cmd-b5e2").expect("命令编号合写法")),
+        body: TransientBody::CompactionDone(CompactionDone {
+            seen: Seq::new(53).expect("53 是合法的序号"),
+            trigger: CompactTrigger::Auto,
+            before: 812_345,
+            after: 31_020,
+            usage: Some(Usage {
+                uncached: 2345,
+                cache_read: 810_112,
+                cache_write: 0,
+                output: 2412,
+                reasoning: None,
+            }),
+            duration_ms: Some(41_250),
+            prepared: false,
+            truncated: None,
+        }),
+    };
+    let prepared = Transient {
+        at: Timestamp::parse("2026-10-08T03:12:40.000Z").expect("样本的时刻合写法"),
+        turn: None,
+        by: By::Kernel,
+        cause: Some(CommandId::parse("cmd-c7a1").expect("命令编号合写法")),
+        body: TransientBody::CompactionDone(CompactionDone {
+            seen: Seq::new(88).expect("88 是合法的序号"),
+            trigger: CompactTrigger::Auto,
+            before: 152_430,
+            after: 38_210,
+            usage: Some(Usage {
+                uncached: 1840,
+                cache_read: 133_632,
+                cache_write: 0,
+                output: 3108,
+                reasoning: None,
+            }),
+            duration_ms: Some(18_620),
+            prepared: true,
+            truncated: None,
+        }),
+    };
+    // 摘要请求太长、截掉最老的两组才压成的（施工 UP-2）。
+    let truncated = Transient {
+        at: Timestamp::parse("2026-11-02T09:05:12.000Z").expect("样本的时刻合写法"),
+        turn: None,
+        by: By::Kernel,
+        cause: Some(CommandId::parse("cmd-d3f4").expect("命令编号合写法")),
+        body: TransientBody::CompactionDone(CompactionDone {
+            seen: Seq::new(240).expect("240 是合法的序号"),
+            trigger: CompactTrigger::Overflow,
+            before: 1_012_000,
+            after: 42_100,
+            usage: Some(Usage {
+                uncached: 905_400,
+                cache_read: 0,
+                cache_write: 0,
+                output: 3560,
+                reasoning: None,
+            }),
+            duration_ms: Some(52_300),
+            prepared: false,
+            truncated: Some(2),
+        }),
+    };
+    assert_eq!(
+        lines("transient/compaction.done.jsonl"),
+        [done.to_line(), prepared.to_line(), truncated.to_line()]
+    );
+}

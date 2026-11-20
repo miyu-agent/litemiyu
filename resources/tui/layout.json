@@ -1,0 +1,96 @@
+{
+  "width_percent": 90,
+  "narrow_below": 20,
+  "home_max_width": 80,
+  "sidebar_from": 120,
+  "sidebar_width": 38,
+  "sidebar_jumps": 8,
+  "sidebar_sessions": 8,
+  "side_here_mark": "❱",
+  "session_rows": 10,
+  "session_cwd_width": 24,
+  "session_title_width": 36,
+  "tick_mark": "✓ ",
+  "current_mark": "●",
+  "title_max": 200,
+  "undo_icon": "↶ ",
+  "side_gap": 2,
+  "top_gap": 1,
+  "pad_left": 3,
+  "pad_right": 2,
+  "compact_below": 100,
+  "compact_pad_left": 2,
+  "compact_pad_right": 1,
+  "compact_side_gap": 1,
+  "paste_fold_lines": 10,
+  "paste_fold_chars": 800,
+  "max_rows": 8,
+  "double_click_ms": 400,
+  "notice_ms": 2000,
+  "frame_ms": 33,
+  "key_burst_ms": 0,
+  "markdown_cache": 8,
+  "relayout_budget_ms": 8,
+  "done_gap": "",
+  "menu_rows": 5,
+  "history_rows": 0,
+  "jump_flash_ms": 1000,
+  "history_preview_rows": 6,
+  "esc_window_ms": 1500,
+  "agent_rows": 5,
+  "drawer_keep_rows": 6,
+  "drawer_preview": {
+    "side_min": 86,
+    "gap": 3,
+    "pad": 0,
+    "rows": 16,
+    "tab": 4,
+    "divider": "│"
+  },
+  "dots": {
+    "mark": ".",
+    "count": 3
+  },
+  "shimmer": {
+    "sweep_seconds": 3.0,
+    "band": 1.5,
+    "dim": 0.85,
+    "lift": 0.35
+  },
+  "icons": "nerd",
+  "vim": true,
+  "currencies": {
+    "USD": "$",
+    "CNY": "¥",
+    "EUR": "€",
+    "GBP": "£"
+  },
+  "compaction": {
+    "pause_ms": [
+      300,
+      1500
+    ],
+    "step_cells": [
+      1,
+      3
+    ],
+    "cap_percent": 95,
+    "blink_hz": 1.2,
+    "blink_low": 0.45,
+    "breathe_after_ms": 3000,
+    "breathe_period_ms": 2000,
+    "breathe_lift": 0.2,
+    "finish_ms": 400,
+    "finish_hold_ms": 200
+  },
+  "bar": {
+    "width": 20,
+    "full": "▰",
+    "empty": "▱"
+  },
+  "tab": 4,
+  "user_bar": "┃ ",
+  "done_icon": "✻ ",
+  "prompt": "❯ ",
+  "queued_mark": "↳ "
+}

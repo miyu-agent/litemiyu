@@ -1,0 +1,63 @@
+[package]
+name = "litemiyu"
+description = "LiteMiyu：一个进程的 agent harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# 会话的纯逻辑：事件、命令、回答的形状，界面照它读引擎推来的事件（`core/push.rs`）。
+lm-kernel = { path = "../lm-kernel" }
+# 一切 I/O：会话、路由、工具、配置文件。引擎线程直接调它（`core/engine.rs`）。
+lm-engine = { path = "../lm-engine" }
+# glibc 的堆调参（Miyu 的 miyu-heap）：调 glibc 的那三处在它里面，这个 crate 照旧禁 unsafe。
+lm-heap = { path = "../lm-heap" }
+# 只要它的缓冲、版面和部件；终端的进出、读按键、往外写都自己管（src/screen.rs），不用它的 Terminal：
+# 它留着两整份屏幕，是空闲时匿名内存里最大的一块（docs/00-设计.md 第七节）。MIT。
+ratatui = { version = "0.30", default-features = false }
+# 屏幕每一行的指纹用它的快速哈希（src/screen.rs）。ratatui 经 hashbrown 本来就带进来的同一版、同样不开默认功能。Zlib。
+foldhash = { version = "0.2", default-features = false }
+# 原始模式、备用屏、读按键、鼠标。MIT。
+crossterm = "0.29"
+# 宽字占两格，写一行时要跳过后面那一格。ratatui 本来就带进来的同一版。MIT 或 Apache-2.0。
+unicode-width = "0.2"
+# 照字素簇算列、折行（同 Miyu 终端，ratatui 本来就带进来的同一版）。MIT 或 Apache-2.0。
+unicode-segmentation = "1"
+# 回答的 Markdown（同 Miyu 终端）。MIT。
+pulldown-cmark = { version = "0.13", default-features = false }
+# 编辑、写入点开的差异（同 Miyu 终端）。Apache-2.0。
+similar = { version = "2", default-features = false, features = ["text"] }
+# 界面的字表、布局编进程序是 JSON，用到时读（lm-kernel、lm-engine 本来就带进来的同一版）。MIT 或 Apache-2.0。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 正文的钟、本地时区（lm-engine 本来就带进来的同一版、同样的功能）。MIT 或 Unlicense。
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tz-fat", "tzdb-zoneinfo"] }
+# 复制走 OSC 52 要 base64（同 Miyu 终端，依赖图里本来就有的同一版）。MIT 或 Apache-2.0。
+base64 = "0.22"
+# `Ctrl+Z` 给自己发 `SIGTSTP`、读按键的线程等在 `poll` 上（`event`），等的是 0 号描述符本身（`stdio`，不经标准库的 `io::stdin()`
+# 造读缓冲），不写 unsafe（lm-engine 本来就带进来的同一版）。MIT 或 Apache-2.0 或 Apache-2.0 WITH LLVM-exception。
+rustix = { version = "1", features = ["process", "event", "stdio"] }
+# 照终端的主色生成 MD3 的一套颜色（同 Miyu 终端 `theme/persona.rs`、`miyu-seeds`，同一版、同样只开量化和打分）。MIT 或 Apache-2.0。
+material-colors = { version = "0.5", default-features = false, features = ["std", "quantize"] }
+# 读按键的线程等在终端和一对本机套接字上，窗口变了大小（`SIGWINCH`）往套接字里写一个字叫醒它（`reader.rs`）。crossterm
+# 本来就带进来的同一版。MIT 或 Apache-2.0。
+signal-hook = { version = "0.3", default-features = false }
+# 引擎线程是单线程的异步运行时（docs/00-设计.md 第四节第 1 条）；界面和它之间的通道。lm-engine 本来就带进来的同一版。MIT。
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+
+[dev-dependencies]
+# 伪终端里的集成测试：本机的假模型服务器（lm-engine 的 testkit）。
+lm-engine = { path = "../lm-engine", features = ["testkit"] }
+# 伪终端里起程序、把屏幕照 vt100 解出来看（同 Miyu 终端的伪终端测试）。MIT。
+portable-pty = "0.9"
+vt100 = "0.16"
+
+# 伪终端里整条走通：一个测试程序（`tests/pty/`）。
+[[test]]
+name = "pty"
+path = "tests/pty/main.rs"

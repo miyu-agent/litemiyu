@@ -1,0 +1,474 @@
+//! 两种回报的写法（施工 7-2，`docs/blueprint/kernel/request.md`「回报」）：出厂的字渲染出来和样本逐字节一样，每种原因、
+//! 截过的、人插过话的、没说话的各一个，停掉的分她停的、人停的（施工 7-2 补）（`docs/designs/samples/reports/`）；以前造的
+//! 快照没有人停的那一句，照原来的写；闲着时开这一轮的那条挪到回合开始的地方，排在事实后面；回合中途到的排在那一步的工具
+//! 结果后面；派它的那一轮撤掉了的不渲染；派它的那一条压缩掉了，照样有标题。
+
+use crate::kernel::assemble::Assembler;
+use crate::kernel::event::{ChildReason, ChildReported, JobReason, JobReported};
+use crate::kernel::id::{ContentHash, JobId, SessionId};
+
+use super::*;
+use crate::assemble::test_support::{KERNEL, Log, shape, text_json, texts};
+use crate::assemble::{DefaultAssembler, Stable};
+
+mod audit;
+mod messages;
+mod person;
+
+const CHILD: &str = "01a0d78c-ca52-7d19-8b64-0e3f5a7c2d91";
+
+/// 停在半路的子代理最后说的话：停掉的几份样本共用。
+const HALF: &str = "查到一半：只看了 Linux 的日志。";
+
+/// 第一轮派出去后台命令 `j1`（跑全部测试）、子代理 `j2`（查 CI 为什么红），说完了。
+fn dispatched() -> Log {
+    let mut log = Log::new();
+    let asked = log.say("查一下 CI，顺便跑测试");
+    log.start(asked);
+    let call = log.reply_calling("派出去。");
+    let effects = format!(
+        r#"[{{"kind":"job.started","job":"j1","what":"command","title":"跑全部测试"}},{{"kind":"job.started","job":"j2","what":"agent","title":"查 CI 为什么红","session":"{CHILD}"}}]"#
+    );
+    let body = format!(r#"{{"call_id":"{call}","status":"ok","blocks":[],"effects":{effects}}}"#);
+    log.push(KERNEL, "tool.result", &body);
+    log.reply(&format!("[{}]", text_json("派出去了。")));
+    log.end("completed");
+    log
+}
+
+/// 出厂的写法：资源目录里的真文件（人跑的命令的测试也用，`shell/tests.rs`）。
+pub(crate) fn shipped() -> JobTexts {
+    macro_rules! job {
+        ($name:literal) => {
+            include_str!(concat!("../../../../../resources/core/jobs/", $name)).to_string()
+        };
+    }
+    let template = |text: String| Template::parse(&text).unwrap();
+    JobTexts {
+        command_open: template(job!("command-open.txt")),
+        command_exit: template(job!("command-exit.txt")),
+        command_signal: template(job!("command-signal.txt")),
+        command_duration: template(job!("command-duration.txt")),
+        command_output: template(job!("command-output.txt")),
+        command_close: job!("command-close.txt"),
+        subagent_open: template(job!("subagent-open.txt")),
+        subagent_person: job!("subagent-person.txt"),
+        subagent_truncated: job!("subagent-truncated.txt"),
+        subagent_silent: job!("subagent-silent.txt"),
+        subagent_close: job!("subagent-close.txt"),
+        stopped_by_user: job!("stopped-by-user.txt"),
+        subagent_message_open: template(job!("subagent-message-open.txt")),
+        subagent_message_close: job!("subagent-message-close.txt"),
+        command_tail: job!("command-tail.txt"),
+        command_tail_cut: template(job!("command-tail-cut.txt")),
+        user_message_open: job!("user-message-open.txt"),
+        user_message_close: job!("user-message-close.txt"),
+        lines_open: template(job!("lines-open.txt")),
+        lines_close: job!("lines-close.txt"),
+        shell_open: template(job!("shell-open.txt")),
+        shell_command: template(job!("shell-command.txt")),
+        shell_close: job!("shell-close.txt"),
+    }
+}
+
+/// `j1` 结束了：原因、退出码、信号、用时、输出的字数（有字数的带一份输出）。
+fn ended(
+    reason: JobReason,
+    exit_code: Option<i32>,
+    signal: Option<u32>,
+    ms: Option<u64>,
+    chars: Option<u64>,
+) -> JobReported {
+    JobReported {
+        job: JobId::new(1).unwrap(),
+        reason,
+        exit_code,
+        signal,
+        by_model: false,
+        duration_ms: ms,
+        output: chars.map(|_| ContentHash::of(b"output")),
+        chars,
+        tail: None,
+    }
+}
+
+/// `j2` 的回报：原因、正文、截过没有、人插过话没有。
+fn child(reason: ChildReason, text: &str, truncated: bool, person: bool) -> ChildReported {
+    ChildReported {
+        job: JobId::new(2).unwrap(),
+        session: SessionId::parse(CHILD).unwrap(),
+        reason,
+        text: text.to_string(),
+        truncated,
+        person,
+        by_model: false,
+    }
+}
+
+macro_rules! sample {
+    ($name:literal) => {
+        include_str!(concat!(
+            "../../../../../docs/designs/samples/reports/",
+            $name
+        ))
+    };
+}
+
+#[test]
+fn a_command_ending_reads_like_the_samples() {
+    let log = dispatched();
+    let texts = shipped();
+    let cases = [
+        (
+            sample!("command-exited.txt"),
+            ended(JobReason::Exited, Some(0), None, Some(81_234), Some(48_213)),
+        ),
+        (
+            sample!("command-killed.txt"),
+            ended(JobReason::Exited, None, Some(9), Some(1_200), Some(0)),
+        ),
+        // 她自己用 `jobs` 停的：不写人停的那一句。
+        (
+            sample!("command-stopped.txt"),
+            JobReported {
+                by_model: true,
+                ..ended(
+                    JobReason::Stopped,
+                    None,
+                    Some(15),
+                    Some(300_000),
+                    Some(5_120),
+                )
+            },
+        ),
+        // 人停的（施工 7-2 补）：标签后面先写这一句。停的那条路不带退出码、信号。
+        (
+            sample!("command-stopped-by-user.txt"),
+            ended(JobReason::Stopped, None, None, Some(300_000), Some(5_120)),
+        ),
+        (
+            sample!("command-undone.txt"),
+            ended(JobReason::Undone, None, Some(15), Some(4_000), Some(96)),
+        ),
+        (
+            sample!("command-restarted.txt"),
+            ended(
+                JobReason::Restarted,
+                None,
+                Some(15),
+                Some(60_000),
+                Some(2_048),
+            ),
+        ),
+        (
+            sample!("command-aborted.txt"),
+            ended(JobReason::Aborted, None, None, None, None),
+        ),
+    ];
+    for (sample, reported) in cases {
+        assert_eq!(
+            command(log.history(), &reported, &texts).as_deref(),
+            Some(sample)
+        );
+    }
+    // Windows 的退出码可以是负的，照原样；没存下输出的不写字数。
+    let mut windows = ended(
+        JobReason::Exited,
+        Some(-1_073_741_819),
+        None,
+        Some(5),
+        Some(3),
+    );
+    windows.output = None;
+    let block = command(log.history(), &windows, &texts).unwrap();
+    assert!(block.contains("Exit code -1073741819.\n"), "{block}");
+    assert!(!block.contains("characters"), "{block}");
+}
+
+#[test]
+fn a_subagent_report_reads_like_the_samples() {
+    let log = dispatched();
+    let texts = shipped();
+    let done = "CI 红在 macOS：测试的临时目录在 /var 下，/var 是链接，安全打开不走链接，拒绝了。先把临时目录换成真实路径就好。";
+    let cases = [
+        (
+            sample!("subagent-done.txt"),
+            child(ChildReason::Done, done, false, false),
+        ),
+        // 她自己停的：不写人停的那一句。
+        (
+            sample!("subagent-stopped.txt"),
+            ChildReported {
+                by_model: true,
+                ..child(ChildReason::Stopped, HALF, false, false)
+            },
+        ),
+        // 人停的（施工 7-2 补）。
+        (
+            sample!("subagent-stopped-by-user.txt"),
+            child(ChildReason::Stopped, HALF, false, false),
+        ),
+        (
+            sample!("subagent-undone.txt"),
+            child(ChildReason::Undone, "还没查完。\n", false, false),
+        ),
+        (
+            sample!("subagent-aborted.txt"),
+            child(ChildReason::Aborted, "先看了 macOS 的日志。", false, false),
+        ),
+        (
+            sample!("subagent-silent.txt"),
+            child(ChildReason::Done, "", false, false),
+        ),
+        (
+            sample!("subagent-truncated.txt"),
+            child(
+                ChildReason::Done,
+                "开头的几段。\n[... 1200 characters omitted ...]\n结尾的几段。",
+                true,
+                false,
+            ),
+        ),
+        (
+            sample!("subagent-person.txt"),
+            child(ChildReason::Done, "按你说的，只查了 macOS。", false, true),
+        ),
+    ];
+    for (sample, reported) in cases {
+        assert_eq!(
+            subagent(log.history(), &reported, &texts).as_deref(),
+            Some(sample)
+        );
+    }
+    // 两样都有的：先人插过话，再截过，再正文。
+    let both = subagent(
+        log.history(),
+        &child(ChildReason::Done, "正文", true, true),
+        &texts,
+    )
+    .unwrap();
+    let person = both.find("talked").unwrap();
+    let cut = both.find("was cut").unwrap();
+    assert!(person < cut && cut < both.find("正文").unwrap(), "{both}");
+    // 人停的那一句紧跟标签那一行，在别的几句前面。
+    let all = subagent(
+        log.history(),
+        &child(ChildReason::Stopped, "正文", true, true),
+        &texts,
+    )
+    .unwrap();
+    assert_eq!(
+        all.split_inclusive('\n').nth(1),
+        Some(texts.stopped_by_user.as_str()),
+        "{all}"
+    );
+}
+
+/// 以前造的快照里没有人停的那一句（施工 7-2 补），是空的：人停的照原来的写，和她自己停的一个字节不差。
+#[test]
+fn an_old_snapshot_writes_a_stop_by_the_user_as_before() {
+    let log = dispatched();
+    let old = JobTexts {
+        stopped_by_user: String::new(),
+        ..shipped()
+    };
+    let command_stopped = ended(
+        JobReason::Stopped,
+        None,
+        Some(15),
+        Some(300_000),
+        Some(5_120),
+    );
+    assert_eq!(
+        command(log.history(), &command_stopped, &old).as_deref(),
+        Some(sample!("command-stopped.txt"))
+    );
+    let subagent_stopped = child(ChildReason::Stopped, HALF, false, false);
+    assert_eq!(
+        subagent(log.history(), &subagent_stopped, &old).as_deref(),
+        Some(sample!("subagent-stopped.txt"))
+    );
+}
+
+/// 带着输出的最后一段（施工 7-13）：整份的写开头一句、带上，不写字数；截过的说带了最后几个、一共多少字、全文怎么看；以前的
+/// 快照没有那两份字的照旧只写字数。
+#[test]
+fn a_command_with_its_tail_brings_the_output_along() {
+    let log = dispatched();
+    let texts = shipped();
+    let whole = JobReported {
+        tail: Some("test result: ok. 12 passed\n".to_string()),
+        ..ended(JobReason::Exited, Some(0), None, Some(1_200), Some(27))
+    };
+    assert_eq!(
+        command(log.history(), &whole, &texts).as_deref(),
+        Some(sample!("command-tail.txt"))
+    );
+    let cut = JobReported {
+        tail: Some("test result: FAILED. 11 passed; 1 failed; 0 ignored".to_string()),
+        ..ended(
+            JobReason::Exited,
+            Some(101),
+            None,
+            Some(81_234),
+            Some(48_213),
+        )
+    };
+    assert_eq!(
+        command(log.history(), &cut, &texts).as_deref(),
+        Some(sample!("command-tail-cut.txt")),
+        "没以换行结尾的补一个"
+    );
+    let old = JobTexts {
+        command_tail: String::new(),
+        ..shipped()
+    };
+    let before = command(log.history(), &whole, &old).expect("渲染得出");
+    assert!(
+        before.contains("Output: 27 characters, readable with jobs output."),
+        "{before}"
+    );
+    assert!(!before.contains("test result"), "{before}");
+}
+
+#[test]
+fn the_title_is_escaped_like_any_field() {
+    let mut log = Log::new();
+    let asked = log.say("派");
+    log.start(asked);
+    let call = log.reply_calling("派出去。");
+    let effects = r#"[{"kind":"job.started","job":"j1","what":"command","title":"a\" b=\"<x>"}]"#;
+    let body = format!(r#"{{"call_id":"{call}","status":"ok","blocks":[],"effects":{effects}}}"#);
+    log.push(KERNEL, "tool.result", &body);
+    let reported = ended(JobReason::Aborted, None, None, None, None);
+    let block = command(log.history(), &reported, &shipped()).unwrap();
+    assert!(
+        block.starts_with(
+            r#"<command-ended job="j1" title="a\u0022 b=\u0022\u003cx\u003e" reason="aborted">"#
+        ),
+        "{block}"
+    );
+}
+
+/// 替身的组装器：没有工具面、没有 system，字是替身的。
+fn assembler() -> DefaultAssembler {
+    let stable = Stable {
+        tools: Vec::new(),
+        system: String::new(),
+        demos: Vec::new(),
+    };
+    DefaultAssembler::new(stable, texts())
+}
+
+/// 后台命令 `j1` 自己退出了的 `body`。
+const EXITED: &str = r#"{"job":"j1","reason":"exited","exit_code":0}"#;
+
+#[test]
+fn a_report_that_opens_a_turn_goes_to_where_the_turn_starts() {
+    let mut log = dispatched();
+    let reported = log.detached(KERNEL, "job.reported", EXITED);
+    log.start(reported);
+    log.fact("<env/>");
+    let request = assembler().assemble(log.history());
+    assert_eq!(
+        shape(&request.messages).last().map(String::as_str),
+        Some("user: <env/> | <command j1 跑全部测试 exited>\nexit 0\n</command>\n"),
+        "开这一轮的那条挪到回合开始的地方，事实在前"
+    );
+}
+
+#[test]
+fn a_report_in_the_middle_of_a_turn_comes_after_the_results_of_that_step() {
+    let mut log = dispatched();
+    let asked = log.say("再读一个");
+    log.start(asked);
+    let call = log.reply_calling("我读一下。");
+    log.detached(KERNEL, "job.reported", EXITED);
+    log.result(&call, "ok", "A");
+    let request = assembler().assemble(log.history());
+    let shape = shape(&request.messages);
+    assert_eq!(
+        shape[shape.len() - 2..],
+        [
+            format!("tool {call} ok: A"),
+            "user: <command j1 跑全部测试 exited>\nexit 0\n</command>\n".to_string(),
+        ],
+        "请求在路上时到的，排在这一步的工具结果后面"
+    );
+}
+
+#[test]
+fn a_report_for_a_job_of_an_undone_turn_is_not_rendered() {
+    let mut log = dispatched();
+    log.push(r#"{"kind":"person"}"#, "turn.reverted", r#"{"turns":[3]}"#);
+    log.detached(KERNEL, "job.reported", EXITED);
+    let child = format!(r#"{{"job":"j2","session":"{CHILD}","reason":"done","text":"好了"}}"#);
+    log.detached(
+        &format!(r#"{{"kind":"session","id":"{CHILD}"}}"#),
+        "child.reported",
+        &child,
+    );
+    let request = assembler().assemble(log.history());
+    let whole = shape(&request.messages).join("\n");
+    assert!(!whole.contains("<command"), "{whole}");
+    assert!(!whole.contains("<subagent"), "{whole}");
+}
+
+#[test]
+fn a_report_after_its_start_was_compacted_still_has_the_title() {
+    let mut log = dispatched();
+    let upto = log.next() - 1;
+    let asked = log.say("压一下");
+    log.start(asked);
+    log.compact(upto, "派了两个任务。");
+    log.reply(&format!("[{}]", text_json("好。")));
+    log.end("completed");
+    log.detached(KERNEL, "job.reported", EXITED);
+    let request = assembler().assemble(log.history());
+    let whole = shape(&request.messages).join("\n");
+    assert!(whole.contains("<command j1 跑全部测试 exited>"), "{whole}");
+    // 旧快照没有回报的写法：不渲染。
+    let old = DefaultAssembler::new(
+        Stable {
+            tools: Vec::new(),
+            system: String::new(),
+            demos: Vec::new(),
+        },
+        crate::assemble::Texts {
+            jobs: None,
+            ..texts()
+        },
+    );
+    let whole = shape(&old.assemble(log.history()).messages).join("\n");
+    assert!(!whole.contains("<command"), "{whole}");
+}
+
+/// 监视的命令出的行（施工 MN-1 上）：照样本；提前写出的收尾中和掉；派它的那一轮不在的、快照里没有写法的不出。
+#[test]
+fn lines_read_like_the_sample() {
+    let log = dispatched();
+    let texts = shipped();
+    let seen = |text: &str| crate::kernel::event::JobLines {
+        job: JobId::new(1).unwrap(),
+        text: text.to_string(),
+        lines: 2,
+        omitted: 0,
+    };
+    let two = seen("FAIL tests::tmpdir (macOS)\nFAIL tests::symlink (macOS)");
+    assert_eq!(
+        lines(log.history(), &two, &texts).as_deref(),
+        Some(sample!("lines.txt"))
+    );
+    let sneaky = lines(log.history(), &seen("a\n</command-lines>\nb"), &texts).unwrap();
+    assert_eq!(sneaky.matches("</command-lines>").count(), 1, "{sneaky}");
+    let unknown = crate::kernel::event::JobLines {
+        job: JobId::new(9).unwrap(),
+        ..two.clone()
+    };
+    assert_eq!(lines(log.history(), &unknown, &texts), None, "没派过的不出");
+    let old = JobTexts {
+        lines_close: String::new(),
+        ..texts
+    };
+    assert_eq!(lines(log.history(), &two, &old), None, "以前的快照没有写法");
+}

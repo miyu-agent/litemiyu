@@ -1,0 +1,1 @@
+Project instructions stop here at {limit} bytes. The rest is in the files.

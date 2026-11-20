@@ -1,0 +1,337 @@
+//! 会话状态的测试。
+
+use super::{Kind, StepKind, ToolState, Transcript};
+use crate::config::Config;
+use crate::core::{Block, CallError, Push, Update};
+
+mod beat;
+mod cache;
+mod compaction;
+mod compaction_auto;
+mod copy;
+mod cut;
+mod done;
+mod failure;
+mod folds;
+mod model;
+mod notes;
+mod queue;
+mod said_at;
+mod tally;
+mod waited;
+mod waiting;
+
+fn apply(t: &mut Transcript, pushes: Vec<Push>) {
+    let texts = Config::builtin().unwrap().text().clone();
+    for p in pushes {
+        t.update(Update::Push(p), &texts);
+    }
+}
+
+#[test]
+fn thinking_goes_into_the_timeline_and_speaking_folds_it() {
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::BlockStart {
+                index: 0,
+                block: Block::Reasoning,
+            },
+            Push::Delta {
+                index: 0,
+                text: "想".into(),
+            },
+            Push::BlockEnd(0),
+        ],
+    );
+    let segment = t.entries[0].segment.as_ref().unwrap();
+    assert!(segment.expanded(true), "进行中的那一段展开着");
+    assert!(!t.busy(), "想完就停表");
+    apply(
+        &mut t,
+        vec![
+            Push::BlockStart {
+                index: 1,
+                block: Block::Text,
+            },
+            Push::Delta {
+                index: 1,
+                text: "你好".into(),
+            },
+            Push::TurnEnded(crate::core::EndReason::Completed),
+        ],
+    );
+    let kinds: Vec<_> = t.entries.iter().map(|e| e.kind.clone()).collect();
+    assert_eq!(kinds, vec![Kind::Steps, Kind::Reply, Kind::Done]);
+    assert_eq!(t.entries[1].text, "你好");
+    let segment = t.entries[0].segment.as_ref().unwrap();
+    assert!(!segment.expanded(true), "开口说话就收起");
+    match &segment.steps[0].kind {
+        StepKind::Thought { text } => assert_eq!(text, "想"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_tool_goes_from_preparing_to_its_result() {
+    let mut t = Transcript::default();
+    let tool = |t: &Transcript| t.entries[0].segment.as_ref().unwrap().steps[0].clone();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::BlockStart {
+                index: 0,
+                block: Block::ToolCall("shell".into()),
+            },
+            Push::Delta {
+                index: 0,
+                text: "{\"command\":\"ls\",".into(),
+            },
+        ],
+    );
+    assert!(matches!(
+        tool(&t).kind,
+        StepKind::Tool {
+            state: ToolState::Preparing,
+            ..
+        }
+    ));
+    apply(
+        &mut t,
+        vec![
+            Push::Delta {
+                index: 0,
+                text: "\"description\":\"列目录\"}".into(),
+            },
+            Push::BlockEnd(0),
+            Push::Calls(vec!["c1".into()]),
+        ],
+    );
+    assert_eq!(tool(&t).arg("description"), Some("列目录"));
+    assert!(tool(&t).busy());
+    apply(
+        &mut t,
+        vec![Push::ToolResult {
+            call_id: "c1".into(),
+            status: crate::core::ToolStatus::Error,
+            text: "boom".into(),
+            said: None,
+            display: Default::default(),
+            detail: None,
+        }],
+    );
+    assert!(tool(&t).failed() && !tool(&t).busy());
+}
+
+#[test]
+fn an_interrupted_turn_stops_every_spinner() {
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::BlockStart {
+                index: 0,
+                block: Block::ToolCall("read".into()),
+            },
+            Push::TurnEnded(crate::core::EndReason::Interrupted),
+        ],
+    );
+    assert!(!t.busy());
+}
+
+#[test]
+fn an_error_turn_says_why() {
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::CallFailed(CallError {
+                class: "auth".into(),
+                message: "no key ".into(),
+                status: None,
+                retry_after_ms: None,
+            }),
+            Push::TurnEnded(crate::core::EndReason::Error),
+        ],
+    );
+    assert_eq!(t.entries[0].kind, Kind::Error);
+    assert_eq!(t.entries[0].text, "出错：no key", "供应商的原话照样写");
+}
+
+#[test]
+fn the_next_block_closes_the_ones_before_it() {
+    // OpenAI 兼容接口的驱动要等整个回复收完才报 `end`：思考之后开始写一个很长的参数，思考得先停表。
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::BlockStart {
+                index: 0,
+                block: Block::Reasoning,
+            },
+            Push::Delta {
+                index: 0,
+                text: "想".into(),
+            },
+            Push::BlockStart {
+                index: 1,
+                block: Block::ToolCall("shell".into()),
+            },
+            Push::Delta {
+                index: 1,
+                text: "{\"command\":\"ls\"}".into(),
+            },
+            Push::BlockStart {
+                index: 2,
+                block: Block::ToolCall("write".into()),
+            },
+        ],
+    );
+    let steps = &t.entries[0].segment.as_ref().unwrap().steps;
+    assert!(!steps[0].busy(), "思考停表了");
+    assert!(
+        matches!(
+            steps[1].kind,
+            StepKind::Tool {
+                state: ToolState::Running,
+                ..
+            }
+        ),
+        "前一件工具的参数算写完了：{:?}",
+        steps[1].kind
+    );
+    assert_eq!(steps[1].arg("command"), Some("ls"));
+    assert!(
+        matches!(
+            steps[2].kind,
+            StepKind::Tool {
+                state: ToolState::Preparing,
+                ..
+            }
+        ),
+        "在写的这一件还在准备"
+    );
+}
+
+#[test]
+fn messages_sent_while_running_queue_until_their_turn() {
+    let mut t = Transcript::default();
+    t.user("第一句".into(), Vec::new());
+    apply(
+        &mut t,
+        vec![Push::UserMessage(1), Push::TurnStarted(2, Some(1))],
+    );
+    t.user("排着的".into(), Vec::new());
+    assert!(t.entries[1].queued, "在回答时发的先排着");
+    apply(
+        &mut t,
+        vec![
+            Push::UserMessage(5),
+            Push::TurnEnded(crate::core::EndReason::Completed),
+            Push::TurnStarted(7, Some(5)),
+        ],
+    );
+    let queued = t.entries.iter().find(|e| e.text == "排着的").unwrap();
+    assert!(!queued.queued, "开了它那一轮就进正文");
+    assert_eq!(queued.turn, Some(7));
+}
+
+#[test]
+fn withdrawn_messages_leave_the_body_and_come_back() {
+    let mut t = Transcript::default();
+    t.user("在跑的那句".into(), Vec::new());
+    t.user("排着的一".into(), Vec::new());
+    t.user("排着的二".into(), Vec::new());
+    apply(
+        &mut t,
+        vec![
+            Push::UserMessage(5),
+            Push::TurnStarted(6, Some(5)),
+            Push::UserMessage(8),
+            Push::UserMessage(9),
+            Push::Withdrawn(vec![8, 9]),
+        ],
+    );
+    assert_eq!(
+        t.take_returned(),
+        vec![
+            ("排着的一".to_string(), Vec::new()),
+            ("排着的二".to_string(), Vec::new())
+        ]
+    );
+    let users: Vec<_> = t
+        .entries
+        .iter()
+        .filter(|e| e.kind == Kind::User)
+        .map(|e| e.turn)
+        .collect();
+    assert_eq!(
+        users,
+        vec![Some(6)],
+        "只剩在跑的那句，照 trigger 归到第 6 轮"
+    );
+}
+
+#[test]
+fn a_turn_started_by_the_last_queued_one_brings_all_of_them_in_order() {
+    let mut t = Transcript::default();
+    t.user("开头".into(), Vec::new());
+    apply(
+        &mut t,
+        vec![Push::UserMessage(1), Push::TurnStarted(2, Some(1))],
+    );
+    for (i, text) in ["排一", "排二", "排三"].iter().enumerate() {
+        t.user((*text).into(), Vec::new());
+        apply(&mut t, vec![Push::UserMessage(10 + i as u64)]);
+    }
+    apply(
+        &mut t,
+        vec![
+            Push::BlockStart {
+                index: 0,
+                block: Block::Text,
+            },
+            Push::Delta {
+                index: 0,
+                text: "上一轮的回答".into(),
+            },
+            Push::TurnEnded(crate::core::EndReason::Interrupted),
+            Push::TurnStarted(20, Some(12)),
+        ],
+    );
+    let users: Vec<_> = t
+        .entries
+        .iter()
+        .filter(|e| e.kind == Kind::User && !e.queued)
+        .map(|e| e.text.as_str())
+        .collect();
+    assert_eq!(
+        users,
+        vec!["开头", "排一\n排二\n排三"],
+        "排着的三条拼成一条进正文"
+    );
+    assert_eq!(
+        t.entries.last().map(|e| e.text.as_str()),
+        Some("排一\n排二\n排三"),
+        "挪到正文末尾，在上一轮的回答后面"
+    );
+}
+
+#[test]
+fn an_unknown_refusal_is_written_in_the_core_words() {
+    // 认得的原因码界面只弹提示框、到不了正文（2026-10-01 项目主人，`tests/pty.rs` 守着）；认不得的照核心的原话写。
+    let config = Config::builtin().unwrap();
+    let mut t = Transcript::default();
+    let refusal = Update::Refused {
+        reason: Some("something_new".to_string()),
+        message: "新的原因。".to_string(),
+    };
+    t.update(refusal, config.text());
+    assert!(t.entries.last().unwrap().text.ends_with("新的原因。"));
+}

@@ -1,0 +1,63 @@
+//! 事实的模板装进快照（`docs/blueprint/policy.md`「`CoreTexts`」）：`resources/core/facts/` 下的几份原文。会话编号那一份
+//! （施工 1-13 再补）、切了级别以后的权限那一份（施工 2-7 补）以前造的快照里没有，读成没有、不写。施工 2-7 补从
+//! `snapshot.rs` 挪出来（行数门禁）。
+
+use crate::kernel::facts::FactTemplates;
+use crate::policy::read::{Fields, Read, read_by_name};
+use serde::Serialize;
+
+use crate::policy::snapshot::BuildError;
+
+/// 事实的模板。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FactTexts {
+    /// 环境（`env.txt`）。
+    pub env: String,
+    /// 回复没说完就断了（`reply-cut.txt`）。
+    pub reply_cut: String,
+    /// 会话编号（`session.txt`，施工 1-13 再补）。以前造的快照里没有，读成没有：那些会话不注入这一块；没有的不写，
+    /// 旧快照的字节不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    /// 回复写到了输出上限、调用没派（`output-limit.txt`，施工 3-10）。以前造的快照里没有，读成没有：那些会话不加这一句；
+    /// 没有的不写，旧快照的字节不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_limit: Option<String>,
+    /// 模型那一块（`model.txt`，施工 E-M）。以前造的快照里没有，读成没有：那些会话不注入这一块；没有的不写，旧快照的字节
+    /// 不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+read_by_name!(FactTexts, FactTexts::read);
+
+impl FactTexts {
+    /// 照名字一格格读（`policy/read.rs`，引擎线第七趟瘦身）：读出来的同原来派生的读法。
+    pub(crate) fn read(value: &serde_json::Value) -> Read<FactTexts> {
+        let fields = Fields::of(value, "FactTexts")?;
+        Ok(FactTexts {
+            env: fields.text("env")?,
+            reply_cut: fields.text("reply_cut")?,
+            session: fields.opt_text("session")?,
+            output_limit: fields.opt_text("output_limit")?,
+            model: fields.opt_text("model")?,
+        })
+    }
+}
+
+impl FactTexts {
+    /// 交给内核的样子：造的时候拿全部字段试换一次（`kernel/request.md`「事实」第 7 条）。
+    ///
+    /// # Errors
+    ///
+    /// 哪一份的写法坏了、要了没有的字段，说是 `fact templates`。
+    pub(crate) fn templates(&self) -> Result<FactTemplates, BuildError> {
+        FactTemplates::new(&self.env, &self.reply_cut, self.session.as_deref())
+            .and_then(|templates| templates.with_output_limit(self.output_limit.as_deref()))
+            .and_then(|templates| templates.with_model(self.model.as_deref()))
+            .map_err(|error| BuildError::Texts {
+                which: "fact templates",
+                error,
+            })
+    }
+}

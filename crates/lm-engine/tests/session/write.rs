@@ -1,0 +1,220 @@
+//! 真的 `write`（施工 4-6 上）、`edit`（施工 4-6 中）（`trash` LM-2 砍了）：会话里她先读后写，日志里两次结果的效果对得上，效果里写着改前
+//! 改后的内容（施工 V-18：小的不另存 blob）；新建的不用先读；没读过就写的被拒，读过以后可以写，会话重新载入以后她读过的照样算数；改完一次接着改，
+//! 不用重读。真的 `shell`（施工 4-8）：她执行的命令记进日志，退出码在给人看的说法里。
+
+use lm_engine::session::testkit::{Play, Script};
+use lm_engine::store::blob::Blobs;
+use lm_engine::tool::Catalog;
+use lm_kernel::kernel::event::{Body, Effect, FileChanged, Said, ToolResult, ToolStatus};
+use lm_kernel::kernel::id::ContentHash;
+
+use crate::support::*;
+
+fn base_system() -> Catalog {
+    lm_engine::basesystem::catalog().expect("编进程序的字读得出来")
+}
+
+fn results(home: &Home, handle: &lm_engine::session::Handle) -> Vec<ToolResult> {
+    home.log(handle.id())
+        .into_iter()
+        .filter_map(|event| match event.body {
+            Body::ToolResult(result) => Some(*result),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 在场地的 `work/` 里干活，工作区这一级，没人能确认。
+fn opening(home: &Home) -> Opening {
+    Opening {
+        attended: false,
+        cwd: work(home),
+        dirs: Vec::new(),
+        ..Opening::default()
+    }
+}
+
+/// 场地里的工作区。
+fn work(home: &Home) -> String {
+    home.scratch.0.join("work").to_string_lossy().into_owned()
+}
+
+/// 说一句，等这一轮结束。
+async fn talk(handle: &lm_engine::session::Handle, id: &str, words: &str) {
+    let mut pushes = watch(handle).await;
+    ask(handle, id, say(words)).await.expect("会话在跑");
+    until_turn_ends(&mut pushes).await;
+}
+
+#[tokio::test]
+async fn she_reads_then_writes_and_the_log_keeps_both_contents() {
+    let home = Home::outside_temp();
+    let file = home.scratch.0.join("work/a.txt");
+    std::fs::write(&file, "old\n").expect("写得进");
+    let script = Script::new([
+        Play::calls(&[("read", r#"{"file_path":"a.txt"}"#)]),
+        Play::calls(&[("write", r#"{"file_path":"a.txt","content":"new\n"}"#)]),
+        Play::calls(&[("write", r#"{"file_path":"b.txt","content":"b\n"}"#)]),
+        Play::Says("好。"),
+    ]);
+    let handle = home
+        .create_as(&script, &base_system(), opening(&home))
+        .await;
+    talk(&handle, "cmd-1", "改一下").await;
+    let results = results(&home, &handle);
+    assert_eq!(results.len(), 3);
+    assert!(
+        results.iter().all(|result| result.status == ToolStatus::Ok),
+        "{results:?}"
+    );
+    assert_eq!(std::fs::read(&file).expect("读得出"), b"new\n");
+    let real = std::fs::canonicalize(&file)
+        .expect("在")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        results[1].effects,
+        [Effect::FileChanged(FileChanged {
+            path: real,
+            before: Some(ContentHash::of(b"old\n")),
+            after: ContentHash::of(b"new\n"),
+            before_text: Some("old\n".to_string()),
+            after_text: Some("new\n".to_string()),
+        })]
+    );
+    // 小的内容写在效果里，不另存 blob（施工 V-18）。
+    let blobs = Blobs::new(home.root.blobs());
+    assert!(
+        blobs.get(&ContentHash::of(b"old\n")).is_err(),
+        "改前的没存 blob"
+    );
+    assert!(
+        blobs.get(&ContentHash::of(b"new\n")).is_err(),
+        "改后的没存 blob"
+    );
+    // 新建的不用先读，改前是空的。
+    match &results[2].effects[..] {
+        [Effect::FileChanged(changed)] => {
+            assert_eq!(changed.before, None);
+            assert_eq!(changed.after, ContentHash::of(b"b\n"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// 停下再载入：她读过的从日志里重建。拿「读过以后又被改了」看（施工 ED-2 起没读过的照写）：记着的拦下，忘了的会写。
+#[tokio::test]
+async fn what_she_read_still_counts_after_the_session_is_loaded_again() {
+    let home = Home::outside_temp();
+    let file = home.scratch.0.join("work/a.txt");
+    std::fs::write(&file, "old\n").expect("写得进");
+    let script = Script::new([
+        Play::calls(&[("read", r#"{"file_path":"a.txt"}"#)]),
+        Play::Says("读过了。"),
+    ]);
+    let handle = home
+        .create_as(&script, &base_system(), opening(&home))
+        .await;
+    talk(&handle, "cmd-1", "看一下").await;
+    let session = handle.id().clone();
+    stop(&handle).await;
+    // 停着的时候被别人改了。
+    std::fs::write(&file, "changed\n").expect("写得进");
+    let write = r#"{"file_path":"a.txt","content":"new\n"}"#;
+    let script = Script::new([Play::calls(&[("write", write)]), Play::Says("好。")]);
+    let handle = home
+        .load_at(&session, &script, &base_system(), &work(&home))
+        .await;
+    talk(&handle, "cmd-2", "现在改").await;
+    let all = results(&home, &handle);
+    let last = all.last().expect("有结果");
+    assert_eq!(last.status, ToolStatus::Error, "{all:?}");
+    assert_eq!(
+        last.human,
+        Some(Said::new("software/basesystem/common/stale"))
+    );
+    assert_eq!(std::fs::read(&file).expect("读得出"), b"changed\n", "没写");
+}
+
+#[tokio::test]
+async fn she_reads_then_edits_twice_without_reading_again() {
+    let home = Home::outside_temp();
+    let file = home.scratch.0.join("work/a.txt");
+    std::fs::write(&file, "one\ntwo\n").expect("写得进");
+    let script = Script::new([
+        Play::calls(&[("read", r#"{"file_path":"a.txt"}"#)]),
+        Play::calls(&[(
+            "edit",
+            r#"{"file_path":"a.txt","edits":[{"old_string":"two","new_string":"2"}]}"#,
+        )]),
+        Play::calls(&[(
+            "edit",
+            r#"{"file_path":"a.txt","old_string":"one","new_string":"1"}"#,
+        )]),
+        Play::Says("好。"),
+    ]);
+    let handle = home
+        .create_as(&script, &base_system(), opening(&home))
+        .await;
+    talk(&handle, "cmd-1", "改一下").await;
+    let results = results(&home, &handle);
+    assert!(
+        results.iter().all(|result| result.status == ToolStatus::Ok),
+        "{results:?}"
+    );
+    assert_eq!(std::fs::read(&file).expect("读得出"), b"1\n2\n");
+    let real = std::fs::canonicalize(&file)
+        .expect("在")
+        .to_string_lossy()
+        .into_owned();
+    let changed = |before: &[u8], after: &[u8]| {
+        Effect::FileChanged(FileChanged {
+            path: real.clone(),
+            before: Some(ContentHash::of(before)),
+            after: ContentHash::of(after),
+            before_text: Some(String::from_utf8(before.to_vec()).expect("是文字")),
+            after_text: Some(String::from_utf8(after.to_vec()).expect("是文字")),
+        })
+    };
+    assert_eq!(results[1].effects, [changed(b"one\ntwo\n", b"one\n2\n")]);
+    assert_eq!(
+        results[2].effects,
+        [changed(b"one\n2\n", b"1\n2\n")],
+        "第一次改完，她看过的就是改后的：第二次不用重读"
+    );
+    let blobs = Blobs::new(home.root.blobs());
+    assert!(
+        blobs.get(&ContentHash::of(b"1\n2\n")).is_err(),
+        "改后的写在效果里，没存 blob"
+    );
+}
+
+/// 真的 `shell`（施工 4-8）：她执行一条命令，完全放开这一级不用问人、不进沙盒（施工 5-4 上起，工作区这一级要沙盒
+/// 能用才不问，见 `tests/sandbox.rs`）；结果记进日志，给模型看的是输出加退出码，给人看的说法里有退出码；改了哪些文件
+/// shell 不报，效果是空的。
+#[tokio::test]
+async fn a_command_she_runs_is_logged_with_its_exit_code() {
+    let home = Home::outside_temp();
+    let command = "echo hi; exit 5";
+    let args = serde_json::json!({ "command": command, "description": "Test" }).to_string();
+    let script = Script::new([Play::calls(&[("shell", args.as_str())]), Play::Says("好。")]);
+    let opening = Opening { ..opening(&home) };
+    let handle = home.create_as(&script, &base_system(), opening).await;
+    talk(&handle, "cmd-1", "跑一下").await;
+    let results = results(&home, &handle);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(results[0].status, ToolStatus::Error);
+    assert_eq!(
+        results[0].blocks,
+        [lm_kernel::kernel::block::Block::Text(
+            lm_kernel::kernel::block::Text {
+                text: "hi\nExit code 5\n".into(),
+            }
+        )]
+    );
+    assert_eq!(
+        results[0].human,
+        Some(Said::new("software/basesystem/shell/exited").with("code", "5"))
+    );
+    assert!(results[0].effects.is_empty());
+}

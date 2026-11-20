@@ -1,0 +1,1 @@
+Relative paths in links and embeds in a reply resolve against the session working directory.

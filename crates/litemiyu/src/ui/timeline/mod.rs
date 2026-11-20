@@ -1,0 +1,284 @@
+//! 时间线的一段怎么画（`13-终端界面.md` 第三节，项目主人的 TUI 设计稿「AI 输出」一节；蓝图 `tui.md`「时间线」）。
+//!
+//! - 收起：一行 `Ran 2 commands · 3 thoughts · 48s`，英文，不带箭头（写法在 `summary.rs`）。
+//! - 展开：还是那一行，下面一步一行，步与步之间一行连接线 `│`，和图标同一列。进行中的那一段不画收起那一行。
+//!
+//! 2026-09-29 项目主人试过去掉图标、树状、去掉竖线、英文工具名，样子最后回到这里。
+//! - 只有一步的一段：展开就直接铺开这一步的内容，不先列出一行步骤。
+//! - 一步的标题、预览、点开的内容在 `step.rs`。
+
+mod message;
+mod shapes;
+mod step;
+mod summary;
+
+use ratatui::style::Style;
+use ratatui::text::Span;
+
+use super::rows::{Ctx, Row, Target};
+use crate::theme;
+use crate::transcript::{Segment, Step};
+use step::Piece;
+
+/// 等她的第一个字时（`Transcript::waiting`），接在正文末尾的两行：空一行，一行只有转圈
+/// （蓝图 `tui.md`「时间线」第 19 条）。第一步来了正好落在转圈那一行上。
+pub fn tail_rows(ctx: &Ctx) -> Vec<Row> {
+    vec![
+        ctx.row(ctx.blank_slot(), Vec::new()),
+        ctx.row(spinner(ctx), Vec::new()),
+    ]
+}
+
+/// 一段排成的行。`entry` 是它在正文里是第几条。展开着、有收起那一行的：没铺底色的空白（步与步之间的竖线、字右边）点了收起
+/// 整段，点开的一步铺了底色的空白照旧开关那一步（「时间线」第 17a 条，2026-10-19 项目主人）。
+pub fn rows(entry: usize, segment: &Segment, ctx: &Ctx) -> Vec<Row> {
+    let target = Target::Segment(entry);
+    let mut out = build(entry, segment, ctx);
+    if out.len() > 1 && out.first().and_then(|r| r.target) == Some(target) {
+        for row in &mut out {
+            row.blank = if row.shade { row.target } else { Some(target) };
+        }
+    }
+    out
+}
+
+/// 一段排成的行（[`rows`] 再标空白点了开关什么）。
+fn build(entry: usize, segment: &Segment, ctx: &Ctx) -> Vec<Row> {
+    let target = Target::Segment(entry);
+    let mut out = Vec::new();
+    let fold = ctx.config.timeline.fold;
+    // 只有一步、做完了、不是人点开整段的（不收起的配置让它展开着）：照进行中的样子，一行步骤加预览，不画收起那一行
+    // （「时间线」第 15 条，2026-10-11 项目主人报：关了折叠、没开「展开思考」，思考却铺开了全文）。
+    let lone = segment.steps.len() == 1 && segment.open != Some(true);
+    // 只有回报的一段（她说着话时来的，Miyu 发版前 check 21）：照原来单独的那几行画，不收成一行。
+    let reports_only = segment
+        .steps
+        .iter()
+        .all(|s| matches!(s.kind, crate::transcript::StepKind::Report { .. }));
+    if !reports_only && (!segment.expanded(fold) || (segment.settled() && !lone)) {
+        let base = lit(theme::dim(), ctx.hover == Some(target));
+        let mut row = ctx.row(ctx.blank_slot(), summary::line(segment, ctx, base));
+        row.target = Some(target);
+        out.push(row);
+        if !segment.expanded(fold) {
+            return out;
+        }
+        // 只有一步、人点开了的：直接铺开这一步的内容，连收起那一行一起铺底色（`tui.md`「时间线」第 15 条）。这一步点不开的
+        // （参数还在流）没有内容可铺：照下面露出它的标题那一行。
+        if let [only] = segment.steps.as_slice()
+            && openable(only)
+        {
+            // 工具照常画它的标题行（「读取 · src · 12 项」）再接内容：只有收起那一行看不出是哪件、结果是什么（2026-10-17
+            // 项目主人看网页时说，10-18 定终端一样）。思考的标题就是收起那一行说的，不重复。
+            let style = step::style(only, false);
+            if matches!(only.kind, crate::transcript::StepKind::Tool { .. }) {
+                // 和收起那一行之间照几步的一样隔一行连接线（2026-10-23 项目主人：「Used 1 tool」和「抖音下载」之间没有空行）。
+                out.push(connector(ctx, false));
+                let (title, links) = step::title(only, style, ctx.width, ctx);
+                let mut head = ctx.row(ctx.blank_slot(), title);
+                head.links = links;
+                out.push(head);
+            }
+            out.extend(opened(only, style, ctx));
+            for row in &mut out {
+                row.shade = true;
+                row.target = Some(target);
+            }
+            return out;
+        }
+    }
+    // 同一时刻只转一处（`tui.md`「时间线」第 19 条）。
+    let active = segment.active();
+    // 限制着、进行中、没人点过的：最多露一步完整思考、完整命令的高度（第 20 条）。只排露得出来的那几步：从最后一步往前排，
+    // 够了就停（review D1，2026-10-11：原来每帧把所有步整份排一遍、编辑步每帧算一次差异，再截得只剩十几行，步越多越卡）。
+    if ctx.config.timeline.limit_live && !segment.finished && segment.open.is_none() {
+        let cap = live_cap(&ctx.config.timeline);
+        let mut tail: Vec<Vec<Row>> = Vec::new();
+        let mut count = out.len();
+        for (j, step) in segment.steps.iter().enumerate().rev() {
+            let mut chunk = Vec::new();
+            if j > 0 || !out.is_empty() {
+                let failed = j > 0 && segment.steps[j - 1].failed();
+                chunk.push(connector(ctx, failed));
+            }
+            chunk.extend(step_rows(
+                Target::Step(entry, j),
+                step,
+                active == Some(j),
+                ctx,
+            ));
+            count += chunk.len();
+            tail.push(chunk);
+            if count >= cap {
+                break;
+            }
+        }
+        out.extend(tail.into_iter().rev().flatten());
+        clip_live(&mut out, ctx);
+        // 里面的步也点不开：只露十几行，点开了多半看不全。链接、拖选照常。
+        for row in &mut out {
+            row.target = None;
+        }
+        return out;
+    }
+    for (j, step) in segment.steps.iter().enumerate() {
+        if !out.is_empty() {
+            // 上一步出错：竖线一路红到这一步的标题（`tui.md`「时间线」第 12 条）。
+            let failed = j > 0 && segment.steps[j - 1].failed();
+            out.push(connector(ctx, failed));
+        }
+        out.extend(step_rows(
+            Target::Step(entry, j),
+            step,
+            active == Some(j),
+            ctx,
+        ));
+    }
+    out
+}
+
+/// 进行中的那一段最多露几行：刚好放得下一步完整的思考、一步完整的命令——思考预览的行数和命令预览的行数加
+/// 「⋮ 已省略 N 行」那一行，取大的，再加上标题。调大了哪个预览，封顶跟着变。
+pub fn live_cap(tl: &crate::config::Timeline) -> usize {
+    tl.thought_rows.max(tl.preview_rows + 1) + 1
+}
+
+/// 一段收起时放不放开视口：限制了进行中那一段的高度就不放开（收起最多空出十几行，由接下来的字填上；
+/// 放开会把顶上去的内容落回来、画面瞬移），没限制的放开一次（不然整屏空着）。蓝图「正文」第 1 条。
+pub fn release_on_fold(tl: &crate::config::Timeline) -> bool {
+    !tl.limit_live
+}
+
+/// 只留最新的几行，上面的直接不画（不加提示、不能点开；做完收成一行以后点它看全部）。
+fn clip_live(out: &mut Vec<Row>, ctx: &Ctx) {
+    let cap = live_cap(&ctx.config.timeline);
+    if out.len() > cap {
+        out.drain(..out.len() - cap);
+    }
+}
+
+/// 步与步之间那一行 `│`，和图标同一列；上一步出错的红。
+fn connector(ctx: &Ctx, failed: bool) -> Row {
+    let style = if failed { theme::error() } else { theme::dim() };
+    ctx.row(
+        ctx.blank_slot(),
+        vec![Span::styled(ctx.config.timeline.line.clone(), style)],
+    )
+}
+
+/// 一步的行：标题，下面接着预览或点开的内容。`spinning` 是这一步在转圈（这一段正在动的那一步）。
+fn step_rows(target: Target, step: &Step, spinning: bool, ctx: &Ctx) -> Vec<Row> {
+    let style = step::style(step, ctx.hover == Some(target));
+    // 同一时刻只转一处；别的没结果的排着队，槽里一个暗色的 `·`（`tui.md`「时间线」第 19 条）。
+    let slot = if spinning {
+        spinner(ctx)
+    } else if step.busy() {
+        Span::styled(format!("{} ", ctx.config.timeline.queued), theme::dim())
+    } else {
+        ctx.blank_slot()
+    };
+    let (title, links) = step::title(step, style, ctx.width, ctx);
+    let mut head = ctx.row(slot, title);
+    head.target = Some(target);
+    head.links = links;
+    let mut out = vec![head];
+    if step.opened(&ctx.config.timeline) {
+        out.extend(opened(step, style, ctx));
+        for row in &mut out {
+            row.shade = true;
+        }
+    } else {
+        out.extend(
+            step::preview(step, style, ctx)
+                .into_iter()
+                .map(|piece| line(piece, ctx)),
+        );
+    }
+    // 点不开的：不当成能点的，悬停不变亮、指针不变手。
+    let openable = openable(step);
+    for row in &mut out {
+        row.target = openable.then_some(target);
+    }
+    out
+}
+
+/// 这一步点得开：「准备 xx」的点不开，别的工具都点得开（LM-3 删了记忆、知识库那几件的 `none`、空 `detail` 两种点不开）。
+fn openable(step: &Step) -> bool {
+    // 回报：有全文的才点得开（同正文里单独的那一行，Miyu 发版前 check 21）。
+    if let crate::transcript::StepKind::Report { note, .. } = &step.kind {
+        return !note.detail.trim().is_empty();
+    }
+    let crate::transcript::StepKind::Tool { state, .. } = &step.kind else {
+        return true;
+    };
+    // 「准备 xx」：参数还在流，没什么可看的（2026-10-18 项目主人）。
+    *state != crate::transcript::ToolState::Preparing
+}
+
+/// 转圈那一格：照帧数取一个，后面空一格。
+pub(super) fn spinner(ctx: &Ctx) -> Span<'static> {
+    let tl = &ctx.config.timeline;
+    let frame = &tl.spinner[ctx.frame % tl.spinner.len().max(1)];
+    Span::styled(format!("{frame} "), theme::dim())
+}
+
+/// 点开的一步：空行、全部内容、空行，整块铺底色（「时间线」第 8 条）。Miyu 在内容下面另画结果里的图：LiteMiyu 界面里
+/// 不显示图（`docs/00-设计.md` 第五节第 12 条）。
+fn opened(step: &Step, style: Style, ctx: &Ctx) -> Vec<Row> {
+    let pieces = step::body(step, style, body_width(ctx), ctx);
+    let mut out = block(pieces, ctx);
+    for row in &mut out {
+        row.shade = true;
+    }
+    out
+}
+
+/// 点开的内容：空行、全部内容、空行；内容缩进两格，和图标后面的字对齐。
+fn block(pieces: Vec<Piece>, ctx: &Ctx) -> Vec<Row> {
+    let blank = || Piece {
+        lead: None,
+        content: Vec::new(),
+        joined: false,
+        links: Vec::new(),
+    };
+    std::iter::once(blank())
+        .chain(pieces)
+        .chain(std::iter::once(blank()))
+        .map(|piece| {
+            let mut lead = vec![Span::raw(INDENT)];
+            lead.extend(piece.lead);
+            let mut row = ctx.led_row(ctx.blank_slot(), lead, piece.content);
+            row.joined = piece.joined;
+            row.links = piece.links;
+            row
+        })
+        .collect()
+}
+
+/// 点开的内容缩进几格：和图标后面的字对齐。
+const INDENT: &str = "  ";
+
+/// 点开的内容能写几列。
+fn body_width(ctx: &Ctx) -> u16 {
+    ctx.width.saturating_sub(2).max(1)
+}
+
+/// 一行：引子（预览的 `│ `、`⋮ `）画出来、复制时不带，再接内容。
+fn line(piece: Piece, ctx: &Ctx) -> Row {
+    let mut row = ctx.led_row(
+        ctx.blank_slot(),
+        piece.lead.into_iter().collect(),
+        piece.content,
+    );
+    row.joined = piece.joined;
+    row.links = piece.links;
+    row
+}
+
+/// 悬停时从暗变亮（设计稿：鼠标悬浮时颜色稍微亮起）。
+fn lit(style: Style, hovered: bool) -> Style {
+    if hovered { theme::hover() } else { style }
+}
+
+#[cfg(test)]
+mod tests;

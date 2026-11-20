@@ -1,0 +1,1 @@
+Output, the last {shown} of {chars} characters (all of it in jobs output):

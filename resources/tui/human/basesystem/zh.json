@@ -1,0 +1,190 @@
+{
+  "tools": {
+    "read": {
+      "name": "读取",
+      "subject": "file_path",
+      "icon": "→"
+    },
+    "write": {
+      "name": "写入",
+      "subject": "file_path",
+      "icon": "←"
+    },
+    "edit": {
+      "name": "编辑",
+      "subject": "file_path",
+      "icon": "←",
+      "block": "edits"
+    },
+    "shell": {
+      "name": "执行命令",
+      "subject": "command",
+      "icon": "$",
+      "block": "command"
+    },
+    "history": {
+      "name": "翻记录",
+      "subject": "query",
+      "icon": "✱"
+    },
+    "subagent": {
+      "name": "派子代理",
+      "subject": "description",
+      "icon": "↗"
+    },
+    "agent": {
+      "name": "派子代理",
+      "subject": "description",
+      "icon": "↗"
+    },
+    "jobs": {
+      "name": "任务",
+      "subject": "action",
+      "icon": "≡"
+    },
+    "message_agent": {
+      "name": "留言",
+      "subject": "to",
+      "icon": "↗"
+    },
+    "load_tools": {"name": "加载工具", "icon": "⇣"},
+    "sessions": {
+      "name": "列出会话",
+      "icon": "≡"
+    },
+    "session_usage": {
+      "name": "查用量",
+      "icon": "≡"
+    },
+    "ask_user": {
+      "name": "提问",
+      "icon": "?"
+    },
+    "packages": {
+      "name": "查看软件包",
+      "subject": "package",
+      "icon": "≡"
+    },
+    "package": {
+      "name": "管理软件包",
+      "subject": "install",
+      "icon": "≡"
+    },
+    "send_message": {
+      "name": "发消息",
+      "subject": "to",
+      "icon": "↗"
+    }
+  },
+  "said": {
+    "read/lines": "{count} 行",
+    "read/lines-part": "第 {from}–{to} 行，一共 {total} 行",
+    "read/entries": "{count} 项",
+    "read/entries-part": "第 {from}–{to} 项，一共 {total} 项",
+    "read/empty": "空的",
+    "read/past-end": "过了结尾，一共 {total} 行",
+    "read/past-end-entries": "过了结尾，一共 {total} 项",
+    "read/not-a-file": "不是普通文件，也不是目录",
+    "read/binary": "是二进制文件，没读",
+    "read/image": "图片 {width}×{height}",
+    "read/image-scaled": "图片 {width}×{height}（缩小过）",
+    "read/image-too-big": "图太大（{size}），没读",
+    "read/image-too-wide": "图太大（{width}×{height}），没读",
+    "common/missing": "没有这个文件",
+    "common/missing-similar": "没有这个文件，是不是 {similar}",
+    "common/failed": "读不了：{error}",
+    "common/bad-args": "参数不对：{error}",
+    "write/created": "新建，{count} 行",
+    "write/updated": "覆盖，{count} 行",
+    "common/not-read": "没读过，要先读",
+    "common/stale": "读过以后又改过了，要重读",
+    "common/directory": "是个目录",
+    "common/not-a-regular-file": "不是普通文件",
+    "common/write-failed": "写不了：{error}",
+    "edit/edited": "改了 {count} 处",
+    "edit/no-edits": "没给要改的",
+    "edit/empty": "第 {index} 处的原文是空的",
+    "edit/same": "第 {index} 处改前改后一样",
+    "edit/not-found": "第 {index} 处没找到",
+    "edit/not-found-near": "第 {index} 处没找到，最像的在第 {line} 行",
+    "edit/not-unique": "第 {index} 处对得上 {count} 个地方",
+    "edit/overlap": "第 {first} 处和第 {second} 处重叠了",
+    "edit/not-text": "不是文本文件",
+    "shell/done": "{count} 行",
+    "shell/quiet": "没有输出",
+    "shell/exited": "退出码 {code}",
+    "shell/signal": "被信号 {signal} 停掉了",
+    "shell/timed-out": "超过 {seconds} 秒，停掉了",
+    "shell/failed": "执行不了：{error}",
+    "shell/no-background": "这里不能放到后台跑",
+    "shell/no-sleep": "不许前台用 sleep 干等",
+    "shell/no-cwd": "工作目录不存在了：{cwd}",
+    "shell/hazard-delete_root": "没有执行：会删掉根目录",
+    "shell/hazard-delete_home": "没有执行：会删掉家目录",
+    "shell/hazard-delete_system": "没有执行：会删掉系统目录",
+    "shell/hazard-delete_data_root": "没有执行：会删掉 LiteMiyu 自己的数据",
+    "shell/hazard-disk_format": "没有执行：会格式化磁盘",
+    "shell/hazard-disk_write": "没有执行：会直接写磁盘设备",
+    "shell/hazard-container_host": "没有执行：会让容器拿到整台机器的设备",
+    "shell/background": "放到后台了：{job}",
+    "shell/moved": "超时，挪到后台了：{job}",
+    "history/found": "找到 {count} 条",
+    "history/read": "读了第 {from}–{to} 条",
+    "history/none": "没有找到",
+    "history/no-log": "读不了记录：{error}",
+    "history/no-session": "没有会话 {session}",
+    "history/ambiguous": "{session} 对得上不止一个会话",
+    "history/not-here": "这里不能读别的会话",
+    "agent/started": "派出去了：{job}",
+    "agent/not-started": "派不出去",
+    "agent/no-fork": "分叉出来的不能再分叉",
+    "jobs/listed": "列出 {count} 个任务",
+    "jobs/none": "没有任务",
+    "jobs/output": "读了 {job} 的输出",
+    "jobs/stopped": "停掉了 {job}",
+    "jobs/unknown": "没有任务 {id}",
+    "jobs/ended": "{job} 已经结束了",
+    "message_agent/sent": "送到了：{to}",
+    "message_agent/no-parent": "没有父会话",
+    "message_agent/not-yours": "{to} 不是它派的子代理",
+    "message_agent/stopped": "{to} 已经停了",
+    "message_agent/not-sent": "没送到",
+    "send_message/sent": "送到了：{to}",
+    "send_message/held": "存下了：{to} 是没人看着的一次性会话",
+    "send_message/no-parent": "没有父会话",
+    "send_message/not-yours": "{to} 不是它派的子代理",
+    "send_message/stopped": "{to} 已经停了",
+    "send_message/not-sent": "没送到",
+    "send_message/no-session": "没有会话 {to}",
+    "send_message/ambiguous": "{to} 对得上不止一个会话",
+    "send_message/self": "{to} 就是这个会话",
+    "send_message/not-here": "这里不能给别的会话发话",
+    "send_message/too-long": "太长了：{chars} 个字，最多 {limit}",
+    "send_message/too-many": "刚给 {to} 发得太多了",
+    "send_message/duplicate": "{to} 刚收到过一样的话",
+    "send_message/inbox-full": "{to} 没看的话太多了",
+    "send_message/watching": "{to} 空下来时告诉 AI",
+    "send_message/watch-peers-only": "只能等别的会话空下来",
+    "attachments/too-many": "最多带 {limit} 个附件",
+    "attachments/too-big": "{path} 太大，带不了",
+    "sessions/listed": "列出 {count} 个会话",
+    "sessions/none": "没有别的会话",
+    "sessions/past-end": "一共 {total} 个别的会话，已经列完了",
+    "sessions/failed": "没列出来：{error}",
+    "session_usage/shown": "查了用量",
+    "session_usage/failed": "用量读不出来：{error}",
+    "ask_user/answered": "你答了",
+    "ask_user/unattended": "这里没人能回答",
+    "packages/listed": "列了软件包",
+    "packages/shown": "看了 {package}",
+    "packages/inspected": "检查了 {path}",
+    "packages/failed": "没看成软件包",
+    "package/installed": "装了 {package}",
+    "package/removed": "卸了 {package}",
+    "package/enabled": "打开了 {package}",
+    "package/failed": "没装成、没卸成",
+    "packages/searched": "在软件源里搜了 {query}",
+    "package/upgraded": "升级了 {packages}",
+    "package/nothing-to-upgrade": "没有要升级的"
+  }
+}

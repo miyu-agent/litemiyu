@@ -1,0 +1,44 @@
+//! HTTP 执行器（Miyu 的 `docs/designs/05-内核接口.md` 第七节「HTTP 执行器」；从 `miyu-http` 搬来）：真的发请求。
+//!
+//! 驱动只管翻译（`lm_kernel::drivers`），这里照它编码好的请求体发请求，流式地读回来，边读边交给它的
+//! 解码器，解出来的增量马上交出去。多久没收到新的字节就算断了；内核叫停就马上停。一次只发一回：
+//! 重试和接着说是内核的事（施工 3-5 下）；跳转的重发照 reqwest 原来的做（施工 V-38）。只说 HTTP/1.1（瘦身 六）：
+//! 同时发的几个请求各开各的连接，连接池里闲着的一个地址只留一条。现在有的：
+//!
+//! - [`Endpoint`]：发给谁：地址、key、供应商另配的头；打印出来 key 写成 `***`；
+//! - [`client()`]：一个进程一个 HTTP 客户端，连接跨请求复用；
+//! - [`send()`]：发一次请求，读到说完、出错或者被叫停；请求体是驱动编好的片段清单（[`Body`]），图片、PDF 的 base64 发的
+//!   时候才从 blob 一小块一小块地读出来编（[`BlobSource`]，施工 V-38）；
+//! - [`get()`]：一次 GET，整个读完，有总时限、大小上限、`ETag`（施工 8-7：拉目录、拉模型列表），客户端用 [`fetcher()`]；
+//!   [`get_full()`] 出错时另交回状态码、响应头、响应体（施工 8-11）；
+//! - [`is_loopback_host()`]、[`is_loopback_url()`]：地址是不是回环（施工 8-11 补：回环地址不该被代理挡住）；
+//! - [`tls()`]：整个进程共用的一份 TLS 配置，系统的证书只读一次（施工 V-5 上）；
+//! - `testkit`（开关）：测试用的假服务器。
+
+mod body;
+mod client;
+mod endpoint;
+mod get;
+mod loopback;
+mod post;
+pub mod proxy;
+mod resend;
+mod send;
+#[cfg(feature = "testkit")]
+pub mod testkit;
+mod tls;
+
+pub use body::{BlobSource, Body};
+pub use client::{Proxy, client, fetcher, fetcher_within};
+pub use endpoint::Endpoint;
+pub use get::{Broke, Failed, Get, Got, get, get_full};
+pub use loopback::{is_loopback_host, is_loopback_url};
+pub use post::{Post, post};
+/// HTTP 客户端：[`client()`] 造的那一个，连接跨请求复用。上层照这个名字拿着它，不用直接依赖 reqwest。
+pub use reqwest::Client;
+/// 拼着的一个请求：要自己加头、正文再发的（`miyu-mcp` 的登录，施工 X-42 上）照这个名字拿。
+pub use reqwest::RequestBuilder;
+/// 它发出去交回的回应：要自己一段段读、限着长度的（`miyu-mcp` 的网址转接，施工 X-32 下）照这个名字拿。
+pub use reqwest::Response;
+pub use send::{Attempt, Outcome, Progress, TOTAL_FACTOR, send};
+pub use tls::tls;

@@ -1,0 +1,179 @@
+//! 后台命令（施工 7-3，`docs/blueprint/tools/shell.md`「后台」，`agents.md` 第四条）：照前台一样起（同一个 shell、同一份
+//! 环境变量，自成一组），起来了交给任务端口，调用当场返回。进程活过这一次调用：读输出、等它结束、整组杀，
+//! 由任务表经这里的 [`Process`] 做。
+//!
+//! 输出照前台的规矩合法化（`output.rs`）：一根管道，照 UTF-8 边读边解、一个字切在两段中间的留到下一段，`\r\n` 换成
+//! `\n`；一段一段交出去，不截。
+//!
+//! 整组杀照前台（`process.rs`）：杀进程组；已经结束了的不再按编号杀。命令自己退出以后，组里还在跑的也杀掉，和前台一样。
+//! 主程序没了，命令跟着没，也和前台一样（施工 7-8）：组里有 `/bin/sh` 看门的（[`super::lifeline`]）。
+
+use std::io::{self, Read};
+use std::process::{Child, Command, ExitStatus};
+use std::sync::mpsc;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::thread;
+
+use crate::tool::{Background, Exit, Process};
+
+use super::lifeline::Watcher;
+use super::output::{Crlf, Decoder};
+use super::process::{self, Group};
+
+/// 起一条后台命令：交回它的输出和进程（交给任务端口）。`watching` 的（施工
+/// MN-1 上，`shell` 写了 `watch`）标准输出、标准错误分开读：两路都交进 `output`（照到达的先后），标准输出另抄一份交进
+/// `lines`。不监视的照旧一根管道，一个字节不变。
+///
+/// # Errors
+///
+/// 同前台：管道建不起来，或者程序起不来。
+pub(super) fn start(command: Command, watching: bool) -> io::Result<Background> {
+    let process::Spawned {
+        child,
+        group,
+        pipe,
+        errors,
+        watch,
+    } = process::spawn(command, watching)?;
+    let (output, lines) = match errors {
+        Some(errors) => apart(pipe, errors),
+        None => (Box::new(Output::of(pipe)) as Lines, None),
+    };
+    let background = Background {
+        output,
+        lines,
+        process: Box::new(Running {
+            group,
+            child: Mutex::new(Some(child)),
+            exited: Mutex::new(false),
+            _watch: watch,
+        }),
+    };
+    Ok(background)
+}
+
+/// 分开读的两路（施工 MN-1 上）：各一个线程照 [`Output`] 读，读到的照到达的先后交进写文件的那一份；标准输出另抄一份交给攒批
+/// 的。两头都读完了（两根管道都关了），两份才到头。
+fn apart(stdout: io::PipeReader, stderr: io::PipeReader) -> (Lines, Option<Lines>) {
+    let (merged, output) = mpsc::channel();
+    let (copied, lines) = mpsc::channel();
+    let errors = merged.clone();
+    thread::spawn(move || {
+        for text in Output::of(stdout) {
+            // 写文件、攒批的那一头不要了（任务表丢了这条命令），照样读到底：管道读不走，命令会卡在写上。
+            #[expect(clippy::let_underscore_must_use, reason = "收的那一头没了也照样读完")]
+            let _ = copied.send(text.clone());
+            #[expect(clippy::let_underscore_must_use, reason = "收的那一头没了也照样读完")]
+            let _ = merged.send(text);
+        }
+    });
+    thread::spawn(move || {
+        for text in Output::of(stderr) {
+            #[expect(clippy::let_underscore_must_use, reason = "收的那一头没了也照样读完")]
+            let _ = errors.send(text);
+        }
+    });
+    (
+        Box::new(output.into_iter()),
+        Some(Box::new(lines.into_iter())),
+    )
+}
+
+/// 一段一段交出来的输出。
+type Lines = Box<dyn Iterator<Item = String> + Send>;
+
+/// 读输出：一次读 8192 字节，解成字、换好行尾交出去。读完了（管道关了）、读不了的，把剩下的交出去就没有了。
+struct Output {
+    pipe: io::PipeReader,
+    decoder: Decoder,
+    crlf: Crlf,
+    ended: bool,
+}
+
+impl Output {
+    /// 从管道 `pipe` 读。
+    fn of(pipe: io::PipeReader) -> Output {
+        Output {
+            pipe,
+            decoder: Decoder::default(),
+            crlf: Crlf::default(),
+            ended: false,
+        }
+    }
+}
+
+impl Iterator for Output {
+    type Item = String;
+
+    fn next(&mut self) -> Option<String> {
+        let mut buffer = [0u8; 8192];
+        while !self.ended {
+            match self.pipe.read(&mut buffer) {
+                Ok(0) => self.ended = true,
+                Ok(count) => {
+                    let text = self.crlf.push(&self.decoder.push(&buffer[..count]));
+                    if !text.is_empty() {
+                        return Some(text);
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(_) => {
+                    self.ended = true;
+                }
+            }
+        }
+        let rest = self.crlf.push(&self.decoder.finish()) + &self.crlf.finish();
+        (!rest.is_empty()).then_some(rest)
+    }
+}
+
+/// 起好的进程：等的那一头拿走它的句柄，杀的那一头只认组。
+struct Running {
+    group: Group,
+    /// 等它结束的那一头拿走。
+    child: Mutex<Option<Child>>,
+    /// 等到了、句柄就要放下：之后不再按编号杀。先记下它、再放下句柄；杀的那一头拿着这把锁杀，杀完之前句柄放不下。
+    exited: Mutex<bool>,
+    /// 组里看门的（施工 7-8）：主程序崩了它杀整组；丢掉这条命令时收掉它。起不来的没有。
+    _watch: Option<Watcher>,
+}
+
+impl Process for Running {
+    fn wait(&self) -> io::Result<Exit> {
+        let mut child = lock(&self.child)
+            .take()
+            .ok_or_else(|| io::Error::other("the command was already waited for"))?;
+        let status = child.wait();
+        *lock(&self.exited) = true;
+        drop(child);
+        let status = status?;
+        self.group.leftovers();
+        Ok(exit(status))
+    }
+
+    fn kill(&self) {
+        let exited = lock(&self.exited);
+        if !*exited {
+            self.group.kill();
+        }
+    }
+}
+
+/// 读锁：拿着它的线程 panic 了也照样拿。
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// 怎么结束的：有退出码的照退出码；没有的是被信号杀掉的。
+pub(super) fn exit(status: ExitStatus) -> Exit {
+    use std::os::unix::process::ExitStatusExt;
+    match status.code() {
+        Some(code) => Exit::Code(code),
+        None => Exit::Signal(
+            status
+                .signal()
+                .and_then(|signal| u32::try_from(signal).ok())
+                .unwrap_or(0),
+        ),
+    }
+}

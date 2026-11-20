@@ -1,0 +1,3 @@
+{"seq":139,"at":"2026-09-25T20:30:00.000Z","kind":"session.policy_changed","by":{"kind":"person"},"cause":"cmd-0c1e","body":{"model":"@free"}}
+{"seq":140,"at":"2026-09-25T20:35:00.000Z","kind":"session.policy_changed","by":{"kind":"person"},"cause":"cmd-5b17/effort","body":{"effort":{"level":"high"}}}
+{"seq":144,"at":"2026-09-25T21:00:00.000Z","kind":"session.policy_changed","turn":143,"by":{"kind":"kernel"},"cause":"cmd-2e30","body":{"model":"deepseek/deepseek-v4","replaced":"@free"}}

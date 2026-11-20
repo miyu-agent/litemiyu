@@ -1,0 +1,23 @@
+[package]
+name = "lm-heap-mem"
+description = "musl 静态版（x86_64）自带的 memcpy、memmove、memset、memcmp、bcmp（LM-6补）；别的目标是空的"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# 单成一个 crate：要标 `no_builtins`（循环不许被认成 memcpy 调回自己），标了的 crate 不进整个程序一起的 LTO，单独链进来；
+# 放在 lm-heap 里头会把 lm-heap 用到的标准库泛型一起拖出 LTO，链接时找不到（LM-6补头一版撞上）。所以这里只有 `core`。
+# lint 照抄 lm-heap 的（`unsafe_code` 是 deny，只在定义那几个函数处放开）。
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+unwrap_used = "deny"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"

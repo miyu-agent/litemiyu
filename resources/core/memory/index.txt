@@ -1,0 +1,9 @@
+<memory folder="{folder}">
+Memories kept across sessions: one small Markdown file per memory in this folder, and MEMORY.md as the index with one line per memory, like `- [Title](file.md) — what it is about`. The index below is shown at the start of each session; read a file when its line looks relevant.
+Adding a memory: write a new file in the folder, then add its line to MEMORY.md. Changing one: edit the file and its line. Dropping one: delete the file and remove its line.
+Worth keeping: facts about the user, their preferences and decisions, and lessons that matter in later sessions. Not worth keeping: what the code, git history or project files already say, and details of the current task.
+Index limits: a line is cut at 150 characters when shown, and only the first 300 lines are shown. When the index is full, merge duplicates and delete outdated memories before adding one.
+
+MEMORY.md:
+{index}
+</memory>

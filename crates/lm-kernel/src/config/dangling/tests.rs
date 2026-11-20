@@ -1,0 +1,198 @@
+//! 引用的东西没有（施工 8-8）：引用、模型的列表指的供应商没配的报 `bad_reference`，一处一条、带名字；配了的、写在
+//! 不能写的那一层的不报；说成话照 `config/no-provider`；模型这一种只收 `<供应商>/<模型>`（LM-8 砍了模型池：`@池` 两种都不收，
+//! 测试用的模型列表原来叫池）。
+
+use super::*;
+use crate::config::parse::parse;
+use crate::config::problem::Severity;
+use crate::config::problem::tell;
+use crate::config::test_support::words;
+use crate::config::value::Values;
+
+crate::settings! {
+    /// 测试用的用途：一个引用。
+    pub struct Uses in "uses" {
+        /// 主对话的。
+        chat: Option<String> = none {
+            kind: reference,
+            layers: [System],
+            applies: new_session,
+            ui: { page: "models", group: "uses", control: text },
+        },
+        /// 只能写在系统配置里的一个引用：写在项目配置里不算，也就不查。
+        fixed: Option<String> = none {
+            kind: reference,
+            layers: [System],
+            applies: new_session,
+            ui: { page: "models", group: "uses", control: text },
+        },
+    }
+}
+
+crate::settings! {
+    /// 测试用的一组：成员是模型的列表。
+    pub struct Lists in "lists.<id>" {
+        /// 成员。
+        models: Option<Vec<String>> = none {
+            kind: models,
+            layers: [System],
+            applies: next_turn,
+            ui: { page: "models", group: "lists", control: list },
+        },
+    }
+}
+
+fn items() -> Vec<Item> {
+    [Uses::ITEMS, Lists::ITEMS].concat()
+}
+
+/// 当成 `layer` 读 `text`，照「配了的供应商只有 `a`」查。
+fn found(layer: Layer, text: &str) -> Vec<Problem> {
+    let parsed = parse(&items(), layer, text).expect("写法对");
+    dangling(&items(), &parsed, layer, &|name| name == "a")
+}
+
+/// 每一条的原因码、键、名字。
+fn short(problems: &[Problem]) -> Vec<(Code, String, String)> {
+    problems
+        .iter()
+        .map(|problem| {
+            (
+                problem.code,
+                problem.key.clone().unwrap_or_default(),
+                problem.name.clone().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_reference_to_a_missing_provider_is_reported_with_its_name() {
+    let problems = found(
+        Layer::System,
+        "[uses]\nchat = \"b/m\"\nfixed = \"a/m\"\n\n[lists.free]\nmodels = [\"a/x\", \"c/y\", \"a/z\", \"d/w\"]\n",
+    );
+    assert_eq!(
+        short(&problems),
+        [
+            (
+                Code::NoProvider,
+                "lists.free.models".to_string(),
+                "c".to_string()
+            ),
+            (
+                Code::NoProvider,
+                "lists.free.models".to_string(),
+                "d".to_string()
+            ),
+            (Code::NoProvider, "uses.chat".to_string(), "b".to_string()),
+        ],
+        "照键的先后，列表里一个一条"
+    );
+    let first = &problems[0];
+    assert_eq!(first.code.as_str(), "bad_reference");
+    assert_eq!(first.severity(), Severity::Error);
+    assert_eq!(
+        first.got.as_deref(),
+        Some(r#"["a/x", "c/y", "a/z", "d/w"]"#)
+    );
+    assert_eq!(first.at.map(|at| at.line), Some(6), "指到值那一行");
+}
+
+#[test]
+fn what_is_there_and_what_does_not_count_is_not_reported() {
+    let fine = found(
+        Layer::System,
+        "[uses]\nchat = \"a/n\"\nfixed = \"a/m\"\n\n[lists.free]\nmodels = [\"a/x\"]\n",
+    );
+    assert_eq!(fine, Vec::new());
+    // 写在不能写的那一层：报 `wrong_layer`，不算数，也就不查它指的东西。
+    let parsed = parse(&items(), Layer::Project, "[uses]\nfixed = \"b/m\"\n").expect("写法对");
+    assert_eq!(parsed.problems.len(), 1, "{:?}", parsed.problems);
+    assert_eq!(
+        found(Layer::Project, "[uses]\nfixed = \"b/m\"\n"),
+        Vec::new()
+    );
+}
+
+#[test]
+fn a_dangling_reference_is_said_in_words() {
+    let problems = found(Layer::System, "[uses]\nchat = \"b/m\"\nfixed = \"c/n\"\n");
+    let words = words(&items());
+    let said: Vec<String> = problems
+        .iter()
+        .map(|problem| {
+            tell(problem, &items(), None, &words)
+                .expect("字齐全")
+                .message
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            "uses.chat 指的供应商 b 没有配。",
+            "uses.fixed 指的供应商 c 没有配。"
+        ]
+    );
+}
+
+/// 模型这一种：只收 `<供应商>/<模型>`，以前的池、挡位、写法不对的是 `bad_format`；引用也一样（LM-8 起不收 `@池`）。
+#[test]
+fn a_model_takes_only_a_provider_and_a_model() {
+    let text = |text: &str| Value::Text(text.to_string().into());
+    for good in ["a/m", "a/b/c", "dev/DeepSeek V4"] {
+        assert_eq!(Kind::Model.check(&text(good)), Ok(()), "{good}");
+    }
+    for bad in ["@free", "lite", "", "a/", "/m", "A/m"] {
+        assert_eq!(Kind::Model.check(&text(bad)), Err(Code::BadFormat), "{bad}");
+    }
+    assert_eq!(Kind::Reference.check(&text("@free")), Err(Code::BadFormat));
+    assert_eq!(Kind::Model.as_str(), "model");
+    assert_eq!(Lists::ITEMS[0].kind, Kind::List(&Kind::Model));
+    let parsed = parse(
+        &items(),
+        Layer::System,
+        "[lists.free]\nmodels = [\"a/x\", \"@free\"]\n",
+    )
+    .expect("写法对");
+    assert_eq!(
+        parsed.problems.iter().map(|p| p.code).collect::<Vec<_>>(),
+        [Code::BadFormat],
+        "列表里写了以前的池"
+    );
+    let mut values = Values::default();
+    values.set("lists.free.models", Value::List(vec![text("a/x")].into()));
+    assert_eq!(
+        Lists::at(&values, &["free"]).models,
+        Some(vec!["a/x".to_string()])
+    );
+}
+
+crate::settings! {
+    /// 测试用的一项 `model_or`（施工 R-5 补）。
+    pub struct Embedding in "embedding" {
+        /// 算向量的。
+        picked: Option<String> = none {
+            kind: model_or ["local", "off"],
+            layers: [System],
+            applies: next_turn,
+            ui: { page: "models", group: "uses", control: text },
+        },
+    }
+}
+
+/// `model_or`（施工 R-5 补）：列出的字不查；写了模型的照 `Model` 查供应商在不在。
+#[test]
+fn a_model_or_word_is_not_checked_and_its_model_is() {
+    let check = |text: &str| {
+        let parsed = parse(Embedding::ITEMS, Layer::System, text).expect("写法对");
+        dangling(Embedding::ITEMS, &parsed, Layer::System, &|name| {
+            name == "a"
+        })
+    };
+    assert!(check("[embedding]\npicked = \"local\"\n").is_empty());
+    assert!(check("[embedding]\npicked = \"a/bge-m3\"\n").is_empty());
+    let problems = check("[embedding]\npicked = \"nope/bge-m3\"\n");
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].code, Code::NoProvider);
+}
