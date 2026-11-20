@@ -16,7 +16,15 @@ impl Root {
     fn new() -> Root {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("lm-bell-{}-{n}", std::process::id()));
+        // 系统的临时目录太长的（macOS 是 `/var/folders/…/T/`，五十来个字节）改放 `/tmp`：这里的测试自己要在下面绑
+        // 套接字，地址有 103 字节的上限；放不下不是程序的事（真用时退路就是 `/tmp`）。
+        let base = std::env::temp_dir();
+        let base = if base.as_os_str().len() > 24 {
+            PathBuf::from("/tmp")
+        } else {
+            base
+        };
+        let dir = base.join(format!("lm-bell-{}-{n}", std::process::id()));
         drop(fs::remove_dir_all(&dir));
         fs::create_dir_all(dir.join("tmp")).expect("建得了");
         fs::create_dir_all(dir.join("sessions/s")).expect("建得了");
