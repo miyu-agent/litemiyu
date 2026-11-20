@@ -193,4 +193,4 @@ LiteMiyu 一共有 23 条命令：
 
 ## 应急模式下的命令
 
-应急模式（`litemiyu --rescue`）不向磁盘保存任何内容，所以没有 `/sessions`、`/config`、`/loop`、`/model`、`/effort` 这五条命令，运行它们会提示 `命令不存在`。见[应急模式](rescue.md)。
+应急模式（`litemiyu --rescue`）不向磁盘保存任何内容，所以没有 `/sessions`、`/config`、`/export`、`/delete` 这四条离不开磁盘的命令，运行它们会提示 `命令不存在`，`/help` 里也不列出。`/model` 和 `/effort` 可以使用，但是选择只在这一次运行里有效，不会成为以后新会话的默认。见[应急模式](rescue.md)。

@@ -71,7 +71,7 @@
     "o.root.base_url": "应急模式的供应商地址",
     "o.root.continue": "在全屏界面中打开最近的会话",
     "o.root.model": "应急模式的模型名（覆盖 LITEMIYU_RESCUE_MODEL）",
-    "o.root.rescue": "应急模式：不保存到磁盘，只提供文件和命令工具",
+    "o.root.rescue": "应急模式：不保存到磁盘，只提供文件、命令和定时触发工具",
     "o.root.session": "在全屏界面中打开指定的会话",
     "o.version": "显示版本",
     "open_failed": "无法打开会话：{reason}",

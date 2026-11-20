@@ -60,6 +60,20 @@ fn is_home(frame: &str, work: &str) -> bool {
 }
 
 /// 焦点照 `key`（`↓` 或 `↑`）一下下挪，挪到子代理状态行里写着 `name` 的那一行为止。
+/// 子代理状态行里焦点在哪一行：行首带箭头的那一行从圆点起到名字为止的字（没有焦点的是 `None`）。
+fn focused(session: &Session) -> Option<String> {
+    session.screen().lines().find_map(|line| {
+        let at = line.find("❯ ○").or_else(|| line.find("❯ ●"))?;
+        Some(
+            line[at..]
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    })
+}
+
 fn focus(session: &Session, key: &[u8], name: &str) {
     let on = |s: &Session| {
         let screen = s.screen();
@@ -69,9 +83,11 @@ fn focus(session: &Session, key: &[u8], name: &str) {
         if on(session) {
             return;
         }
-        let before = session.screen();
+        // 等的是焦点那个箭头换了一行，不是屏幕变了：命令在跑的时候转圈和计时每隔一会儿就重画，屏幕变了不等于这一下
+        // 按键办了；照屏幕变了等的话，慢的机器上会多按几下，焦点越过要停的那一行。
+        let before = focused(session);
         session.press(key);
-        session.wait_until("焦点挪了一行", |s| s.screen() != before);
+        session.wait_until("焦点挪了一行", |s| focused(s) != before);
     }
     session.wait_until(&format!("焦点到 {name} 那一行"), on);
 }

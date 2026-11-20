@@ -2,7 +2,7 @@
 //! 循环的样子记下来，输入框上面那一行、侧边栏照它写（`ui/loop_tag.rs`）；会话不认 `/loop` 时命令列表里不列它。
 
 use super::App;
-use crate::commands::{Run, Spec};
+use crate::commands::Spec;
 use crate::core::Update;
 
 impl App {
@@ -34,8 +34,8 @@ impl App {
     }
 
     /// 这条命令这个会话认不认：会话说了不认循环的（无功能的那一档）不列 `/loop`、敲了照「没有这个命令」答（同 Miyu
-    /// 核心的 `allowed`）。应急模式另有不列的（`rescue.rs`）。
-    pub(super) fn offered(&self, spec: &Spec) -> bool {
-        (spec.run != Run::Loop || self.talk.loops != Some(false)) && self.rescue_offers(spec)
+    /// 核心的 `allowed`）。应急模式另有不列的（`rescue.rs`）。命令列表、`/help` 都照它列。
+    pub fn offered(&self, spec: &Spec) -> bool {
+        super::rescue::offers(self.talk.loops, self.rescue.is_some(), spec)
     }
 }

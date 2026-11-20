@@ -68,6 +68,11 @@ impl App {
 }
 
 impl Seen<'_> {
+    /// 这条命令列不列（同 [`App::offered`]）：`/help` 照它列。
+    pub fn offered(&self, spec: &crate::commands::Spec) -> bool {
+        super::rescue::offers(self.talk.loops, self.rescue.is_some(), spec)
+    }
+
     /// 框下面那一行现在有哪些按钮（从左到右）：有后台命令在跑时是后台按钮（Miyu `Seen::footer_buttons`）。
     pub fn footer_buttons(&self) -> Vec<Button> {
         (self.talk.jobs.running_commands() > 0)

@@ -4,6 +4,10 @@
 //!
 //! 换的是这个会话的（内核的 `Configure`），也记成新会话的默认（`models.chat`，同 Miyu：手动换的也记成新会话的默认，
 //! 2026-10-02 项目主人定）。还没开会话的只记默认，开会话时照它。底栏当场写成选的那个，不弹提示（2026-10-01 项目主人）。
+//!
+//! 应急模式（设计第五节第 16 条）照样开这个框，只在这一次运行里换：「记成新会话的默认」引擎只记在内存里、不写配置
+//! （`core/engine/models.rs` 的 `chat_default`），不在后台拉供应商的模型列表（拉到了要存）；另多一行照打的字换
+//! （`rescue.rs` 的 `rescue_models`）。
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
@@ -30,7 +34,9 @@ impl App {
     /// 引擎交回了一行行：光标停在正在用的那一个；后台拉到了新列表又交一次的，停在原来选着的那一个上。
     pub(super) fn models_listed(&mut self, all: Vec<Choice>) {
         let current = self.talk.transcript.current_ref();
+        let (all, manual) = self.rescue_models(all, current.as_deref());
         if let Some(list) = &mut self.boxes.model_list {
+            list.manual = manual;
             let kept = list
                 .loaded
                 .then(|| list.picked().map(|choice| choice.reference.clone()))

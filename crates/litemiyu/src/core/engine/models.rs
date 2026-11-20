@@ -111,7 +111,13 @@ impl Engine {
 
     /// 把 `reference` 记成新会话默认的聊天模型（Miyu `/model` 手动换的也记成新会话的默认，2026-10-02 项目主人定）：只改
     /// `models.chat` 那一行，注释、先后不动；写成了让开着的会话换上重读的配置。写不成的交 [`Update::Failed`]。
+    ///
+    /// 应急模式（设计第五节第 16 条）什么都不写：只记在引擎里，这一次运行里以后开的会话照它开（[`Engine::open`]）。
     pub(super) async fn chat_default(&mut self, reference: String) {
+        if self.rescue.is_some() || self.ready.as_ref().is_some_and(|ready| ready.is_rescue()) {
+            self.rescue_chat = Some(reference);
+            return;
+        }
         let Some(ready) = &self.ready else {
             return;
         };
@@ -134,7 +140,7 @@ impl Engine {
     /// 读配置、查目录要的几样：引擎没起的先起。
     fn model_parts(&mut self) -> Option<(Arc<dyn ConfigSource>, Arc<ModelData>, String)> {
         if self.ready.is_none() {
-            match super::setup::Ready::new(self.rescue.take()) {
+            match super::setup::Ready::new(self.rescue.take(), self.unattended) {
                 Ok(ready) => self.ready = Some(ready),
                 Err(why) => {
                     self.report(Update::Failed(why));

@@ -193,4 +193,4 @@ Exits LiteMiyu. Pressing `Ctrl+D` with an empty input box does the same.
 
 ## Commands in rescue mode
 
-Rescue mode (`litemiyu --rescue`) saves nothing to disk, so the five commands `/sessions`, `/config`, `/loop`, `/model` and `/effort` do not exist there; running them shows `No such command`. See [Rescue mode](rescue.md).
+Rescue mode (`litemiyu --rescue`) saves nothing to disk, so the four commands that cannot do without the disk, `/sessions`, `/config`, `/export` and `/delete`, do not exist there; running them shows `No such command`, and `/help` does not list them. `/model` and `/effort` work, but your choice lasts for this run only and does not become the default for later sessions. See [Rescue mode](rescue.md).

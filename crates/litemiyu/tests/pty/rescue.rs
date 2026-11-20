@@ -8,21 +8,31 @@ use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 use super::replies::{calls, says};
 use super::support::{Options, Served, Session, served};
 
 /// 假 key：搜它在不在。
-const KEY: &str = "sk-FAKE-rescue-pty-not-real";
+pub(super) const KEY: &str = "sk-FAKE-rescue-pty-not-real";
 
 /// 带的工具（`core/engine/setup/rescue.rs` 的 `TOOLS`）。
-const TOOLS: [&str; 5] = ["edit", "jobs", "read", "shell", "write"];
+const TOOLS: [&str; 6] = ["edit", "jobs", "read", "schedule_wakeup", "shell", "write"];
+
+/// 树里的一项（[`Root::bytes`]）：相对根的路径、大小（目录记 0）、改动时间、内容（目录、读不了的没有）。
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct Item {
+    name: String,
+    size: u64,
+    modified: Option<SystemTime>,
+    text: Option<Vec<u8>>,
+}
 
 /// 一个临时的根：家目录、XDG 各处、工作目录都在它下面。用完把只读的改回来再删。
-struct Root(PathBuf);
+pub(super) struct Root(PathBuf);
 
 impl Root {
-    fn new(name: &str) -> Root {
+    pub(super) fn new(name: &str) -> Root {
         let dir =
             std::env::temp_dir().join(format!("litemiyu-rescue-{name}-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&dir));
@@ -31,7 +41,7 @@ impl Root {
         Root(dir)
     }
 
-    fn at(&self, path: &str) -> PathBuf {
+    pub(super) fn at(&self, path: &str) -> PathBuf {
         self.0.join(path)
     }
 
@@ -55,6 +65,35 @@ impl Root {
     fn tree(&self) -> BTreeSet<(String, bool)> {
         walk(&self.0)
     }
+
+    /// 整棵树连同每一项的大小、改动时间、内容（读不了的、目录没有内容）：照它比「一个字节没变、没有新文件」。
+    pub(super) fn bytes(&self) -> Vec<Item> {
+        walk(&self.0)
+            .into_iter()
+            .map(|(name, dir)| {
+                let path = self.0.join(&name);
+                let meta = std::fs::symlink_metadata(&path).ok();
+                let size = meta.as_ref().map_or(0, std::fs::Metadata::len);
+                let modified = meta.and_then(|meta| meta.modified().ok());
+                let text = (!dir).then(|| std::fs::read(&path).ok()).flatten();
+                Item {
+                    name,
+                    size: if dir { 0 } else { size },
+                    modified,
+                    text,
+                }
+            })
+            .collect()
+    }
+
+    /// 把 `dir` 那一棵（连同里面的文件）改成只读：目录 555、文件 444。
+    pub(super) fn freeze(&self, dir: &str) {
+        let top = self.at(dir);
+        for (name, is_dir) in walk(&top) {
+            set_mode(&top.join(name), if is_dir { 0o555 } else { 0o444 });
+        }
+        set_mode(&top, 0o555);
+    }
 }
 
 impl Drop for Root {
@@ -68,7 +107,7 @@ impl Drop for Root {
     }
 }
 
-fn set_mode(path: &Path, mode: u32) {
+pub(super) fn set_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("改得了权限");
 }
 
@@ -99,7 +138,7 @@ fn walk(root: &Path) -> BTreeSet<(String, bool)> {
 
 /// 进程 `pid` 开着的、能写的普通文件（Linux：`/proc/<号>/fd` 指到的磁盘上的文件，`fdinfo` 的 `flags` 带写）。
 #[cfg(target_os = "linux")]
-fn writable_files(pid: u32) -> Vec<String> {
+pub(super) fn writable_files(pid: u32) -> Vec<String> {
     let fds = std::fs::read_dir(format!("/proc/{pid}/fd")).expect("读得了 /proc");
     let mut found = Vec::new();
     for fd in fds.flatten() {
@@ -129,7 +168,7 @@ fn writable_files(pid: u32) -> Vec<String> {
 /// 进程 `pid` 开着的、能写的普通文件（没有 `/proc` 的 macOS、BSD，LM-7）：照 `lsof -F` 列出的描述符（`f` 号、`a` 读写、`t` 种类、
 /// `n` 路径），只看编了号的描述符（不看工作目录、程序本身），种类是普通文件（`REG`）、开着写（`w`、`u`）的。
 #[cfg(not(target_os = "linux"))]
-fn writable_files(pid: u32) -> Vec<String> {
+pub(super) fn writable_files(pid: u32) -> Vec<String> {
     let listed = Command::new("lsof")
         .args(["-n", "-P", "-a", "-p", &pid.to_string(), "-d", "0-65535"])
         .args(["-F", "fatn"])
@@ -153,7 +192,7 @@ fn writable_files(pid: u32) -> Vec<String> {
 }
 
 /// 应急模式给的环境：地址指假服务器，模型 `m-rescue`，带 key；另加 `more`。
-fn given(served: &Served, more: Vec<(&str, OsString)>) -> Vec<(String, OsString)> {
+pub(super) fn given(served: &Served, more: Vec<(&str, OsString)>) -> Vec<(String, OsString)> {
     let mut env = vec![
         ("LITEMIYU_RESCUE_BASE_URL", OsString::from(&served.base_url)),
         ("LITEMIYU_RESCUE_MODEL", OsString::from("m-rescue")),
@@ -166,7 +205,7 @@ fn given(served: &Served, more: Vec<(&str, OsString)>) -> Vec<(String, OsString)
 }
 
 /// 在 `root` 的工作目录里起 `litemiyu --rescue`，只设 `env`。
-fn launch(root: &Root, env: Vec<(String, OsString)>) -> Session {
+pub(super) fn launch(root: &Root, env: Vec<(String, OsString)>) -> Session {
     let options = Options {
         only_env: env,
         ..Options::default()

@@ -110,10 +110,27 @@ pub fn begin(
     }
 }
 
-/// 应急模式（设计第五节第 16 条）的目录：没有目录（LM-9：程序不带目录，应急模式不读也不写缓存、不联网）。模型的资料照配置写的
+/// 应急模式的一次运行（`litemiyu ask --rescue`，设计第五节第 16 条）的目录：没有目录（LM-9：程序不带目录，不读也不写缓存、
+/// 不联网；全屏界面读缓存里现成的，[`read_only`]）。模型的资料照配置写的
 /// 和缺省，窗口不知道的照供应商回的「上下文超长」被动压缩。
 pub fn without_catalog(data: &ModelData) {
     data.loaded(None, Observed::default());
+}
+
+/// 应急模式的全屏界面（设计第五节第 16 条）的目录：只读、不联网。`data` 要是不带写盘那两处造的（[`prepare`] 给 `None`）：
+/// 缓存里现成的目录、记下的那份、用出来的、供应商的列表照平常读（[`begin`]，位置照 `dirs`），该记下的只记在内存里，一个
+/// 字节都不写；读不到、读不懂的（数据目录不存在、缓存里没有）目录是空的，同 [`without_catalog`]。不接后台取、更新
+/// （[`follow`]）。读的线程 panic 了的目录当空的放行（同 [`follow`]）。
+pub fn read_only(data: Arc<ModelData>, dirs: ModelDirs, config: Resolved) {
+    let places = Places {
+        cache: Some(dirs.cache.clone()),
+    };
+    let Reading { data, task, .. } = begin(data, places, Some(dirs), Some(config));
+    tokio::spawn(async move {
+        if task.await.is_err() {
+            data.loaded(None, Observed::default());
+        }
+    });
 }
 
 /// 读目录、用出来的、供应商的列表，读完交给 `reading`、放行等着的（[`begin`] 在单起的线程里调）。

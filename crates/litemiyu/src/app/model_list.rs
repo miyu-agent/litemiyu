@@ -1,7 +1,10 @@
 //! `/model` 框的状态（蓝图 `tui.md`「配置与模型」第 1 条）：核心交回的一行行、打的字、选中哪一个。筛选在这里，画在
 //! `ui/model_list.rs`。
+//!
+//! 应急模式（设计第五节第 16 条）另有一行：打的字照模型名用在正在用的那一家下面（[`ModelList::manual`]），排在对得上的
+//! 后面。配置读不了、只有环境变量给的那一个模型时，靠它换成同一家的别的模型。
 
-use crate::core::Choice;
+use crate::core::{Choice, ChoiceState};
 
 /// `/model` 框。
 #[derive(Debug, Default)]
@@ -20,14 +23,44 @@ pub struct ModelList {
     pub pinned: Option<usize>,
     /// 上一帧从第几个露起：选中的碰到上下边才挪（`menu::edge`，2026-10-27 项目主人）。
     pub top: std::cell::Cell<usize>,
+    /// 应急模式：打的字当模型名用在哪一家下面（正在用的那一家的编号）；平常没有，打的字只筛。
+    pub manual: Option<String>,
+    /// 照打的字现拼的那一行（[`ModelList::manual`]）：打的名字这一家已经列着的没有。
+    typed: Option<Choice>,
 }
 
 impl ModelList {
     /// 对得上的：模糊搜索名字和引用（`fuzzy.rs`），越像的越前，没打字的照原来的先后。
     pub fn matches(&self) -> Vec<&Choice> {
-        crate::fuzzy::rank(&self.query, self.all.iter().collect(), |c| {
+        let mut found = crate::fuzzy::rank(&self.query, self.all.iter().collect(), |c| {
             vec![c.name.as_str(), c.reference.as_str()]
-        })
+        });
+        found.extend(&self.typed);
+        found
+    }
+
+    /// 照打的字重拼那一行（应急模式）：名字不空、这一家还没列着它的才有；有没有密钥照这一家已经列着的。
+    fn retype(&mut self) {
+        let name = self.query.trim();
+        self.typed = self
+            .manual
+            .as_ref()
+            .filter(|_| !name.is_empty())
+            .and_then(|provider| {
+                let reference = format!("{provider}/{name}");
+                let prefix = format!("{provider}/");
+                let state = self
+                    .all
+                    .iter()
+                    .find(|c| c.reference.starts_with(&prefix))
+                    .map_or(ChoiceState::Ok, |c| c.state);
+                (!self.all.iter().any(|c| c.reference == reference)).then(|| Choice {
+                    reference,
+                    name: crate::tabs::printable(name).into_owned(),
+                    detail: crate::tabs::printable(provider).into_owned(),
+                    state,
+                })
+            });
     }
 
     /// 选中的那一个。
@@ -39,6 +72,7 @@ impl ModelList {
     pub fn replace(&mut self, all: Vec<Choice>, current: Option<&str>) {
         self.all = all;
         self.loaded = true;
+        self.retype();
         self.selected = self
             .matches()
             .iter()
@@ -60,6 +94,7 @@ impl ModelList {
     /// 打了字、删了字：回到第一个。
     pub fn typed(&mut self, query: String) {
         self.query = query;
+        self.retype();
         self.selected = 0;
         self.pinned = None;
     }
@@ -69,6 +104,38 @@ impl ModelList {
 mod tests {
     use super::ModelList;
     use crate::core::{Choice, ChoiceState};
+
+    #[test]
+    fn in_rescue_mode_a_typed_name_is_offered_under_the_provider_in_use() {
+        let mut list = ModelList {
+            manual: Some("rescue".into()),
+            ..ModelList::default()
+        };
+        list.replace(vec![choice("rescue/m1", "m1")], Some("rescue/m1"));
+        assert_eq!(list.matches().len(), 1, "没打字的只有列着的");
+        list.typed("m2".into());
+        let found = list.matches();
+        let last = found.last().expect("有一行");
+        assert_eq!(
+            (
+                last.reference.as_str(),
+                last.name.as_str(),
+                last.detail.as_str()
+            ),
+            ("rescue/m2", "m2", "rescue"),
+            "打的名字用在正在用的那一家下面"
+        );
+        list.typed("m1".into());
+        assert_eq!(list.matches().len(), 1, "已经列着的不再多一行");
+        assert_eq!(list.picked().unwrap().reference, "rescue/m1");
+        list.typed("  ".into());
+        assert_eq!(list.matches().len(), 1, "只打了空格的不算名字");
+        // 平常没有这一行：打的字只筛。
+        let mut usual = ModelList::default();
+        usual.replace(vec![choice("dev/m1", "m1")], None);
+        usual.typed("zzz".into());
+        assert!(usual.matches().is_empty());
+    }
 
     fn choice(reference: &str, name: &str) -> Choice {
         Choice {

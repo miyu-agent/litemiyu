@@ -50,6 +50,8 @@ mod rename;
 mod replies;
 mod report_in_timeline;
 mod rescue;
+mod rescue_loop;
+mod rescue_model;
 mod restart;
 mod sessions;
 mod settings;

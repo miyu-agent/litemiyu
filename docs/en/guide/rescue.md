@@ -19,9 +19,11 @@ You do not need rescue mode in normal use. It keeps no conversation and has fewe
 |---|---|---|
 | Writing to disk | Saves sessions, configuration and input history | Writes nothing. Close the window and the conversation is gone |
 | Configuration file | Must be readable | Used if readable; starts anyway if not |
-| The AI's tools | All | Only `read`, `write`, `edit`, `shell` and `jobs` |
+| The AI's tools | All | Only `read`, `write`, `edit`, `shell`, `jobs` and `schedule_wakeup` |
 | Skills, MCP, memory | Yes | No |
-| Commands | All | No `/sessions`, `/config`, `/loop`, `/model` or `/effort` |
+| Commands | All | No `/sessions`, `/config`, `/export` or `/delete` |
+| `/model`, `/effort` | Your choice becomes the default from then on | Lasts for this run only; nothing is written to the configuration |
+| Model catalog | Fetched over the network when needed, then cached | Never fetched; a copy already in the cache is read |
 | `Ctrl+G` external editor | Available | Not available; shows `Not available in rescue mode: nothing is saved to disk` |
 
 "Writes nothing" is about LiteMiyu itself. The AI changing your files with `write`, `edit` and `shell` works as usual; that is how the machine gets fixed. Blocking and confirming dangerous commands also works the same as usual.
@@ -70,9 +72,23 @@ litemiyu --rescue: no usable model; missing LITEMIYU_RESCUE_BASE_URL, LITEMIYU_R
 
 > While the machine is healthy, note down the command above with its address and model name (but not the key) somewhere you can find it. When things do go wrong, you often can no longer open the configuration file to look them up.
 
+## Switching the model and thinking effort
+
+`/model` and `/effort` work in rescue mode the same way as usual; see [Commands](commands.md#model). The difference is that your choice lasts for this run only and is not written to the configuration file: after you quit, the next start uses the original default model again. The model in use is shown below the input box even before you send your first message.
+
+If the configuration file is readable, `/model` lists the models of every provider in it. When you switch to a model of another provider, LiteMiyu uses that provider's address, API and key from the configuration. If a provider's key cannot be read (for example because `secrets.toml` is unreadable), its models show `no key`, and choosing one shows `This model has no key` without switching.
+
+If the configuration file cannot be read, or you gave a single model through environment variables and the command line, the list has only the model in use. In that case you can type a model name right in the list (press `/` first if your key mode is Vim): when the name you typed is not in the list, the last row is that name followed by the ID of the current provider; select it and press `Enter` to switch to that model of the current provider. For example, if the default model has run out of quota, you can switch to another model of the same provider this way, without quitting and starting again.
+
+> Rescue mode never fetches the model catalog over the network. If the cache holds a catalog fetched earlier, LiteMiyu reads it to show the context window and cost; if not, those two are not shown, and compaction is triggered by the provider's error when the context gets too long.
+
+## Loops and scheduled wake-ups
+
+`/loop` works as usual in rescue mode, and the AI can also use the `schedule_wakeup` tool (shown as `Schedule` in the interface) to continue after a while, for example to have the AI check the free disk space every few minutes. See [Commands](commands.md#loop) for how to use it. Loops and scheduled wake-ups live only in this window's memory and stop when you close the window.
+
 ## Without full-screen: ask --rescue
 
-`litemiyu ask` also takes `--rescue`. It saves nothing either, and suits situations where all you have is a very basic terminal:
+`litemiyu ask` also takes `--rescue`. It saves nothing either, and suits situations where all you have is a very basic terminal. Run this way, the AI has only the five tools `read`, `write`, `edit`, `shell` and `jobs`, and the cached model catalog is not read:
 
 ```bash
 LITEMIYU_RESCUE_API_KEY=sk-… litemiyu ask --rescue --base-url https://api.deepseek.com/v1 --model deepseek-chat "The root partition is full; find the directories that take the most space"
@@ -92,6 +108,6 @@ This command reads the default model's address, model name, API and key from Miy
 
 ## What it does not do
 
-- It keeps no conversation. If you need a record, have the AI write the key points to a file before you close. `/export` does not work in rescue mode.
+- It keeps no conversation. If you need a record, have the AI write the key points to a file before you close. Rescue mode has no `/export`.
 - It does not support terminals that can only print line by line (for example a serial console without cursor control). Use `ask --rescue` there.
 - It does not repair LiteMiyu's own configuration: in rescue mode too, the AI's tools cannot read or write LiteMiyu's data directories. If the configuration file is broken, fix it yourself with an editor, or rename it and run `litemiyu` again to go through the first-run setup.

@@ -612,7 +612,7 @@
       "  litemiyu            start a conversation (all features)",
       "  litemiyu config     open the settings",
       "  litemiyu --bare     first session without features: no tools, no context",
-      "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file and command tools;\n                      the session is not kept after closing",
+      "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file, command and\n                      scheduling tools; the session is not kept after closing",
       "  litemiyu --version  print the version and exit (also -V)",
       "",
       "Rescue provider (command-line options override the environment, and both\noverride the config; with none given, models.chat from the config is used):",

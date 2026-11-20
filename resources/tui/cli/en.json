@@ -71,7 +71,7 @@
     "o.root.base_url": "Rescue provider URL",
     "o.root.continue": "Open the latest session full-screen",
     "o.root.model": "Rescue model name (overrides LITEMIYU_RESCUE_MODEL)",
-    "o.root.rescue": "Rescue mode: saves nothing; file and command tools only",
+    "o.root.rescue": "Rescue mode: saves nothing; only a minimal set of tools",
     "o.root.session": "Open the given session full-screen",
     "o.version": "Print version",
     "open_failed": "cannot open the session: {reason}",

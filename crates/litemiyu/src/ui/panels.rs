@@ -22,7 +22,8 @@ pub(super) fn content(
 fn rows(seen: &Seen, width: u16, max: usize) -> (Chrome, Vec<Line<'static>>, Vec<Option<usize>>) {
     match seen.boxes.panel {
         Some(Panel::Help { scroll }) => {
-            let (chrome, lines) = help::lines(seen.config, width, scroll, max);
+            let (chrome, lines) =
+                help::lines(seen.config, &|spec| seen.offered(spec), width, scroll, max);
             let map = vec![None; lines.len()];
             (chrome, lines, map)
         }

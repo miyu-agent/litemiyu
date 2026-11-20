@@ -63,7 +63,7 @@ impl Engine {
     /// （[`Engine::view_broken`]），不是的照打不开报。
     pub(super) async fn open_old(&mut self, id: String, view_broken: bool) {
         if self.ready.is_none() {
-            match setup::Ready::new(self.rescue.take()) {
+            match setup::Ready::new(self.rescue.take(), self.unattended) {
                 Ok(ready) => self.ready = Some(ready),
                 Err(message) => return self.report(Update::Failed(message)),
             }

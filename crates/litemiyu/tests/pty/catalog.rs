@@ -12,7 +12,7 @@ use crate::replies::says;
 use crate::support::{Options, Session, served};
 
 /// 只有一家 `p`、一个模型 `m1` 的目录：窗口 4000，有价格。
-const CATALOG: &str = r#"{"p":{"id":"p","name":"P","models":{"m1":{"limit":{"context":4000,"output":1000},"cost":{"input":1,"output":2}}}}}"#;
+pub(super) const CATALOG: &str = r#"{"p":{"id":"p","name":"P","models":{"m1":{"limit":{"context":4000,"output":1000},"cost":{"input":1,"output":2}}}}}"#;
 
 /// 假供应商对上目录里的 `p`，目录照 `catalog` 取。
 fn config(base_url: &str, catalog: &str) -> String {
@@ -23,7 +23,7 @@ fn config(base_url: &str, catalog: &str) -> String {
 }
 
 /// 本机的假目录服务器：什么请求都回 `body`（JSON），数着来了几次。交回地址和次数。
-fn serve_catalog(body: &'static str) -> (String, Arc<AtomicUsize>) {
+pub(super) fn serve_catalog(body: &'static str) -> (String, Arc<AtomicUsize>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑得上本机回环");
     let port = listener.local_addr().expect("有地址").port();
     let count = Arc::new(AtomicUsize::new(0));

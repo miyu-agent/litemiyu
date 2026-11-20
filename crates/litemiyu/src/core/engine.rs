@@ -137,6 +137,9 @@ struct Engine {
     unattended: bool,
     /// 还没开会话时 `/effort` 选的（`models.rs`）：开了会话交上。
     pending_effort: Option<Option<String>>,
+    /// 应急模式下 `/model` 选的（`models.rs` 的 `chat_default`）：不写配置，只记在这里，这一次运行里以后开的会话照它开。
+    /// 平常没有（记进配置的 `models.chat`）。
+    rescue_chat: Option<String>,
 }
 
 impl Engine {
@@ -157,6 +160,7 @@ impl Engine {
             handed: None,
             unattended: false,
             pending_effort: None,
+            rescue_chat: None,
         }
     }
 
@@ -380,14 +384,16 @@ impl Engine {
     /// 开一个新会话：第一次的先造好要的几样；订阅它推来的，交回界面。
     async fn open(&mut self) -> Result<(), String> {
         if self.ready.is_none() {
-            self.ready = Some(setup::Ready::new(self.rescue.take())?);
+            self.ready = Some(setup::Ready::new(self.rescue.take(), self.unattended)?);
         }
         self.want_catalog();
         let command = self.id();
         let Some(ready) = &self.ready else {
             return Err("engine not ready".to_string());
         };
-        let handle = ready.create(command, self.bare).await?;
+        let handle = ready
+            .create(command, self.bare, self.rescue_chat.clone())
+            .await?;
         self.unattend(Some(&handle));
         let subscription = handle
             .subscribe()

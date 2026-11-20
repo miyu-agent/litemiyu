@@ -1,5 +1,5 @@
 //! 帮助框（蓝图 `tui.md`「帮助 `/help`」，2026-09-30 项目主人定：在输入框上面开一个框）：和命令列表、后台面板一个框，
-//! 两段：命令（照 `commands.json`，接着核心认的，还不做事的假命令不列）、按键（`text/zh.json` 的 `help.keys`）。放不下时照滚到哪露一截。
+//! 两段：命令（照 `commands.json`，这个会话不认的、应急模式没有的不列，同命令列表）、按键（`text/zh.json` 的 `help.keys`）。放不下时照滚到哪露一截。
 
 use crate::config::texts;
 use ratatui::style::{Modifier, Style};
@@ -8,6 +8,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::panel::Chrome;
 use super::rows::clip;
+use crate::commands::Spec;
 use crate::config::Config;
 use crate::theme;
 
@@ -28,32 +29,34 @@ texts! {
     }
 }
 
-/// 框（标题、提示）和从第 `scroll` 行起露出来的最多 `max` 行。
+/// 框（标题、提示）和从第 `scroll` 行起露出来的最多 `max` 行。命令只列 `offered` 认的（这个会话、这一档能用的）。
 pub fn lines(
     config: &Config,
+    offered: &dyn Fn(&Spec) -> bool,
     width: u16,
     scroll: usize,
     max: usize,
 ) -> (Chrome, Vec<Line<'static>>) {
     let texts = &config.text().help;
     let chrome = Chrome::new(&texts.title, Vec::new()).hint(&texts.hint);
-    let all = rows(config, width);
+    let all = rows(config, offered, width);
     let start = scroll.min(all.len().saturating_sub(max));
     (chrome, all.into_iter().skip(start).take(max).collect())
 }
 
 /// `width` 宽时一共几行：按键归帮助框时照它算滚到头（说明折行了，行数跟着宽度变）。
-pub fn count(config: &Config, width: u16) -> usize {
-    rows(config, width).len()
+pub fn count(config: &Config, offered: &dyn Fn(&Spec) -> bool, width: u16) -> usize {
+    rows(config, offered, width).len()
 }
 
 /// 全部的行：段名，一条一行（左边一列对齐，右边暗色的说明，放不下折到下一行）。
-fn rows(config: &Config, width: u16) -> Vec<Line<'static>> {
+fn rows(config: &Config, offered: &dyn Fn(&Spec) -> bool, width: u16) -> Vec<Line<'static>> {
     let texts = &config.text().help;
     // 写了参数提示的跟在名字后面。给了几种写法的（`usage`，Miyu 核心 O-6 四补：`/loop` 三种）一行一种（2026-10-17 项目主人定）。
     let commands: Vec<(String, String)> = config
         .commands
         .all()
+        .filter(|c| offered(c))
         .flat_map(|c| {
             if !c.usage.is_empty() {
                 return c.usage.clone();
@@ -123,7 +126,7 @@ mod tests {
     fn help_lists_real_commands_then_keys_and_scrolls() {
         // 2026-09-30 项目主人定：在输入框上面开一个框，命令和按键两段。
         let config = Config::builtin().unwrap();
-        let (chrome, rows) = lines(&config, 70, 0, usize::MAX);
+        let (chrome, rows) = lines(&config, &|_| true, 70, 0, usize::MAX);
         let title: String = chrome.title.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(title, "帮助");
         let text: Vec<String> = rows
@@ -146,14 +149,14 @@ mod tests {
                 .iter()
                 .any(|l| l.contains("Ctrl+A") && l.contains("回到输入框开头"))
         );
-        assert_eq!(rows.len(), count(&config, 70));
+        assert_eq!(rows.len(), count(&config, &|_| true, 70));
         // 说明放不下折到下一行，不截（2026-09-30 实测：Ctrl+C、Esc Esc 两条被截成「…」）。
-        let (_, narrow) = lines(&config, 50, 0, usize::MAX);
+        let (_, narrow) = lines(&config, &|_| true, 50, 0, usize::MAX);
         assert!(!narrow.iter().any(|l| l.to_string().contains('…')), "不截");
         // 滚：露出来的从第 3 行起；滚过头停在最后一屏。
-        let (_, some) = lines(&config, 70, 2, 5);
+        let (_, some) = lines(&config, &|_| true, 70, 2, 5);
         assert_eq!(some[0].to_string(), rows[2].to_string());
-        let (_, end) = lines(&config, 70, 999, 5);
+        let (_, end) = lines(&config, &|_| true, 70, 999, 5);
         assert_eq!(
             end.last().unwrap().to_string(),
             rows.last().unwrap().to_string()

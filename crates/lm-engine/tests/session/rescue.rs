@@ -271,3 +271,44 @@ async fn a_command_that_ends_before_its_call_is_recorded_still_wakes_her() {
     );
     stop(&handle).await;
 }
+
+/// 循环和定时触发只是会话里的一个定时器：应急模式的会话照样开、到点照样开一轮、照样停，场地里一个文件、一个目录都不多。
+/// 工具面上有 `schedule_wakeup` 才认 `/loop`（主程序的全屏界面带上它）。不真等：到点前把 tokio 的钟拨过去。
+#[tokio::test]
+async fn a_loop_in_a_rescue_session_fires_on_time_and_writes_nothing() {
+    let home = Home::outside_temp();
+    let before = tree(&home.scratch.0);
+    let script = Script::new([Play::Says("第一次。"), Play::Says("第二次。")]);
+    let tools: Vec<Arc<dyn Tool>> = lm_engine::schedule::tools().expect("读得出");
+    let handle = rescued_with(&home, &script, Catalog::new(tools).expect("合写法")).await;
+    assert!(handle.loops(), "工具面上有 schedule_wakeup：认 /loop");
+    let mut pushes = watch(&handle).await;
+    within(
+        "开循环",
+        handle.start_loop(Some(60), "看一下磁盘".to_string()),
+    )
+    .await
+    .expect("会话在跑");
+    until_turn_ends(&mut pushes).await;
+    assert_eq!(tree(&home.scratch.0), before, "开着循环时一个都不多");
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(61)).await;
+    tokio::time::resume();
+    until_turn_ends(&mut pushes).await;
+    assert_eq!(script.requests().len(), 2, "到点又开了一轮");
+    let woke = format!("{:?}", script.requests().last().expect("发过请求").1);
+    assert!(woke.contains("看一下磁盘"), "到点交进来的是那句话：{woke}");
+    assert_eq!(
+        tree(&home.scratch.0),
+        before,
+        "到点跑了一轮以后也一个都不多"
+    );
+    let stopped = within("停循环", handle.stop_loop())
+        .await
+        .expect("会话在跑");
+    assert!(stopped, "停掉了一个");
+    assert_eq!(handle.looping(), None);
+    stop(&handle).await;
+    assert_eq!(tree(&home.scratch.0), before, "停下以后也一个都不多");
+    assert!(!home.root.data.exists(), "数据那一处没建");
+}

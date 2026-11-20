@@ -3,7 +3,8 @@
 //! 模型目录在后台读（`lm_engine::models::begin`），会话造好、读完目录以前的请求由路由等着。程序不带目录（LM-9）：读的是缓存
 //! 里取来的那一份，缓存里没有的目录是空的。开会话、打开旧会话时（第一次发话要算限额的时候）接上后台取、更新
 //! （[`Ready::want_catalog`]，`models::follow`）：缓存里没有、旧过 `every` 的在后台取，取到了换上，开着的会话下一个回合用上。
-//! 不在起来时取；配好的几家都在本机的不取（目录帮不上）；应急模式、无人值守的一次运行（`litemiyu ask`）不取。
+//! 不在起来时取；配好的几家都在本机的不取（目录帮不上）；应急模式、无人值守的一次运行（`litemiyu ask`）不取。应急模式
+//! 只读缓存里现成的那一份（`rescue.rs`）。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -71,14 +72,14 @@ mod rescue;
 
 impl Ready {
     /// 造好：数据放哪照 `LITEMIYU_HOME`、XDG 的环境变量，配置照那里的 `config.toml`、`secrets.toml`。应急模式（`rescue`
-    /// 备好了的）照备好的造（`rescue.rs`）。
+    /// 备好了的）照备好的造（`rescue.rs`），`unattended`（没人看着的一次运行）只有它看。
     ///
     /// # Errors
     ///
     /// 找不到家目录、配置读不了、出厂的档案和工具的字读不进来：一句给人看的原因。
-    pub fn new(rescue: Option<crate::rescue::Prepared>) -> Result<Self, String> {
+    pub fn new(rescue: Option<crate::rescue::Prepared>, unattended: bool) -> Result<Self, String> {
         if let Some(prepared) = rescue {
-            return Self::rescued(prepared);
+            return Self::rescued(prepared, unattended);
         }
         let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
         let paths_cache = paths.model_cache();
@@ -162,12 +163,18 @@ impl Ready {
         self.ignored.take()
     }
 
-    /// 在终端所在的目录开一个新会话，造它的命令编号是 `command`；`bare` 是开哪一档（`None` 照配置的默认）。
+    /// 在终端所在的目录开一个新会话，造它的命令编号是 `command`；`bare` 是开哪一档（`None` 照配置的默认）；`model` 是用
+    /// 哪个模型（应急模式下 `/model` 选了的；`None` 照配置的 `models.chat`）。
     ///
     /// # Errors
     ///
     /// 会话的目录建不了、日志写不进：会话那边的原话。
-    pub async fn create(&self, command: CommandId, bare: Option<bool>) -> Result<Handle, String> {
+    pub async fn create(
+        &self,
+        command: CommandId,
+        bare: Option<bool>,
+        model: Option<String>,
+    ) -> Result<Handle, String> {
         let now = now().ok_or("the system clock is out of range")?;
         let cwd = std::env::current_dir()
             .map(|dir| dir.to_string_lossy().into_owned())
@@ -191,7 +198,7 @@ impl Ready {
             tools: Arc::clone(&self.tools),
             home: self.home.as_deref(),
             configs: self.configs.clone(),
-            model: None,
+            model,
             no_tools,
         };
         let created = match self.rescue {
@@ -275,6 +282,11 @@ impl Ready {
                 None => NotLoaded::Failed(error.to_string()),
             }
         })
+    }
+
+    /// 是不是应急模式：`/model` 选的不写配置（`models.rs` 的 `chat_default`）。
+    pub fn is_rescue(&self) -> bool {
+        self.rescue
     }
 
     /// 数据放哪。

@@ -153,8 +153,11 @@ fn run() -> io::Result<ExitCode> {
             started.prepared.rescued.unreadable.clone(),
             started.prepared.keyless,
         );
+        // 应急模式用哪个模型（环境变量、命令行给的，没给的是配置里的 `models.chat`）：还没开会话时底栏照它写。
+        let chat =
+            lm_kernel::models::provider::chat(&started.prepared.rescued.loaded.resolved.values());
         core.rescue(started.prepared);
-        (started.words, notes)
+        (started.words, notes, chat)
     });
     let mut app = App::new(config, core);
     // 一格几个像素：拖滚动条按像素报鼠标时换回格子用（`pixel_mouse.rs`）。
@@ -171,13 +174,14 @@ fn run() -> io::Result<ExitCode> {
     };
     app.typing.input.keep_history(input::Saved::at(history));
     // 还没开会话时底栏写默认的聊天模型：照上面已经读进来的 `config.toml`（`settings/startup.rs`），不为它起引擎线程、不读
-    // 模型目录（Miyu 终端连上核心时要 `models.chat`，`app/effort.rs::chat_configured`）。应急模式照它自己的。
+    // 模型目录（Miyu 终端连上核心时要 `models.chat`，`app/effort.rs::chat_configured`）。应急模式照它备好的那一个。
     if rescue.is_none() {
         app.chat_configured(startup.chat.clone());
     }
-    if let Some((words, (unreadable, keyless))) = rescue {
+    if let Some((words, (unreadable, keyless), chat)) = rescue {
         // 应急模式不进配置界面：配置要写盘；没配置也照环境变量给的说话。
         app.enter_rescue(words, unreadable.as_deref(), keyless);
+        app.chat_configured(chat);
     } else if start.config {
         // `litemiyu config`：直接进配置界面，主菜单按 Esc 退出程序（设计第五节第 13 条）。
         app.open_settings(settings::Outcome::Quit);

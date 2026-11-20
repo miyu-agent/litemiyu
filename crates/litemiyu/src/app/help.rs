@@ -47,7 +47,11 @@ impl App {
 
     /// 滚到第 `to` 行起，滚过头停在最后一屏。
     fn scroll_help(&mut self, to: usize) {
-        let total = crate::ui::help::count(&self.config, self.screen.areas.menu_text.width);
+        let total = crate::ui::help::count(
+            &self.config,
+            &|spec| self.offered(spec),
+            self.screen.areas.menu_text.width,
+        );
         let shown = self.screen.panel_rows.len().max(1);
         let scroll = to.min(total.saturating_sub(shown));
         self.boxes.panel = Some(Panel::Help { scroll });
