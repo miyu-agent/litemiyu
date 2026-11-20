@@ -16,6 +16,7 @@ use crate::kernel::id::{CallId, Seq, TurnId};
 use crate::kernel::origin::By;
 
 mod error;
+mod forked;
 mod jobs;
 mod peers;
 mod shape;

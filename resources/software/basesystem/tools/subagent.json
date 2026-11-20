@@ -1,5 +1,5 @@
 {
-  "description": "Start a subagent in a new session to do one task in the background. Its report arrives as a message when it finishes. It sees only the prompt, not this conversation.",
-  "parameters": {"type":"object","properties":{"description":{"type":"string","description":"Short title, 3 to 5 words."},"prompt":{"type":"string"}},"required":["description","prompt"]},
+  "description": "Start a subagent in a new session to do one task in the background. Its report arrives as a message when it finishes. Without fork it sees only the prompt, not this conversation.",
+  "parameters": {"type":"object","properties":{"description":{"type":"string","description":"Short title, 3 to 5 words."},"prompt":{"type":"string"},"fork":{"type":"boolean","description":"true: it continues from a copy of this conversation, with your model."}},"required":["description","prompt"]},
   "scope": "spawn"
 }

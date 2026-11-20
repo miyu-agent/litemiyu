@@ -123,7 +123,7 @@ pub(super) fn load(log: Vec<Event>) -> (Session, Vec<Action>) {
 pub(super) fn load_in_pieces(log: &[Event], size: usize) -> (Session, Vec<Action>) {
     let mut pieces = log.chunks(size).map(<[Event]>::to_vec);
     let first = pieces.next().unwrap_or_default();
-    let mut loader = Session::loader(session_id(), &first, policy().reports).unwrap();
+    let mut loader = Session::loader(session_id(), None, &first, policy().reports).unwrap();
     loader.feed(first).unwrap();
     for piece in pieces {
         loader.feed(piece).unwrap();
@@ -361,7 +361,8 @@ fn a_changed_report_cut_needs_the_whole_log() {
     logged.say(seen, "好");
     let mut other = policy();
     other.reports.chars += 1;
-    let loader = Session::loader(session_id(), &logged.log[..1], other.reports.clone()).unwrap();
+    let loader =
+        Session::loader(session_id(), None, &logged.log[..1], other.reports.clone()).unwrap();
     assert!(!loader.needs_whole(&other));
     assert!(loader.needs_whole(&policy()));
 }

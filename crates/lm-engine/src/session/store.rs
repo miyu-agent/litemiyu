@@ -183,7 +183,9 @@ impl ReadLog for LogDir {
     }
 }
 
+mod base;
 mod memory;
+pub(crate) use base::{Base, Based};
 pub(crate) use memory::MemoryLog;
 
 #[cfg(test)]

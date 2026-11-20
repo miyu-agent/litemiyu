@@ -12,6 +12,9 @@ pub(crate) struct PolicyKit {
     pub(crate) snapshot: Snapshot,
     /// 新快照存在这里。
     pub(crate) blobs: Blobs,
+    /// 冻住不换（fork 子代理，LM-18，同 Miyu）：快照一直是父会话那一份，请求的前缀才和父会话一样；回合开始不换 MCP 工具面、
+    /// 不换压缩触发线（执行器的目录照样换上新的，工具面上有的 MCP 工具照样调得了）。
+    pub(crate) frozen: bool,
 }
 
 impl Actor {

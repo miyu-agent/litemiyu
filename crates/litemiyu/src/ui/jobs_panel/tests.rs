@@ -17,6 +17,7 @@ fn start(job: &str) -> JobStart {
         agent: false,
         title: String::new(),
         session: None,
+        fork: false,
     }
 }
 

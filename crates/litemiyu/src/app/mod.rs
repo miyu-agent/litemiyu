@@ -144,8 +144,15 @@ impl App {
             && self.typing.focus == crate::focus::Focus::Input
     }
 
-    /// 处理一个终端事件。
+    /// 处理一个终端事件。`/jump` 回车以后在等（只留几屏时）：按键、粘贴先攒着，等完了照先后补办（`jump.rs` 的 `hold`）。
     pub fn handle(&mut self, event: Event) {
+        if let Some(event) = self.hold(event) {
+            self.handle_now(event);
+        }
+    }
+
+    /// 办一个终端事件：[`App::handle`] 不攒的，攒着补办的。
+    fn handle_now(&mut self, event: Event) {
         // 留到下一次按键的提示：按下（不算松开）就收掉，键照常办（办的时候弹了新提示的照弹）。
         if let Event::Key(key) = &event
             && key.kind != KeyEventKind::Release
@@ -267,6 +274,8 @@ impl App {
         self.drawer_tick();
         // 会话一时读不了：到点再试（`unread.rs`）。
         self.reread_due(Instant::now());
+        // 等的时候攒着的按键扣满了：不等了，补办（`jump.rs`）。
+        self.held_overdue(Instant::now());
         // 后台面板展开着在跑的命令：输出跟着读（`jobs.rs`）。
         self.advance_jobs();
         if let Some(open) = &mut self.settings {

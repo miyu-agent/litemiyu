@@ -9,14 +9,17 @@
 //! `session.created` 的 `model`。（原来她还能写池 `pool` 让子会话记 `@<池>`，LM-8 砍了模型池跟着没了：旧会话的快照里那一格
 //! 还在，她写了也照不写办，`basesystem/subagent.rs`。）
 //!
-//! Miyu 这里还有场所、人格、预设、记忆、知识库、脚本调工具、覆盖的说明、fork、只读、附件、显示图片、关起来的会话那些格，
+//! fork 子代理（LM-18，照 Miyu 施工 A-F 中，`agents.md`「fork 子代理」）：子会话从这次调用那一步分叉，接着父会话到那一步为止的
+//! 对话、用父会话的快照；fork 出来的不能再 fork（[`Agents::forked`]）。
+//!
+//! Miyu 这里还有场所、人格、预设、记忆、知识库、脚本调工具、覆盖的说明、只读、附件、显示图片、关起来的会话那些格，
 //! LiteMiyu 都没有（设计第二节「不要的」）。
 
 use std::sync::Arc;
 
 use crate::tool::AgentPort;
 use lm_kernel::kernel::event::{Effect, JobKind, JobStarted};
-use lm_kernel::kernel::id::{CommandId, JobId, SessionId};
+use lm_kernel::kernel::id::{CallId, CommandId, JobId, SessionId};
 use lm_kernel::kernel::origin::{By, Session};
 use lm_kernel::policy::JOB_DEPTH;
 
@@ -41,6 +44,8 @@ pub(crate) struct Agents {
     pub(crate) attended: bool,
     /// 回报的正文怎么截：快照里的（施工 7-4）。停掉子代理时交回的回报照它截，和子会话自己向上回报的一样。
     pub(crate) reports: lm_kernel::kernel::session::Reports,
+    /// 这个会话是 fork 子代理（LM-18，同 Miyu 施工 A-F 中）：它再 fork 的，工具照 `agent/no-fork.txt` 拒。
+    pub(crate) forked: bool,
 }
 
 impl Agents {
@@ -55,16 +60,18 @@ impl Agents {
         lineage.map_or(0, |lineage| lineage.depth)
     }
 
-    /// 交给一次调用的端口：编号从 `ids` 领，子会话在这一轮的工作目录 `cwd`、加进来的目录 `dirs` 里，模型照 `inherit`
-    /// （施工 8-8）。
+    /// 交给一次调用 `call` 的端口：编号从 `ids` 领，子会话在这一轮的工作目录 `cwd`、加进来的目录 `dirs` 里，模型照 `inherit`
+    /// （施工 8-8）。fork 子代理从这次调用那一步分叉（LM-18）。
     pub(crate) fn for_call(
         self: &Arc<Agents>,
         ids: Arc<JobIds>,
+        call: CallId,
         (cwd, dirs): (String, Vec<String>),
         inherit: Inherit,
     ) -> Arc<dyn AgentPort> {
         Arc::new(Spawner {
             agents: Arc::clone(self),
+            call,
             ids,
             cwd,
             dirs,

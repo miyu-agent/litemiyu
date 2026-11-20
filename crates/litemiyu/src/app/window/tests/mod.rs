@@ -118,10 +118,7 @@ pub(super) struct Ui {
 impl Ui {
     /// 打开这份会话：同打开旧会话，补发的推送一条条交给界面，再画稳。
     pub fn open(events: &[Event], keep: usize, width: u16, height: u16) -> Ui {
-        let mut app = App::new(
-            Config::builtin().expect("出厂的配置读得懂"),
-            Core::new(|_| true),
-        );
+        let mut app = App::new(Config::builtin().expect("出厂的配置读得懂"), Core::idle());
         app.media.keep_screens = keep;
         // 整份重排一帧排完：照时间分帧的话全留的那一份排几帧、视口跟着找几次全看机器快慢，没法逐格比。
         app.config.layout.relayout_budget_ms = 60_000;
@@ -143,6 +140,8 @@ impl Ui {
 
     /// 画一帧，交回正文那几行的字（去掉行尾空白；输入框里轮换的小贴士随机，不比）；画完照主循环放掉、要读回。
     pub fn draw(&mut self) -> Vec<String> {
+        // 同主循环：攒着的键先补办，再画（`main.rs`）。
+        self.app.release_held();
         let (width, height) = (self.width, self.height);
         let mut buffer = Buffer::empty(Rect::new(0, 0, width, height));
         crate::ui::draw(&mut crate::ui::Frame::new(&mut buffer), &mut self.app);
@@ -229,7 +228,8 @@ impl Ui {
         let mut screen = self.draw();
         for _ in 0..200 {
             let stale = self.app.media.row_cache.borrow().stale > 0;
-            if !self.serve() && !stale {
+            let held = self.app.talk.held.count() > 0;
+            if !self.serve() && !stale && !held {
                 return screen;
             }
             screen = self.draw();
@@ -420,6 +420,7 @@ fn a_selection_across_rows_shed_and_read_back_copies_the_same_text() {
 }
 
 mod child;
+mod held;
 mod jump;
 mod late;
 mod live;

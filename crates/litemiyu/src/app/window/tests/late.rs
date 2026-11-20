@@ -12,7 +12,7 @@ use super::{Ui, both, replayed, session};
 use crate::core::{Command, Update};
 
 /// 一对界面：全留的、只留几屏的，72×20。
-fn pair(events: &[lm_kernel::kernel::event::Event]) -> (Ui, Ui) {
+pub(super) fn pair(events: &[lm_kernel::kernel::event::Event]) -> (Ui, Ui) {
     (
         Ui::open(events, usize::MAX, 72, 20),
         Ui::open(events, super::super::SCREENS, 72, 20),
@@ -27,7 +27,7 @@ fn held(ui: &mut Ui, code: KeyCode, late: &mut Vec<Command>) {
 }
 
 /// 扣着的读回照要的先后交进去，画稳。
-fn release(ui: &mut Ui, late: &mut Vec<Command>) -> Vec<String> {
+pub(super) fn release(ui: &mut Ui, late: &mut Vec<Command>) -> Vec<String> {
     let pending = std::mem::take(&mut ui.app.talk.wanted);
     ui.app.talk.wanted = late.drain(..).chain(pending).collect();
     ui.settle()

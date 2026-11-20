@@ -170,6 +170,7 @@ mod tests {
                 agent,
                 title: String::new(),
                 session: agent.then(|| format!("s-{job}")),
+                fork: false,
             })
         };
         a.push(&started("j1.1", true), &human);

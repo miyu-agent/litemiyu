@@ -51,6 +51,7 @@ impl Session {
             busy: crate::kernel::waits::Busy::default(),
             shells: super::shell::Shells::default(),
             rested: None,
+            base_readable: false,
         }
     }
 }

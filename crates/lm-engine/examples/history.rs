@@ -5,7 +5,12 @@
 //! history make <数据根> <轮数> <窗口>   造会话，印出会话编号
 //! history load <数据根> <会话编号> <窗口>  载入，还掉空着的堆，印一行 `ready`（连同载入到能发话的毫秒），等标准输入关上再退
 //! history said <数据根> <会话编号>         载入，经真的路由向本进程里的假服务器说一句，闲下来以后同 `load` 印、等
+//! history forked <数据根> <轮数>           造会话说 N 轮，再先后派一个普通子代理、一个 fork 子代理，每一步闲下来印一行 PSS
 //! ```
+//!
+//! `forked` 量 LM-18 的 fork 子代理多占多少（只印不判）：主会话说完 N 轮闲下来、派完普通子代理报回来闲下来、派完 fork 子代理
+//! 报回来闲下来，各印一行 `stage=<哪一步> pss_kb=<本进程的 PSS> ms=<那一轮用了多久>`（PSS 照 `/proc/self/smaps_rollup`，先还掉空着
+//! 的堆）。工具目录是 `echo` 加上真的 `subagent`；子代理照剧本说一句就报回来。
 //!
 //! `said` 只印不判（内核线第三趟）：量长会话发过一句话、闲下来以后还留着多少（驱动的备忘录、有效历史放没放掉），红线 5 的判法
 //! 只认 `load` 那一档。假服务器是 `lm_engine::http::testkit` 的，在 127.0.0.1 上，照驱动的流样本回一句；窗口设成一亿 token，
@@ -80,6 +85,10 @@ async fn run() {
             load(Path::new(&args[2]), &args[3], window).await;
         }
         Some("said") if args.len() == 4 => said(Path::new(&args[2]), &args[3]).await,
+        Some("forked") if args.len() == 4 => {
+            let turns: usize = args[3].parse().expect("轮数是个数");
+            forked(Path::new(&args[2]), turns).await;
+        }
         _ => {
             eprintln!(
                 "history make <数据根> <轮数> <窗口> | history load <数据根> <会话编号> <窗口> | history said <数据根> <会话编号>"
@@ -339,4 +348,154 @@ fn served(base_url: &str) -> (Routes, Configs) {
         idle: std::time::Duration::from_secs(60),
     };
     (routes, configs)
+}
+
+/// fork 的外壳里的一句（`core/jobs/fork-directive.txt`）：认得出是 fork 子代理的请求。
+const FORK: &str = "You are a fork of the agent above.";
+
+/// 普通子代理的 system 末尾那一段的开头（`core/jobs/subagent-venue.txt`）。
+const CHILD: &str = "You are a subagent, started by another session";
+
+/// `forked` 的剧本：子代理（普通的、fork 的）说一句就报；主会话照最后一句人话派、说。别的同 [`answer`]。
+fn forking(request: &Request) -> Play {
+    let everything = format!("{:?}", request.messages);
+    if request.system.contains(CHILD) || everything.contains(FORK) {
+        return Play::Says("Checked the order of the libraries: it is the second one.");
+    }
+    let last_user = request
+        .messages
+        .iter()
+        .rev()
+        .find_map(|message| match message {
+            Message::User { blocks } => Some(format!("{blocks:?}")),
+            _ => None,
+        });
+    let last_user = last_user.unwrap_or_default();
+    match request.messages.last() {
+        Some(Message::Tool { .. }) if !last_user.contains("subagent-report") => {
+            if everything.contains("PLAIN-NOW") || everything.contains("FORK-NOW") {
+                Play::Says("Sent it off.")
+            } else {
+                Play::Says(REPLY)
+            }
+        }
+        _ if last_user.contains("<subagent-report") => Play::Says("Got the report."),
+        _ if last_user.contains("PLAIN-NOW") => Play::calls(&[(
+            "subagent",
+            r#"{"description":"Check order","prompt":"Check the order of the static libraries."}"#,
+        )]),
+        _ if last_user.contains("FORK-NOW") => Play::calls(&[(
+            "subagent",
+            r#"{"description":"Check order","prompt":"Check the order of the static libraries.","fork":true}"#,
+        )]),
+        _ => answer(request),
+    }
+}
+
+/// 本进程这时的 PSS，kB（先还掉空着的堆）。
+async fn pss() -> u64 {
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    tokio::task::spawn_blocking(|| {
+        lm_heap::trim();
+        let rollup = std::fs::read_to_string("/proc/self/smaps_rollup").unwrap_or_default();
+        rollup
+            .lines()
+            .find_map(|line| line.strip_prefix("Pss:"))
+            .and_then(|rest| rest.trim().trim_end_matches("kB").trim().parse().ok())
+            .unwrap_or(0)
+    })
+    .await
+    .expect("阻塞线程跑完")
+}
+
+/// 见模块的说明。
+async fn forked(root: &Path, turns: usize) {
+    let paths = Paths::under(root);
+    let home = home(root);
+    let script = Script::new([]).answers(forking).sized().window(100_000_000);
+    let mut all: Vec<Arc<dyn Tool>> = lm_engine::basesystem::tools()
+        .expect("出厂的字读得出来")
+        .into_iter()
+        .filter(|tool| tool.spec().name == "subagent")
+        .collect();
+    all.push(Fake::new("echo", Access::Read, Act::Echo));
+    let tools = Arc::new(Catalog::new(all).expect("合写法"));
+    let handle = create(Create {
+        root: &paths,
+        id: new_id(now()),
+        attended: false,
+        oneshot: false,
+        environment: environment(),
+        command: command(0),
+        by: by(),
+        models: &script,
+        tools,
+        home: Some(&home),
+        configs: configs(),
+        model: None,
+        no_tools: false,
+    })
+    .await
+    .expect("造得出会话");
+    let mut pushes = handle.subscribe().await.expect("订阅得上");
+    let say = |text: &str| Command::Send {
+        blocks: vec![Block::Text(Text {
+            text: text.to_string(),
+        })],
+        urgent: false,
+    };
+    for n in 1..=turns {
+        handle
+            .command(command(n), by(), say(SAYS))
+            .await
+            .expect("会话在跑");
+        until_turn_ends(&mut pushes).await;
+    }
+    handle.current().await.expect("会话在跑");
+    println!("stage=talked turns={turns} pss_kb={}", pss().await);
+    for (n, (stage, text)) in [("plain", "PLAIN-NOW"), ("fork", "FORK-NOW")]
+        .into_iter()
+        .enumerate()
+    {
+        let began = std::time::Instant::now();
+        handle
+            .command(command(turns + 1 + n), by(), say(text))
+            .await
+            .expect("会话在跑");
+        // 派的那一轮说完、回报到了、回报以后的那一轮也说完（回报可能在派的那一轮里就到了）。
+        let mut sent = None;
+        let mut heard = false;
+        loop {
+            let next = pushes.next().await.expect("订阅没断");
+            let Pushed::Events(events) = &*next else {
+                continue;
+            };
+            for event in events.iter() {
+                match &event.body {
+                    Body::ChildReported(_) => heard = true,
+                    Body::TurnEnded(_) => {
+                        sent.get_or_insert(began.elapsed().as_secs_f64() * 1000.0);
+                    }
+                    _ => {}
+                }
+            }
+            if heard
+                && events
+                    .iter()
+                    .rev()
+                    .find(|event| matches!(event.body, Body::TurnEnded(_) | Body::ChildReported(_)))
+                    .is_some_and(|event| matches!(event.body, Body::TurnEnded(_)))
+            {
+                break;
+            }
+        }
+        let sent = sent.unwrap_or_default();
+        let reported = began.elapsed().as_secs_f64() * 1000.0;
+        handle.current().await.expect("会话在跑");
+        println!(
+            "stage={stage} pss_kb={} sent_ms={sent:.1} reported_ms={reported:.1}",
+            pss().await
+        );
+    }
+    handle.stop().await.expect("停得下");
 }

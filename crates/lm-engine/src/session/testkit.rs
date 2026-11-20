@@ -126,6 +126,8 @@ pub struct Script {
     grown: Arc<Mutex<u64>>,
     /// 剧本排完了照请求现回（L3 七：造一万轮的会话，摘要请求、工具结果回来、人说话各回各的）。没设的排完了 panic。
     answers: Option<fn(&Request) -> Play>,
+    /// 照请求现回的照样记请求（[`Script::recording`]，LM-18：要查子会话的请求体、轮数又少的测试用）。
+    recording: bool,
     /// 报的命中照请求里的字数算（字节数除以 4，L3 七）：用量跟着真的历史长、压完跟着短。没设的照 `cached`、`grows`。
     sized: bool,
     /// 换快照时交来的驱动的占位（施工 P-1 三补），照先后。
@@ -161,6 +163,7 @@ impl Script {
             grows: 0,
             grown: Arc::default(),
             answers: None,
+            recording: false,
             sized: false,
         }
     }
@@ -186,6 +189,13 @@ impl Script {
     #[must_use]
     pub fn answers(mut self, answer: fn(&Request) -> Play) -> Script {
         self.answers = Some(answer);
+        self
+    }
+
+    /// 同一份剧本，照 `answer` 现回的照样记请求（LM-18）：轮数少、要查请求体（子会话的第一轮带着什么）的测试用。
+    #[must_use]
+    pub fn recording(mut self) -> Script {
+        self.recording = true;
         self
     }
 
@@ -321,7 +331,7 @@ impl ModelPort for Script {
                 cached = (bytes(&request) / 4).saturating_sub(70);
             }
             // 现回的不记请求（[`Script::answers`]）：几千轮的会话，每次请求都带着整段历史，记下来是几个 GB。
-            let asked = if self.answers.is_some() {
+            let asked = if self.answers.is_some() && !self.recording {
                 0
             } else {
                 let mut requests = lock(&self.requests);

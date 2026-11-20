@@ -191,6 +191,8 @@ fn run() -> io::Result<ExitCode> {
     }
     let mut pointer = pointer::Pointer::default();
     while !app.quit {
+        // `/jump` 跳到放掉的段里的一句，上一帧跳过去了：等的时候攒着的键接着办，办完画这一帧（`app/jump.rs`）。
+        app.release_held();
         // 开好的旧会话还在收补发：不画，屏幕上照旧是上一帧，补完了当场画（`app/sessions.rs` 的 `Opening`）。
         if !app.holding() {
             frame(&mut screen, &mut app, &mut pointer)?;

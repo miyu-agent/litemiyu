@@ -155,7 +155,7 @@ async fn the_data_root_is_refused() {
     assert_eq!(result.status, ToolStatus::Denied);
     assert!(by_permissions(&by), "{by:?}");
     assert!(
-        text(&result).contains("inside Miyu's own data"),
+        text(&result).contains("inside LiteMiyu's own data"),
         "{}",
         text(&result)
     );

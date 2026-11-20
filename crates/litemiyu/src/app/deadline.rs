@@ -29,6 +29,9 @@ impl App {
             .chain(self.agents_deadline())
             // 会话一时读不了：到点再试（`unread.rs`）。
             .chain(self.reread_deadline())
+            // 等的时候攒着按键：扣满了不等（`jump.rs`）。
+            .chain(self.talk.held.since.map(|since| since + super::jump::HOLD))
+            .chain(self.held_due())
             // `/jump` 跳到的那一条亮着：到点醒来，画回原来的颜色（「跳到说过的话」第 3 条）。
             .chain(self.screen.view.flash.map(|(_, until)| until))
             // 整份重排没排完的：下一帧接着排（蓝图「正文」第 8 条）。

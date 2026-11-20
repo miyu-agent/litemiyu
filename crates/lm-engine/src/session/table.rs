@@ -22,7 +22,7 @@ use crate::session::current::{Carried, Tally};
 use crate::session::handle::{Handle, WeakHandle};
 use crate::session::jobs::{Jobs, Peek, peek};
 use crate::session::port::Models;
-use crate::session::spawn::{Child, Lineage, Pending, SessionPort};
+use crate::session::spawn::{Child, ForkChild, Lineage, Pending, SessionPort};
 use crate::store::paths::Paths;
 use crate::tool::Catalog;
 
@@ -223,6 +223,26 @@ impl Table {
         Ok(id)
     }
 
+    /// 照 `child` 造一个 fork 子代理（LM-18），放进表里。父会话已经不在了的不造（同 [`Table::spawn`]）。拿着表的锁写头几条、
+    /// 载入，同一时刻别的要它的等着。
+    async fn fork(self: &Arc<Table>, child: ForkChild) -> Result<SessionId, String> {
+        let parent = &child.lineage.parent;
+        let main_alive = self
+            .main
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|(id, weak)| id == parent && weak.upgrade().is_some());
+        let mut children = self.children.lock().await;
+        if !main_alive && !children.contains_key(parent) {
+            return Err("the parent session is gone".to_string());
+        }
+        let handle = crate::session::open::fork_child(self, child).await?;
+        let id = handle.id().clone();
+        children.insert(id.clone(), handle);
+        Ok(id)
+    }
+
     /// 造子会话、载入子会话要的。
     pub(crate) fn kit(&self) -> &Kit {
         &self.kit
@@ -259,6 +279,10 @@ impl Port {
 impl SessionPort for Port {
     fn create(&self, child: Child) -> Pending<'_, Result<SessionId, String>> {
         Box::pin(async move { self.table()?.spawn(child).await })
+    }
+
+    fn fork(&self, child: ForkChild) -> Pending<'_, Result<SessionId, String>> {
+        Box::pin(async move { self.table()?.fork(child).await })
     }
 
     fn open(&self, session: SessionId) -> Pending<'_, Result<(), String>> {

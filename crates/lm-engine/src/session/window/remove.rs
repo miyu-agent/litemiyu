@@ -1,5 +1,9 @@
 //! 删一个主会话（`/delete`、`/sessions` 里 `Ctrl+D`）：拿着会话的锁直接删掉整个会话目录（LM-2 砍了
 //! 回收站，删了找不回）。别的窗口开着的不删。删目录以前连它的门铃（LM-4）一起删：开着时关窗会删，这里删的是崩溃留下的。
+//!
+//! 它派出去的子会话一起删（LM-18，照 Miyu `session.delete`「它派出去的子会话一起删」）：照每个会话日志的第一条
+//! （`session.created` 的 `parent`）一层层往下认，从最深的删起，它自己最后：半路出错的，它还在原处、列得出来，再删一次接着删完。
+//! fork 子代理的底子在父会话的日志里，父会话没了它也读不回来，所以不能留。原来只删主会话自己的目录，子会话的目录留在数据目录里。
 
 use lm_kernel::kernel::id::SessionId;
 
@@ -43,9 +47,56 @@ pub fn remove(paths: &Paths, id: &str) -> Result<(), NotRemoved> {
         Claimed::Elsewhere => NotRemoved::Open,
         Claimed::Disk(error) => NotRemoved::Failed(error.to_string()),
     })?;
-    // 门铃的名字照会话目录算：目录还在的时候删。
-    crate::session::peers::forget(&paths.bell, &dir);
-    let removed = std::fs::remove_dir_all(&dir).map_err(|why| NotRemoved::Failed(why.to_string()));
+    let family = family(paths, &id);
+    let removed = family
+        .iter()
+        .rev()
+        .try_for_each(
+            |child| match std::fs::remove_dir_all(paths.session(child)) {
+                Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
+                    Err(NotRemoved::Failed(why.to_string()))
+                }
+                _ => Ok(()),
+            },
+        )
+        .and_then(|()| {
+            // 门铃的名字照会话目录算：目录还在的时候删。
+            crate::session::peers::forget(&paths.bell, &dir);
+            std::fs::remove_dir_all(&dir).map_err(|why| NotRemoved::Failed(why.to_string()))
+        });
     drop(claim);
     removed
+}
+
+/// 会话 `id` 派出去的子会话，连子会话再派的，照层数从浅到深：数据目录里每个会话日志的第一条只读一次，认 `parent`。读不了的
+/// 目录、第一条读不懂的不算。
+fn family(paths: &Paths, id: &SessionId) -> Vec<SessionId> {
+    let Ok(entries) = std::fs::read_dir(paths.sessions()) else {
+        return Vec::new();
+    };
+    let parents: Vec<(SessionId, SessionId)> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let child = SessionId::parse(entry.file_name().to_str()?).ok()?;
+            let first = crate::store::log::first_event(&entry.path()).ok()?;
+            match first.body {
+                lm_kernel::kernel::event::Body::SessionCreated(created) => {
+                    Some((child, created.parent?))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    let mut family: Vec<SessionId> = Vec::new();
+    let mut layer = vec![id.clone()];
+    while !layer.is_empty() {
+        let next: Vec<SessionId> = parents
+            .iter()
+            .filter(|(child, parent)| layer.contains(parent) && !family.contains(child))
+            .map(|(child, _)| child.clone())
+            .collect();
+        family.extend(next.iter().cloned());
+        layer = next;
+    }
+    family
 }

@@ -23,6 +23,8 @@ pub struct Stage {
     pub(super) session: Session,
     /// 会话的编号（[`super::SESSION`]、子会话是 [`super::CHILD_SESSION`]）：重启、崩了再载入时照它载入。
     pub(super) id: SessionId,
+    /// 分叉出来的替身的底子：父会话「磁盘」上到分叉点为止的（施工 C-8 下，`opening.rs`）。崩了照它载入。
+    pub(super) base: Option<Vec<Event>>,
     /// 造策略的办法：重启、崩了再载入时各造一份（策略里有组装器，不能复制）。
     pub(super) policy: Box<dyn Fn() -> Policy>,
     pub(super) environment: Environment,

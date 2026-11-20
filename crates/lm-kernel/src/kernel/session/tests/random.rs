@@ -51,6 +51,7 @@ mod asking;
 mod compacting;
 mod configuring;
 mod endings;
+mod forking;
 mod kinds;
 mod naming;
 mod paths;

@@ -14,6 +14,7 @@
     "tool-results/question-unattended": "No one to answer",
     "tool-results/restarted": "Interrupted by restart",
     "tool-results/unavailable": "Unavailable",
+    "tool-results/forked": "Forked",
     "tool-results/uninstalled": "Uninstalled",
     "tool-results/timed-out": "Timed out ({seconds} s)",
     "tool-results/crashed": "Internal error, may be partly done",

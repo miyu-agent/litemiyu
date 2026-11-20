@@ -29,6 +29,7 @@ use crate::tool::{Log, Seen};
 mod error;
 mod face;
 mod family;
+mod fork;
 mod load;
 mod scan;
 mod setup;
@@ -39,7 +40,7 @@ pub(crate) use told::told;
 
 pub use error::{CreateError, LoadError};
 pub(crate) use face::entry;
-pub(crate) use family::{create_child, load_child};
+pub(crate) use family::{create_child, fork_child, load_child};
 pub use load::{load, load_placed};
 pub use scan::Placed;
 pub use setup::{Create, Load, Pick, Workplace};
@@ -245,7 +246,7 @@ async fn created(
     };
     // 监视的命令攒批的截法（施工 MN-1 上）。
     let cut = policy.reports.for_lines();
-    let agents = family::agents(&family, &id, attended, policy.reports.clone());
+    let agents = family::agents(&family, &id, (attended, false), policy.reports.clone());
     let reporter = family::reporter(&family, &id, Some(&command));
     let job_ids = family::job_ids(&family, Some(&command), 0);
     let (mut session, first) = Session::create(
@@ -318,6 +319,7 @@ async fn created(
     actor.set_kit(crate::session::actor::PolicyKit {
         snapshot: snapshot.clone(),
         blobs: mcp_blobs,
+        frozen: false,
     });
     actor.set_reporter(reporter);
     actor.set_agents(family.agents.clone());

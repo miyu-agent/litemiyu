@@ -25,16 +25,26 @@ impl Session {
     }
 
     /// 收成槽：歇着的才收，有效历史里的整条事件拿出来交回、只记序号；有没有能压的先算好记下。交回的由执行器放（在哪个线程放
-    /// 由它定：`history/shelf.rs` 说了为什么）。不在歇着、已经收着、分叉出来的底子还在有效历史里（在父会话的日志里，读不回）的
-    /// 不收，交回没有。
+    /// 由它定：`history/shelf.rs` 说了为什么）。不在歇着、已经收着、分叉出来的底子还在有效历史里（在父会话的日志里）而执行器
+    /// 读不回底子（没有 [`Session::set_base_readable`]）的不收，交回没有。
     pub fn shelve(&mut self) -> Option<Vec<Event>> {
         if !self.resting() || self.shelved().is_some() {
             return None;
         }
         let compactable = self.compactable();
-        let taken = self.history.shelve(self.ledger.first())?;
+        let first = match self.base_readable {
+            true => Seq::FIRST,
+            false => self.ledger.first(),
+        };
+        let taken = self.history.shelve(first)?;
         self.rested = Some(compactable);
         Some(taken)
+    }
+
+    /// 执行器读回日志时连分叉出来的底子一起读（LM-18：fork 子代理的日志读回时先接父会话到分叉点为止的那一截）：歇着时底子还在
+    /// 有效历史里的也收，放回时照 [`Session::shelved`] 从底子里那一条读起。没设的照旧不收。
+    pub fn set_base_readable(&mut self, readable: bool) {
+        self.base_readable = readable;
     }
 
     /// 收着的：要从日志的第几条读起，读到末尾，交给 [`Session::unshelve`]。没收着的没有。

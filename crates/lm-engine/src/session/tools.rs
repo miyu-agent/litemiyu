@@ -231,10 +231,10 @@ impl Tools {
             inherit,
         } = dispatch;
         // 派子代理、留言的端口照这一轮的目录抄（施工 7-5、7-7）。
-        let agents = self
-            .agents
-            .as_ref()
-            .map(|agents| agents.for_call(Arc::clone(&self.job_ids), (cwd.clone(), dirs), inherit));
+        let agents = self.agents.as_ref().map(|agents| {
+            let ids = Arc::clone(&self.job_ids);
+            agents.for_call(ids, call_id, (cwd.clone(), dirs), inherit)
+        });
         let outbox = self.outbox();
         let messages = self.agents.as_ref().map(|agents| {
             crate::session::messages::for_call(agents, call_id, subagents, outbox.clone())

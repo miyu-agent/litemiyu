@@ -189,6 +189,17 @@ impl Core {
         }
     }
 
+    /// 测试用：不起引擎线程，发的命令都丢掉（单元测试经 `App::handle` 按键时会先 `warm`：起的是真的引擎线程，万一发出去
+    /// 一句话，它照真实的数据目录开会话）。
+    #[cfg(test)]
+    pub fn idle() -> Self {
+        let core = Self::new(|_| true);
+        let (commands, _dropped) = mpsc::unbounded_channel();
+        let (_ends, ended) = std::sync::mpsc::channel::<()>();
+        assert!(core.commands.set((commands, ended)).is_ok(), "新造的还没起");
+        core
+    }
+
     /// 应急模式（`litemiyu --rescue`）：引擎照备好的配置开不落盘的会话。同 [`Core::first_bare`]，起来时就要定。
     pub fn rescue(&mut self, prepared: crate::rescue::Prepared) {
         self.rescue.set(Some(prepared));

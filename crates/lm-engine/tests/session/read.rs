@@ -83,7 +83,7 @@ async fn she_reads_a_file_in_the_workspace_and_hears_it() {
             .find(|result| text(&result.blocks).contains(said))
             .unwrap_or_else(|| panic!("有一条含「{said}」：{results:?}"))
     };
-    let (inside, outside, data) = (find("hello"), find("far"), find("Miyu's own data"));
+    let (inside, outside, data) = (find("hello"), find("far"), find("LiteMiyu's own data"));
     assert_eq!(inside.status, ToolStatus::Ok);
     assert_eq!(text(&inside.blocks), "1\thello\n");
     // 工具交的给人看的说法，经会话记进日志（施工 4-5 上）；数据根里被拒的，是权限策略写的那一句的说法。

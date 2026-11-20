@@ -14,6 +14,7 @@
     "tool-results/question-unattended": "无人回答",
     "tool-results/restarted": "重启中断",
     "tool-results/unavailable": "不可用",
+    "tool-results/forked": "已分叉",
     "tool-results/uninstalled": "已卸载",
     "tool-results/timed-out": "超时（{seconds} 秒）",
     "tool-results/crashed": "内部错误，可能已部分执行",

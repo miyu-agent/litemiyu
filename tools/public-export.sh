@@ -32,6 +32,10 @@ PUBLIC=(
   crates
   docs/00-设计.md
   docs/发布.md
+  docs/README.md        # 用户文档的入口
+  docs/zh               # 用户文档（中文，正本）
+  docs/en               # 用户文档（英文，和中文一一对应）
+  docs/assets           # 用户文档和 README 用的截图
   docs/designs          # 测试读的样例数据（事件、请求、回答的流），不是文档
   packaging
   resources

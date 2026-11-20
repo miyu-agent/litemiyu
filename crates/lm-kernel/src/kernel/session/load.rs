@@ -11,6 +11,7 @@ use std::fmt;
 
 use super::Session;
 use super::action::Action;
+use super::fork::{self, BaseFeed};
 use super::jobs::{Arrived, Waker};
 use super::meta::Meta;
 use super::policy::Policy;
@@ -117,7 +118,42 @@ impl Session {
         policy: Policy,
         environment: Environment,
     ) -> Result<(Session, Vec<Action>), LoadError> {
-        let mut loader = Session::loader(session, &events, policy.reports.clone())?;
+        Session::load_on(session, None, events, at, policy, environment)
+    }
+
+    /// 载入分叉出来的会话（施工 C-8 上，`session/fork.md`）：`base` 是父会话的日志里到分叉点为止的事件（照原样、从第 1 条
+    /// 起），`events` 是它自己的日志（第一条是带 `forked` 的 `session.created`）。底子只进有效历史：它的压缩、撤销、撤回照
+    /// 父会话自己的账本算；回合、任务、审批这些只照自己的日志。别的同 [`Session::load`]。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Session::load`]；底子过不了父会话的账本、和自己的日志接不上（第一条不是分叉点的下一条）的，也是 [`LoadError::Broken`]。
+    pub fn load_forked(
+        session: SessionId,
+        base: &[Event],
+        events: Vec<Event>,
+        at: Timestamp,
+        policy: Policy,
+        environment: Environment,
+    ) -> Result<(Session, Vec<Action>), LoadError> {
+        Session::load_on(session, Some(base), events, at, policy, environment)
+    }
+
+    /// [`Session::load`]、[`Session::load_forked`] 共用的：`base` 是分叉出来的会话的底子，别的没有。整份当一块喂
+    /// （[`Loader`]；底子也当一块喂，[`BaseFeed::of`]）。
+    fn load_on(
+        session: SessionId,
+        base: Option<&[Event]>,
+        events: Vec<Event>,
+        at: Timestamp,
+        policy: Policy,
+        environment: Environment,
+    ) -> Result<(Session, Vec<Action>), LoadError> {
+        let base = match base {
+            Some(base) => Some(BaseFeed::of(&fork::forked_of(&events)?.from, base)),
+            None => None,
+        };
+        let mut loader = Session::loader(session, base, &events, policy.reports.clone())?;
         loader.feed(events)?;
         loader.finish(at, policy, environment)
     }
@@ -139,6 +175,7 @@ impl Loader {
         let from = self.from();
         let Loader {
             session,
+            parent,
             ledger,
             mut replay,
             mut duty,
@@ -156,7 +193,7 @@ impl Loader {
         if duty.due(&ledger) {
             duty.take(&policy.reports);
         }
-        // 那一段以前的只记派出去的任务：回报的标题、派它的那一轮撤掉了没有照它（施工 7-2）。
+        // 那一段以前的只记派出去的任务：回报的标题、派它的那一轮撤掉了没有照它（施工 7-2）。分叉出来的先收底子（施工 C-8 上）。
         for event in kept {
             match event.seq >= from {
                 true => history.append(event),
@@ -172,6 +209,10 @@ impl Loader {
             recent.insert(id, seqs);
         }
         let history = history.owned_by(session.clone());
+        let history = match parent {
+            Some((parent, _)) => history.forked_from(parent),
+            None => history,
+        };
         let mut session = Session {
             history,
             id: session,
@@ -205,6 +246,7 @@ impl Loader {
             chain,
             shells,
             rested: None,
+            base_readable: false,
         };
         let mut actions: Vec<Action> = session.recall().into_iter().collect();
         // 最后报的那一份再交一次（施工 7-6）：送到一半崩了的不漏，父会话照命令编号认出重的，不重。

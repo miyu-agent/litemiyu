@@ -1,13 +1,13 @@
-//! 造替身（施工 7-5 从 `stage.rs` 挪出来）：人开的会话、`miyu ask` 开的一次性会话、别的会话派出来的子会话、第一条带 `forked`
-//! 的旧日志（LM-2 删了分叉，照普通会话载入）；载入「磁盘」。
+//! 造替身（施工 7-5 从 `stage.rs` 挪出来）：人开的会话、`miyu ask` 开的一次性会话、别的会话派出来的子会话、分叉出来的会话
+//! （施工 C-8 下）；载入「磁盘」。
 
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
 use super::stage::Stage;
-use crate::kernel::event::{Body, Event, Forked, SessionCreated};
+use crate::kernel::event::{Event, Forked, SessionCreated};
 use crate::kernel::facts::Environment;
-use crate::kernel::id::{Seq, SessionId};
+use crate::kernel::id::SessionId;
 use crate::kernel::origin::By;
 use crate::kernel::session::{Action, LoadError, Policy, Session};
 use crate::kernel::time::Timestamp;
@@ -32,9 +32,8 @@ enum Opening {
     Oneshot,
     /// 这个会话派出来的子会话（施工 7-5）。
     Child(SessionId),
-    /// 第一条带 `forked`（从 [`SESSION`] 的第几条分出来、跑完几轮封存）的旧日志：LiteMiyu 不分叉，载入时照普通会话读、
-    /// 不读父会话。
-    Fork(Seq, Option<NonZeroU32>),
+    /// 从 [`SESSION`] 的日志分叉出来的（施工 C-8 下）：底子、跑完几轮封存。
+    Fork(Vec<Event>, Option<NonZeroU32>),
 }
 
 impl Stage {
@@ -81,13 +80,12 @@ impl Stage {
         Stage::created(policy, environment, now, Opening::Child(parent))
     }
 
-    /// 同上，造的是一份第一条带 `forked` 的旧日志（Miyu 分叉出来的会话；LM-2 删了分叉，这里只留「旧日志照普通会话读」）：
-    /// 分叉点是会话 [`SESSION`] 的日志 `base` 的最后一条，跑满 `seal_after` 轮封存，没有的不封；`session.created` 带 `forked`、
-    /// `parent`、`depth`，由 alice 记的，序号接着分叉点。照 [`Session::load`] 载入这一条，不读 `base`：有效历史里没有父会话的。
+    /// 同上，造的是从会话 [`SESSION`] 的日志 `base` 的最后一条分叉出来的子会话（施工 C-8 下）：跑满 `seal_after` 轮封存，
+    /// 没有的不封；由 alice 分叉，`session.created` 带 `forked`、`parent`、`depth`。崩了照 `base` 当底子载入。
     ///
     /// # Panics
     ///
-    /// `base` 是空的，或者这一条载入不了。
+    /// `base` 是空的，或者分叉不成（停在一轮当中）。
     pub fn forked(
         policy: impl Fn() -> Policy + 'static,
         environment: Environment,
@@ -99,20 +97,18 @@ impl Stage {
             policy,
             environment,
             now,
-            Opening::Fork(
-                base.last()
-                    .map(|event| event.seq)
-                    .unwrap_or_else(|| panic!("分叉点要有父会话的日志")),
-                seal_after,
-            ),
+            Opening::Fork(base.to_vec(), seal_after),
         )
     }
 
-    /// 照「磁盘」载入。
+    /// 照「磁盘」载入：分叉出来的照底子载入。
     pub(super) fn load(&self, at: Timestamp) -> Result<(Session, Vec<Action>), LoadError> {
         let (log, policy, environment) =
             (self.log.clone(), (self.policy)(), self.environment.clone());
-        Session::load(self.id.clone(), log, at, policy, environment)
+        match &self.base {
+            Some(base) => Session::load_forked(self.id.clone(), base, log, at, policy, environment),
+            None => Session::load(self.id.clone(), log, at, policy, environment),
+        }
     }
 
     fn created(
@@ -126,7 +122,7 @@ impl Stage {
         let mut created: SessionCreated =
             serde_json::from_str(CREATED).unwrap_or_else(|e| panic!("造会话的写法坏了：{e}"));
         let mut id = SESSION;
-        let mut first = None;
+        let mut base = None;
         match opening {
             Opening::Main => {}
             Opening::Oneshot => created.oneshot = true,
@@ -136,8 +132,10 @@ impl Stage {
                 by = By::Session(crate::kernel::origin::Session { id: parent });
                 id = CHILD_SESSION;
             }
-            Opening::Fork(upto, seal_after) => {
+            Opening::Fork(events, seal_after) => {
                 let parent = SessionId::parse(SESSION).unwrap_or_else(|e| panic!("{e}"));
+                let upto = events.last().map(|event| event.seq);
+                let upto = upto.unwrap_or_else(|| panic!("分叉要有父会话的日志"));
                 created.forked = Some(Forked {
                     from: parent.clone(),
                     upto,
@@ -147,26 +145,25 @@ impl Stage {
                 created.parent = Some(parent);
                 created.depth = Some(1);
                 id = CHILD_SESSION;
-                first = Some(Event {
-                    seq: upto.next(),
-                    at: now,
-                    turn: None,
-                    by: by.clone(),
-                    cause: Some(command_id(0)),
-                    body: Body::SessionCreated(Box::new(created.clone())),
-                });
+                base = Some(events);
             }
         }
         let id = SessionId::parse(id).unwrap_or_else(|e| panic!("替身的会话编号写法坏了：{e}"));
-        let (session, actions) = match &first {
-            Some(first) => Session::load(
-                id.clone(),
-                vec![first.clone()],
-                now,
-                policy(),
-                environment.clone(),
-            )
-            .unwrap_or_else(|e| panic!("第一条带 forked 的日志载入不了：{e}")),
+        let (session, actions) = match &base {
+            Some(base) => {
+                let (cause, at, env) = (command_id(0), now, environment.clone());
+                Session::fork_live(
+                    id.clone(),
+                    base,
+                    cause,
+                    by.clone(),
+                    at,
+                    created,
+                    policy(),
+                    env,
+                )
+                .unwrap_or_else(|e| panic!("分叉不成：{e}"))
+            }
             None => Session::create(
                 id.clone(),
                 command_id(0),
@@ -180,9 +177,10 @@ impl Stage {
         let mut stage = Stage {
             session,
             id,
+            base,
             policy: Box::new(policy),
             environment,
-            log: first.into_iter().collect(),
+            log: Vec::new(),
             requests: Vec::new(),
             marks: Vec::new(),
             replies: Vec::new(),

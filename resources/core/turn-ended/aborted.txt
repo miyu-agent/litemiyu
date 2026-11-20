@@ -1,1 +1,1 @@
-<turn-ended reason="aborted">Miyu stopped unexpectedly and this turn did not finish.</turn-ended>
+<turn-ended reason="aborted">LiteMiyu stopped unexpectedly and this turn did not finish.</turn-ended>

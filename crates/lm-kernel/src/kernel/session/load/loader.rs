@@ -7,7 +7,8 @@
 //! 不算数），最后算出的起点比已经放掉的还早；会话的策略是读完整份才认得出的（最近一次换的快照），向上回报的截法和开头
 //! 照着过账本的那一份不一样。
 //!
-//! 第一条带 `forked` 的旧日志（Miyu 的分叉会话）照普通会话读：LiteMiyu 不分叉，也不读父会话的底子（LM-2 删了分叉）。
+//! 分叉出来的会话的底子也是一块块喂好才交过来的（施工 V-39 中，[`BaseFeed`]）：父会话压缩以前的那一截喂的时候就放掉了。
+//! 父会话的压缩后来被撤了的，起点比放掉的还早，同样照整份走。
 
 use super::{LoadError, Replay};
 use crate::kernel::event::{Body, Event};
@@ -16,6 +17,7 @@ use crate::kernel::id::{Seq, SessionId};
 use crate::kernel::ledger::Ledger;
 use crate::kernel::session::Session;
 use crate::kernel::session::configure::Reference;
+use crate::kernel::session::fork::{BaseFeed, continued, forked_of};
 use crate::kernel::session::grants::Grants;
 use crate::kernel::session::jobs;
 use crate::kernel::session::policy::{Policy, Reports};
@@ -29,6 +31,8 @@ pub struct Loader {
     pub(in crate::kernel::session) session: SessionId,
     /// 向上回报的截法：过账本时照它算。
     pub(in crate::kernel::session) reports: Reports,
+    /// 分叉出来的：父会话、父会话那一段有效历史的起点。
+    pub(in crate::kernel::session) parent: Option<(SessionId, Seq)>,
     pub(in crate::kernel::session) ledger: Ledger,
     pub(in crate::kernel::session) replay: Replay,
     pub(in crate::kernel::session) duty: Duty,
@@ -49,24 +53,39 @@ pub struct Loader {
 }
 
 impl Session {
-    /// 开始一块块载入会话 `session`（施工 V-15）：`first` 是日志的头一块（没有事件的是空的），`reports` 是这时认得出的策略里
-    /// 向上回报的截法。头一块不在这里喂，接着交给 [`Loader::feed`]。账本从头一块的第一条的序号数起（第一条带 `forked` 的旧
-    /// 日志从分叉点的下一条起）。
+    /// 开始一块块载入会话 `session`（施工 V-15）：`first` 是日志的头一块（没有事件的是空的），`base` 是分叉出来的会话喂到分叉点
+    /// 为止的底子（施工 V-39 中，[`BaseFeed`]：一块块喂好的，压缩以前的已经放掉），`reports` 是这时认得出的策略里向上回报的
+    /// 截法。头一块不在这里喂，接着交给 [`Loader::feed`]。
     ///
     /// # Errors
     ///
-    /// 实际不会：留着 `Result` 给调的一方照旧写 `?`。
+    /// 分叉出来的：头一条不是带 `forked` 的 `session.created`，底子过不了父会话的账本、和头一条接不上。
     pub fn loader(
         session: SessionId,
+        base: Option<BaseFeed>,
         first: &[Event],
         reports: Reports,
     ) -> Result<Loader, LoadError> {
         let start = first.first().map_or(Seq::FIRST, |event| event.seq);
-        let ledger = Ledger::for_session(session.clone()).starting_at(start);
+        let mut ledger = Ledger::for_session(session.clone()).starting_at(start);
+        let (parent, kept, history, noted) = match base {
+            Some(base) => {
+                let fed = base.finish(&forked_of(first)?)?;
+                ledger = continued(ledger, fed.within, &fed.ledger);
+                (
+                    Some((fed.parent, fed.from)),
+                    fed.kept,
+                    fed.history,
+                    fed.noted,
+                )
+            }
+            None => (None, Vec::new(), History::whole(), Seq::FIRST),
+        };
         Ok(Loader {
             session,
             reports,
-            kept: Vec::new(),
+            parent,
+            kept,
             ledger,
             replay: Replay::default(),
             duty: Duty::default(),
@@ -77,8 +96,8 @@ impl Session {
             busy: crate::kernel::waits::Busy::default(),
             chain: crate::kernel::session::chain::Chain::default(),
             shells: crate::kernel::session::shell::Shells::default(),
-            history: History::whole(),
-            noted: Seq::FIRST,
+            history,
+            noted,
         })
     }
 }
@@ -120,9 +139,13 @@ impl Loader {
         Ok(())
     }
 
-    /// 有效历史从第几条算起：还算数的最近一次压缩替代到的下一条；没有的是第 1 条。
+    /// 有效历史从第几条算起：还算数的最近一次压缩替代到的下一条；没有的，分叉出来的照父会话那一段的起点，别的是第 1 条。
     pub(in crate::kernel::session) fn from(&self) -> Seq {
-        self.ledger.compacted().map(Seq::next).unwrap_or(Seq::FIRST)
+        self.ledger
+            .compacted()
+            .map(Seq::next)
+            .or_else(|| self.parent.as_ref().map(|(_, from)| *from))
+            .unwrap_or(Seq::FIRST)
     }
 
     /// 一块块喂的对不上，要照整份日志走 [`Session::load`]：起点比已经放掉的还早（压缩被撤了），或者会话的策略 `policy`

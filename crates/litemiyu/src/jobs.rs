@@ -33,6 +33,8 @@ pub struct Job {
     pub title: String,
     /// 子代理的会话。
     pub session: Option<String>,
+    /// fork 出来的子代理（LM-18）：状态行名字前面画分叉记号。
+    pub fork: bool,
     /// 收到 `job.started` 的时刻。
     pub started: Instant,
     /// 结束了的怎么结束的；在跑的是 `None`。
@@ -99,6 +101,7 @@ impl Jobs {
             agent: started.agent,
             title,
             session: started.session.clone(),
+            fork: started.fork,
             started: now,
             ended: None,
             activity: Activity::default(),
@@ -220,6 +223,7 @@ mod tests {
             agent,
             title: format!("做 {job}"),
             session: agent.then(|| format!("s-{job}")),
+            fork: false,
         }
     }
 

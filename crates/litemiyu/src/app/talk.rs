@@ -44,6 +44,8 @@ pub struct Talk {
     pub listing: super::jump::Listing,
     /// `/jump` 跳到放掉的段里的一句：它的序号，读回来、排好了再跳（`jump.rs`）。
     pub going: Option<u64>,
+    /// 在等日志里你说的话、等跳过去的时候按的键、粘贴：等完了照先后补办（`jump.rs`）。
+    pub held: super::jump::Held,
     /// 发 `/undo` 时画过几行撤销说明（`undo.rs`）：回应到了比它认这一次的那一行画了没有。
     pub undo_from: Option<u64>,
     /// 撤销的回应先到了、那一行说明还没画：推送来了再把那一句放回输入框（`undo.rs`）。

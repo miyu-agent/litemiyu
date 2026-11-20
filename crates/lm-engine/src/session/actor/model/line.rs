@@ -4,8 +4,8 @@
 //! 内核放着，交回新快照的哈希，内核记成换快照（`session.policy_changed` 的 `policy`）。这个数不进请求，前缀一个字节不变。载入
 //! 照日志里记的快照，以前造的快照没有这个数的读成出厂的 85。
 //!
-//! 和 Miyu 不一样：Miyu 照人格那一份（`persona::Refresh`）换，fork 子代理冻住的不换；LiteMiyu 照 actor 的 `PolicyKit`
-//! （`actor/kit.rs`）换，子代理是另造的会话，照样换。MCP 那一步换过的接着在它换上的那一份上换：内核只认最后交的一份，一个回合
+//! 和 Miyu 不一样：Miyu 照人格那一份（`persona::Refresh`）换；LiteMiyu 照 actor 的 `PolicyKit`（`actor/kit.rs`）换，普通
+//! 子代理是另造的会话，照样换。fork 子代理同 Miyu 冻住不换（LM-18，`PolicyKit::frozen`）。MCP 那一步换过的接着在它换上的那一份上换：内核只认最后交的一份，一个回合
 //! 只记一条。
 
 use lm_kernel::config::Values;
@@ -25,7 +25,7 @@ impl Actor {
         swapped: Option<ContentHash>,
     ) -> Option<ContentHash> {
         let wanted = CompactionSettings::from(values).line_for(self.session.pinned_line());
-        let Some(kit) = self.kit.as_ref() else {
+        let Some(kit) = self.kit.as_ref().filter(|kit| !kit.frozen) else {
             return swapped;
         };
         let from = kit.snapshot.line_percent();

@@ -3,6 +3,10 @@
 /// 路径（照资源目录里的相对位置）和原文，照路径排好。
 pub(super) const FILES: &[(&str, &str)] = &[
     (
+        "software/basesystem/agent/no-fork.txt",
+        include_str!("../../../../../resources/software/basesystem/agent/no-fork.txt"),
+    ),
+    (
         "software/basesystem/agent/not-started.txt",
         include_str!("../../../../../resources/software/basesystem/agent/not-started.txt"),
     ),

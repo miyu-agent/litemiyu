@@ -18,6 +18,7 @@ mod chain;
 mod clear;
 mod compaction;
 mod configure;
+mod fork;
 mod grants;
 mod input;
 mod interrupt;
@@ -61,6 +62,7 @@ mod workspace;
 
 pub use action::{Action, Outcome, Reason, StopReason, Undid};
 pub use configure::Replaced;
+pub use fork::{BaseFeed, ForkFeed, ForkPlan};
 pub use input::{Answer, Command, Injection, Input, Limits, Queued, Received, Reread, Verdict};
 pub use limits::{Breakdown, ContextLimits, Frame, Said, breakdown_in};
 pub use load::{LoadError, Loader};
@@ -153,6 +155,8 @@ pub struct Session {
     /// 收成了槽（红线 5，`shelve.rs`）时算好的「有没有能压的」：收着时答 [`Session::compactable`]。没收着的、收着又送了要看历史的
     /// 输入（读不回来的那段时间）的没有。
     rested: Option<bool>,
+    /// 执行器读得回分叉出来的底子（LM-18，[`Session::set_base_readable`]）：歇着时底子还在有效历史里的也收。
+    base_readable: bool,
 }
 
 impl Session {

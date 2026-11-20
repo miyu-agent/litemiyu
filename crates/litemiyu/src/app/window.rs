@@ -134,6 +134,15 @@ impl App {
         }
         let (piece, count) = (piece as usize, count as usize);
         let Ok(pushes) = pushes else {
+            // 读不回来：在等着跳过去的那一句在这几段里的，不跳了（不然一直等着，按的键一直攒着）。
+            let lost = self
+                .talk
+                .going
+                .and_then(|seq| self.talk.transcript.piece_of(seq))
+                .is_some_and(|p| (piece..piece + count).contains(&p));
+            if lost {
+                self.talk.going = None;
+            }
             return;
         };
         let draft = replayed(pushes, self.config.text());

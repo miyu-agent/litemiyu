@@ -16,6 +16,8 @@ pub struct JobStart {
     pub title: String,
     /// 子代理的会话；后台命令没有。
     pub session: Option<String>,
+    /// fork 出来的子代理（LM-18，照 Miyu 终端 `core/push/jobs.rs`）：子代理状态行名字前面画分叉记号。
+    pub fork: bool,
 }
 
 /// 后台命令结束了（`job.reported`）。
@@ -56,6 +58,7 @@ pub fn started<'a>(call_id: &'a str, effects: &'a [Effect]) -> impl Iterator<Ite
             agent: started.what == JobKind::Agent,
             title: started.title.clone(),
             session: started.session.as_ref().map(|s| s.as_str().to_string()),
+            fork: started.fork,
         }),
         _ => None,
     })

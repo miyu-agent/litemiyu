@@ -27,6 +27,16 @@ pub fn subagent_venue() -> &'static str {
     include_str!("../../../resources/core/jobs/subagent-venue.txt")
 }
 
+/// fork 子代理收到的交代前面接的外壳（`core/jobs/fork-directive.txt`，LM-18，同 Miyu 施工 A-F 中）。
+pub fn fork_directive() -> &'static str {
+    include_str!("../../../resources/core/jobs/fork-directive.txt")
+}
+
+/// fork 子代理接过来的那一步，每个调用记的占位结果（`core/tool-results/forked.txt`，LM-18，同 Miyu 施工 A-F 中）。
+pub fn fork_placeholder() -> &'static str {
+    include_str!("../../../resources/core/tool-results/forked.txt")
+}
+
 /// 核心的几行，造会话时拼进 system（`Snapshot::with_core_lines`）。跑的是哪一版照这一份编进去的版本。
 pub fn core_lines() -> CoreLines {
     CoreLines {

@@ -26,6 +26,7 @@ fn agent(app: &mut App, job: &str, title: &str) {
         agent: true,
         title: title.into(),
         session: Some(format!("s-{job}")),
+        fork: false,
     };
     app.talk
         .jobs
@@ -59,6 +60,7 @@ fn command(app: &mut App, job: &str, title: &str) {
         agent: false,
         title: title.into(),
         session: None,
+        fork: false,
     };
     app.talk
         .jobs
@@ -186,6 +188,7 @@ fn an_agent_that_sent_its_own_agents_counts_them_after_its_name() {
             agent: true,
             title: "再分头".into(),
             session: Some(format!("s-{job}")),
+            fork: false,
         }),
     };
     app.core(child("j2.1"));
@@ -293,4 +296,35 @@ fn down_stops_on_the_jobs_button_first_and_enter_opens_the_panel() {
     );
     key(&mut app, KeyCode::Esc);
     assert_eq!(app.typing.focus, Focus::Input, "再 Esc 回输入框");
+}
+
+/// fork 出来的子代理名字前面接分叉记号（LM-18，照 Miyu 终端 `ui/agents.rs`：2026-10-26 Miyu 项目主人），别的照旧；名字那一列
+/// 连着记号对齐。
+#[test]
+fn a_forked_agent_has_the_fork_mark_before_its_name() {
+    let mut app = app();
+    let start = JobStart {
+        call_id: "call_j1".into(),
+        job: "j1".into(),
+        agent: true,
+        title: "分头查".into(),
+        session: Some("s-j1".into()),
+        fork: true,
+    };
+    app.talk
+        .jobs
+        .start(&start, "分头查".into(), std::time::Instant::now());
+    agent(&mut app, "j2", "只看交代");
+    let rows = draw(&mut app, 60);
+    let fork = app.config.icons.fork.clone();
+    assert!(!fork.is_empty(), "出厂的这一套有分叉记号");
+    assert!(
+        rows.iter().any(|r| r.contains(&format!("○ {fork}分头查"))),
+        "{rows:#?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("○ 只看交代") && !r.contains(fork.trim_end())),
+        "{rows:#?}"
+    );
 }

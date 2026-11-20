@@ -72,10 +72,18 @@ pub fn lines(
             ),
         ]),
     ];
-    // 名字连着「（+N）」算宽，对齐成一列（Miyu `label`）。
-    let label = |job: &Job| match job.activity.nested() {
-        0 => job.title.clone(),
-        n => format!("{}（+{n}）", job.title),
+    // 名字连着「（+N）」算宽，对齐成一列（Miyu `label`）；fork 出来的名字前面接分叉记号（LM-18，照 Miyu 终端：2026-10-26
+    // Miyu 项目主人）。
+    let label = |job: &Job| {
+        let fork = if job.fork {
+            seen.config.icons.fork.as_str()
+        } else {
+            ""
+        };
+        match job.activity.nested() {
+            0 => format!("{fork}{}", job.title),
+            n => format!("{fork}{}（+{n}）", job.title),
+        }
     };
     let name_w = agents.iter().map(|a| label(a).width()).max().unwrap_or(0);
     for (i, job) in agents.iter().take(most).enumerate() {
@@ -210,6 +218,7 @@ mod tests {
                 agent: true,
                 title: "慢慢读".into(),
                 session: Some("s1".into()),
+                fork: false,
             };
             jobs.start(&start, "慢慢读".into(), t0);
             let end = ChildEnd {

@@ -13,7 +13,7 @@ pub(crate) fn told(
 ) -> crate::session::testkit::Told {
     let dir = root.session(id);
     let blobs = Blobs::new(root.blobs());
-    let read = match super::load::stream::read(&dir, id, &blobs) {
+    let read = match super::load::stream::read(&dir, id, &blobs, root) {
         Ok(read) => read,
         Err(error) => {
             return crate::session::testkit::Told {
@@ -25,6 +25,7 @@ pub(crate) fn told(
     let super::load::stream::Read {
         log,
         created,
+        base: _,
         snapshot: (_, policy),
         loaded,
         scan,
@@ -40,7 +41,11 @@ pub(crate) fn told(
     let whole = matches!(loaded, super::load::stream::Loaded::Whole { .. });
     let session = match loaded {
         super::load::stream::Loaded::Fed(loader) => loader.finish(at, policy, environment),
-        super::load::stream::Loaded::Whole { events } => {
+        super::load::stream::Loaded::Whole {
+            base: Some(base),
+            events,
+        } => Session::load_forked(id.clone(), &base, events, at, policy, environment),
+        super::load::stream::Loaded::Whole { base: None, events } => {
             Session::load(id.clone(), events, at, policy, environment)
         }
     };

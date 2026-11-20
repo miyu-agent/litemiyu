@@ -19,7 +19,7 @@ use crate::session::handle::Handle;
 use crate::session::job_ids::JobIds;
 use crate::session::port::Models;
 use crate::session::report::{Reporter, Upstream};
-use crate::session::spawn::{Child, Lineage};
+use crate::session::spawn::{Child, ForkChild, Lineage};
 use crate::session::table::{Family, Kit, Table};
 use crate::store::paths::Paths;
 use crate::tool::Catalog;
@@ -58,11 +58,11 @@ pub(super) fn spawns(family: &Family) -> bool {
     family.port().is_some() && Agents::allowed(family.lineage.as_ref())
 }
 
-/// 这个会话派子代理、留言、停子代理要的：有会话表才有。
+/// 这个会话派子代理、留言、停子代理要的：有会话表才有。`forked` 的是 fork 子代理（LM-18）：它派的 fork 照「不能再 fork」拒。
 pub(super) fn agents(
     family: &Family,
     session: &SessionId,
-    attended: bool,
+    (attended, forked): (bool, bool),
     reports: Reports,
 ) -> Option<Arc<Agents>> {
     let port = family.port()?;
@@ -76,6 +76,7 @@ pub(super) fn agents(
             .map(|lineage| lineage.parent.clone()),
         attended,
         reports,
+        forked,
     }))
 }
 
@@ -133,6 +134,31 @@ pub(crate) async fn create_child(table: &Arc<Table>, child: Child) -> Result<Han
         false,
     ))
     .await
+}
+
+/// 会话表造一个 fork 子代理（LM-18，`Table::fork`）：照父会话落了盘的日志写好头几条（`fork.rs`），再照会话表的规矩载入它。
+pub(crate) async fn fork_child(table: &Arc<Table>, child: ForkChild) -> Result<Handle, String> {
+    let ForkChild {
+        lineage,
+        command,
+        call,
+        placeholder,
+    } = child;
+    let at = crate::session::clock::Clock::default().now();
+    let id = new_id(at);
+    let fork = super::fork::Fork {
+        parent: lineage.parent,
+        id: id.clone(),
+        cause: command,
+        at,
+        call,
+        depth: lineage.depth,
+        placeholder,
+    };
+    super::fork::fork(&table.kit().root, fork).await?;
+    load_child(table, &id)
+        .await
+        .map_err(|error| format!("fork {id} not opened: {error}"))
 }
 
 /// 会话表载入一个子会话（`Table::handle`：表里没有的）：在哪干活照它的日志，父会话、第几层照它的 `session.created`

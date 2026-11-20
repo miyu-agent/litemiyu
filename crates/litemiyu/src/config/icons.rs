@@ -23,6 +23,8 @@ pub struct Icons {
     pub error: String,
     /// 暂存着东西时的提示符，连同它后面的空格。
     pub stash: String,
+    /// fork 出来的子代理名字前面的分叉记号，连同它后面的空格（LM-18，照 Miyu 终端 `config/icons.rs`：2026-10-26 Miyu 项目主人）。
+    pub fork: String,
     /// 输入框上面那一截循环打头的记号，连同它后面的空格（Miyu 蓝图「循环」第 2 条：时钟）。
     #[serde(rename = "loop")]
     pub loop_mark: String,
@@ -131,6 +133,7 @@ mod tests {
                 assert_eq!(icon.width(), 1, "{} 这一套的 {icon:?}", set.name);
             }
             assert_eq!(set.stash.width(), 2, "{} 的暂存提示符连空格两格", set.name);
+            assert_eq!(set.fork.width(), 2, "{} 的分叉记号连空格两格", set.name);
         }
     }
 
@@ -141,7 +144,7 @@ mod tests {
         // 那边的终端把字画得比一格宽，多出的半个落在旁边的空格里，那格原样重写它不重画）。出厂的图标一律只用 BMP 的字。
         for set in builtin().unwrap() {
             let mut all = every_icon(&set);
-            all.extend([set.stash.as_str()]);
+            all.extend([set.stash.as_str(), set.fork.as_str()]);
             for icon in all {
                 assert!(
                     icon.chars().all(|c| u32::from(c) <= 0xFFFF),

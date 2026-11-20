@@ -21,21 +21,28 @@ pub fn is_subagent(name: &str) -> bool {
     name == SUBAGENT
 }
 
-/// 一次派子代理她交的几样：`description` 是短标题，`prompt` 是整段交代，原样送进子会话；子会话用父会话这时用的模型。Miyu
-/// 另有的人格、附件、fork、只读四格 LiteMiyu 没有（人格、分叉、只读模式不要；附件跟着附件目录的读放行以后再看）；池 `pool`
-/// LM-8 砍了。
+/// 一次派子代理她交的几样：`description` 是短标题，`prompt` 是整段交代，原样送进子会话；子会话用父会话这时用的模型。
+/// `fork` 的从这一步分叉，接着父会话的对话（LM-18）。Miyu 另有的人格、附件、只读三格 LiteMiyu 没有（人格、只读模式不要；
+/// 附件跟着附件目录的读放行以后再看）；池 `pool` LM-8 砍了。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order<'a> {
     /// 短标题。
     pub description: &'a str,
     /// 整段交代。
     pub prompt: &'a str,
+    /// fork（LM-18）：子会话从这一步分叉，看得到到此为止的对话、用父会话的快照和模型。
+    pub fork: bool,
 }
 
 /// 派子代理：交 [`Order`]，拿回任务编号和子会话的编号。
 pub trait AgentPort: Send + Sync {
     /// 派一个子代理。子会话造好、交代送进去（它的第一轮开了）才交回，不等它做完。
     fn spawn<'a>(&'a self, order: Order<'a>) -> Spawning<'a>;
+
+    /// 这个会话是不是 fork 出来的（LM-18）：是的再 fork 照「不能再 fork」拒。
+    fn forked(&self) -> bool {
+        false
+    }
 }
 
 /// 派出去一个子代理的 future。

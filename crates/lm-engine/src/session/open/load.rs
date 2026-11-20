@@ -18,11 +18,13 @@ use crate::session::handle::Handle;
 use crate::session::lettering::Lettering;
 use crate::session::port::ForSession;
 use crate::session::spawn::Lineage;
-use crate::session::store::LogDir;
+use crate::session::store::{Based, LogDir};
 use crate::session::table::Family;
 use crate::session::tools::ToolKit;
 use crate::store::blob::Blobs;
 use crate::tool::Log;
+use lm_kernel::kernel::event::SessionCreated;
+use lm_kernel::policy::steps::{StepLimits, Watched};
 
 use super::{Load, LoadError, Placed, Workplace};
 
@@ -80,15 +82,16 @@ pub(super) async fn opened(
     let mcp_shipped = Arc::clone(&tools);
     let id_of = id.clone();
     let paths = root.clone();
-    let (log, loaded, scan, created, snapshot, policy, texts, run, (guard, marks)) =
+    let (log, loaded, scan, (created, base), snapshot, policy, texts, run, (guard, marks)) =
         blocking_once(move || {
             let stream::Read {
                 log,
                 created,
+                base,
                 snapshot: (snapshot, policy),
                 loaded,
                 scan,
-            } = stream::read(&dir, &id_of, &store)?;
+            } = stream::read(&dir, &id_of, &store, &paths)?;
             let texts = snapshot.driver_texts().map_err(LoadError::Policy)?;
             let run = snapshot.run_texts().map_err(LoadError::Policy)?;
             let guard = snapshot.guard_texts().map_err(LoadError::Policy)?;
@@ -101,7 +104,7 @@ pub(super) async fn opened(
                 log,
                 loaded,
                 scan,
-                created,
+                (created, base),
                 snapshot,
                 policy,
                 texts,
@@ -158,20 +161,41 @@ pub(super) async fn opened(
     let placed = Placed {
         environment: environment.clone(),
     };
+    // fork 子代理（LM-18，同 Miyu 施工 A-F 中、AE-1）：快照一直是父会话那一份、不改，步数上限只换造好的策略里那两格。
+    let fork_child = fork_child(&created);
+    let policy = match fork_child {
+        true => StepLimits::of(Watched::Fork, None).applied(policy),
+        false => policy,
+    };
     // 监视的命令攒批的截法（施工 MN-1 上）。
     let cut = policy.reports.for_lines();
-    let agents = super::family::agents(&family, &id, attended, policy.reports.clone());
-    let reporter = super::family::reporter(&family, &id, cause.as_ref());
+    let agents =
+        super::family::agents(&family, &id, (attended, fork_child), policy.reports.clone());
+    // 分叉出来的支线（Miyu 的 `session.fork`，LiteMiyu 不造，只可能是拷来的旧日志）不是任务，不交回报；fork 子代理是。
+    let reporter = match created.forked.is_some() && !fork_child {
+        true => None,
+        false => super::family::reporter(&family, &id, cause.as_ref()),
+    };
     let (mut session, first) = match loaded {
         stream::Loaded::Fed(loader) => loader.finish(clock.now(), policy, environment),
-        stream::Loaded::Whole { events } => {
+        stream::Loaded::Whole {
+            base: Some(base),
+            events,
+        } => Session::load_forked(id.clone(), &base, events, clock.now(), policy, environment),
+        stream::Loaded::Whole { base: None, events } => {
             Session::load(id.clone(), events, clock.now(), policy, environment)
         }
     }
     .map_err(LoadError::Kernel)?;
+    // 底子读得回来（[`Based`]）：歇着时连底子一起收成槽（红线 5）。
+    session.set_base_readable(base.is_some());
     let model = models.port(ForSession {
         id: id.clone(),
-        seed: id.clone(),
+        // 分叉出来的照来源会话（Miyu 施工 FC-1）：前缀和来源会话一样，上游认同一个会话头才吃得到它的缓存。
+        seed: created
+            .forked
+            .as_ref()
+            .map_or_else(|| id.clone(), |forked| forked.from.clone()),
         config: Arc::clone(config.current()),
         texts,
         blobs: blobs.clone(),
@@ -207,9 +231,13 @@ pub(super) async fn opened(
         home.map(Path::to_path_buf),
         Arc::clone(&lettering),
     );
+    let store: Box<dyn crate::session::store::Store> = match base {
+        Some(base) => Box::new(Based { log, base }),
+        None => Box::new(log),
+    };
     let mut actor = Actor::new(
         session,
-        Box::new(log),
+        store,
         model,
         ToolKit {
             session_log: Some(owner_log),
@@ -254,6 +282,7 @@ pub(super) async fn opened(
     actor.set_kit(crate::session::actor::PolicyKit {
         snapshot,
         blobs: mcp_blobs,
+        frozen: fork_child,
     });
     actor.count_from(tally);
     actor.set_reporter(reporter);
@@ -272,4 +301,12 @@ pub(super) async fn opened(
         handle = handle.with_table(table);
     }
     Ok((handle, placed))
+}
+
+/// 会话是不是 fork 子代理（LM-18，同 Miyu 的 `memory::fork_child`）：分叉点在父会话的一轮当中（`forked.within`）。
+pub(super) fn fork_child(created: &SessionCreated) -> bool {
+    created
+        .forked
+        .as_ref()
+        .is_some_and(|forked| forked.within.is_some())
 }

@@ -16,6 +16,7 @@ mod confirm_timeout;
 mod delete;
 mod display_name;
 mod end_turn;
+mod fork;
 mod guard;
 mod guard_checked;
 mod guard_thread;

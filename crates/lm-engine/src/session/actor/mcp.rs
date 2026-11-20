@@ -64,7 +64,7 @@ impl Actor {
             .filter(|tool| tool.name.starts_with(MCP_PREFIX))
             .collect();
         self.tools.set_catalog(Arc::new(catalog));
-        if now.iter().eq(was.iter().copied()) {
+        if held.frozen || now.iter().eq(was.iter().copied()) {
             return None;
         }
         let face: Vec<ToolEntry> = held

@@ -54,7 +54,7 @@ fn the_tool_result_sentences_are_usable() {
         "The user denied the call and said \"先别推\".\n"
     );
     assert!(texts.unattended().text.contains("approval"));
-    assert!(texts.restarted().text.contains("Miyu restarted"));
+    assert!(texts.restarted().text.contains("LiteMiyu restarted"));
     for (sentence, unanswered) in [
         (texts.question_interrupted().text, "before answering"),
         (texts.question_voided().text, "instead of answering"),
@@ -111,4 +111,34 @@ fn the_sample_denial_is_the_sentence_with_the_reason() {
         include_str!("../../../../resources/core/tool-results/denied-with-reason.txt");
     let sentence = denied_with_reason.replace("{reason}", "家目录里已经有一份了，别覆盖");
     assert_eq!(text.text, sentence);
+}
+
+/// 写给模型的字里说到程序自己的 4 句叫它 LiteMiyu（LM-15，项目主人 2026-11-20 定；界面上的 6 句 LM-14 改了）。别处的
+/// 「Miyu」指的是另一个程序（从 Miyu 导入），不在这几句里。
+#[test]
+fn sentences_about_the_program_itself_call_it_litemiyu() {
+    for (name, text) in [
+        (
+            "permissions/forbidden",
+            include_str!("../../../../resources/core/permissions/forbidden.txt"),
+        ),
+        (
+            "tool-results/restarted",
+            include_str!("../../../../resources/core/tool-results/restarted.txt"),
+        ),
+        (
+            "turn-ended/aborted",
+            include_str!("../../../../resources/core/turn-ended/aborted.txt"),
+        ),
+        (
+            "turn-ended/restarted",
+            include_str!("../../../../resources/core/turn-ended/restarted.txt"),
+        ),
+    ] {
+        assert!(text.contains("LiteMiyu"), "{name}：{text}");
+        assert!(
+            !text.replace("LiteMiyu", "").contains("Miyu"),
+            "{name} 里没有单写的 Miyu：{text}"
+        );
+    }
 }

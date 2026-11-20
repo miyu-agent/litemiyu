@@ -97,6 +97,13 @@ impl Scan {
         (last != now).then(|| last.clone())
     }
 
+    /// 分叉出来的会话的底子里的一块（LM-18，同 Miyu 的 `Scan::base`）：只记她看过的文件，要在记自己的以前交。
+    pub(super) fn base(&mut self, base: &[Event]) {
+        for event in base {
+            self.seen.note(event);
+        }
+    }
+
     /// 记下照先后的一块。
     pub(super) fn note(&mut self, events: &[Event]) {
         for event in events {

@@ -3,8 +3,12 @@
 //! 不等它做完。回报由子会话自己送来（7-6）。
 //!
 //! 子会话用父会话这时用的模型。原来还能写池 `pool`（施工 8-8 补），LM-8 砍了模型池：说明里去掉了这一格，旧会话的快照里
-//! 冻着的 `pool` 她照样会写，照不写办（[`Args`] 不认别的参数，也不报错）。Miyu 另有的人格 `persona`、附件 `attachments`、
-//! `fork`、只读 `read_only` 不搬（人格、分叉、只读模式不要；附件跟着附件目录的读放行以后再看），写了也不认。
+//! 冻着的 `pool` 她照样会写，照不写办（[`Args`] 不认别的参数，也不报错）。
+//!
+//! `fork`（LM-18，照 Miyu 施工 A-F 中，`agents.md`「fork 子代理」）：写了 `true` 的子会话从这一轮派它的那一步分叉，接着父会话的
+//! 对话、用父会话的快照和模型；fork 出来的再 fork 照 `agent/no-fork.txt` 拒。Miyu 写了 fork 又写池、人格的照参数不对；LiteMiyu
+//! 没有人格，池照不写办，所以不拒。Miyu 另有的人格 `persona`、附件 `attachments`、只读 `read_only` 不搬（人格、只读模式不要；
+//! 附件跟着附件目录的读放行以后再看），写了也不认。
 
 use serde::Deserialize;
 
@@ -33,6 +37,8 @@ struct Texts {
     common: Common,
     started: Template,
     not_started: Template,
+    /// fork 出来的再 fork（LM-18，`agent/no-fork.txt`）。
+    no_fork: Template,
 }
 
 /// 她给的参数。别的参数不认，也不报错：以前的会话快照里冻着的 `tier`（施工 8-8）、`pool`（施工 8-8 补，LM-8 砍了）照不写办。
@@ -40,6 +46,9 @@ struct Texts {
 struct Args {
     description: String,
     prompt: String,
+    /// fork（LM-18）：不写、写 `null`、`false` 的是不 fork。
+    #[serde(default)]
+    fork: Option<bool>,
 }
 
 impl Subagent {
@@ -53,6 +62,7 @@ impl Subagent {
                 common,
                 started: text("started", &["job", "title"])?,
                 not_started: text("not-started", &[])?,
+                no_fork: text("no-fork", &[])?,
             },
         })
     }
@@ -75,9 +85,15 @@ impl Tool for Subagent {
             let Some(port) = call.agents.clone() else {
                 return not_started();
             };
+            // fork 出来的不能再 fork（同 Miyu 施工 A-F 中）。
+            let fork = args.fork.unwrap_or(false);
+            if fork && port.forked() {
+                return Done::error(say(&texts.no_fork, &[])).said(said("agent/no-fork"));
+            }
             let order = Order {
                 description: &args.description,
                 prompt: &args.prompt,
+                fork,
             };
             let Ok(spawned) = port.spawn(order).await else {
                 return not_started();
@@ -88,7 +104,7 @@ impl Tool for Subagent {
                 .said(said("agent/started").with("job", &job).with("title", title))
                 .effect(Effect::JobStarted(JobStarted {
                     foreground: false,
-                    fork: false,
+                    fork,
                     job: spawned.job,
                     what: JobKind::Agent,
                     title: args.description,

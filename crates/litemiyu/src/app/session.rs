@@ -46,6 +46,9 @@ impl App {
         self.talk.agent_meters.clear();
         self.talk.earlier_agents = None;
         self.talk.workdir = None;
+        // `/jump` 在等的不等了（要的是原来那个会话的）；攒着的键照先后交给新的这个（`jump.rs`）。
+        self.talk.listing = super::jump::Listing::None;
+        self.talk.going = None;
         // 新的视口（同 Miyu `park_current`）：拿 `clear` 顶的照原来那一份的行数记清屏那一行，开的旧会话比原来那个短的整块
         // 看不见（第十九趟查出来的）。
         self.screen.view = self.screen.view.fresh();
