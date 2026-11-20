@@ -33,7 +33,7 @@ fn both(full: &Session, kept: &Session, key: &[u8], what: &str) -> bool {
 }
 
 /// 比的那一截：屏幕从头到输入框的下边框（正文、输入框上面开着的列表、输入框，连同右边的侧边栏；底栏不比）。不比的：
-/// 新说的那一轮收尾行从「✻」起那一截（时刻、用时、出字的速度是两个程序各自当场掐的表；从日志补发的那些两边一样），列表里
+/// 新说的那一轮收尾行从打头的记号起那一截（时刻、用时、出字的速度是两个程序各自当场掐的表；从日志补发的那些两边一样），列表里
 /// 每一句前面的「刚才」「几分钟前」（照各自画的那一刻算，跨了整分钟两边不一样）。
 fn shown(one: &Session) -> String {
     let screen = one.screen();
@@ -52,7 +52,7 @@ fn shown(one: &Session) -> String {
 /// 一行里不比的那几截去掉（见 [`shown`]）。
 fn untimed(line: &str) -> String {
     if let Some(at) = line.find("fake/m1") {
-        let from = line[..at].rfind('✻').unwrap_or(at);
+        let from = line[..at].rfind(crate::support::DONE).unwrap_or(at);
         return line[..from].to_string();
     }
     let words: Vec<&str> = line.split_whitespace().collect();

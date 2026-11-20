@@ -70,8 +70,8 @@ pub fn paint(buf: &mut Buffer, bg: Color, fg: Color) {
     }
 }
 
-/// 悬浮窗的底：比页面浅一档（Miyu `theme::panel`）。
-fn panel() -> Style {
+/// 悬浮窗的底：比页面浅一档（Miyu `theme::panel`）；正文顶上钉着的那一行也铺它（`ui/pinned.rs`）。
+pub fn panel() -> Style {
     Style::new().bg(super::pick(|p| p.panel_bg))
 }
 

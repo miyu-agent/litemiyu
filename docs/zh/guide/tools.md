@@ -21,7 +21,7 @@ LiteMiyu 自带 12 件工具，全部编在程序里，不需要安装：
 | `session_usage` | 查看这个会话用了多少 token、上下文有多满 |
 | `history` | 搜索、读回这个会话前面的内容，包括被压缩掉的部分 |
 | `ask_user` | 向你提几个带选项的问题，等你回答 |
-| `schedule_wakeup` | 在 AI 自己定节奏的 `/loop` 里，决定下一次什么时候执行 |
+| `schedule_wakeup` | 给这个会话定一个时间，到点以后自己继续；在 AI 自己定节奏的 `/loop` 里，用它决定下一次什么时候执行。见[定时触发](agents.md#定时触发) |
 
 除此之外，你接入的 MCP 服务提供的工具也会交给 AI，见[技能和 MCP](skills-mcp.md)。
 
@@ -36,7 +36,7 @@ LiteMiyu 没有专门的搜索文件、抓取网页、回收站工具。AI 需�
 | 全部功能（默认） | 12 件全部可用，加上 MCP 的工具 |
 | 无功能（`/new bare`、`litemiyu --bare`） | 没有任何工具 |
 | 应急模式（`litemiyu --rescue`） | 只有 `read`、`write`、`edit`、`shell`、`jobs` |
-| 子代理 | 没有 `ask_user` 和 `sessions` |
+| 子代理 | 没有 `ask_user`、`sessions` 和 `schedule_wakeup` |
 
 ## 权限：默认不询问
 

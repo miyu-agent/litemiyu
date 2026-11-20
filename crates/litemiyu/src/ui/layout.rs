@@ -50,8 +50,12 @@ pub struct Areas {
     pub session_id: Rect,
     /// 侧边栏「跳转消息」能点的那几行；没有侧边栏、没说过话时是空的（`sidebar.rs`）。
     pub jumps: Rect,
+    /// 侧边栏「文件修改」能点的那几行；没有侧边栏、没改过文件时是空的（`sidebar/files.rs`）。
+    pub files: Rect,
     /// 侧边栏「最近会话」能点的那几行；没有侧边栏、没列过会话时是空的（`sidebar.rs`）。
     pub recent: Rect,
+    /// 正文顶上钉着的你说的那句话（`pinned.rs`）：点了跳回那句话；没钉时是空的。
+    pub pinned: Rect,
     /// 子代理状态行（`agents.rs`）连上面的空行：底栏下面；没有列着的子代理时高是 0。
     pub agent_block: Rect,
     /// 子代理状态行能点的那几行（主会话那一行起）：点一行切进那个会话、点「主会话」回去。

@@ -1,4 +1,5 @@
-//! `schedule_wakeup`（Miyu 施工 J-2）：间隔收边界、原话覆盖、停、没给间隔、没开过循环、没有端口、给人看的说法带理由。端口是假的：
+//! `schedule_wakeup`（Miyu 施工 J-2）：间隔收边界、原话覆盖、停、没给间隔、没开过循环、没写那句话、没有端口、给人看的说法带理由
+//! 和多久以后。端口是假的：
 //! 真的在 `lm_engine::session` 里测（`tests/session/looping.rs`）。从 Miyu `miyu-schedule/tests/wakeup.rs` 搬来（L5 四），连同那边
 //! `support.rs` 里用到的、`budget.rs` 里循环的那一份说明预算（最后一个）。端口不再带会话编号（`tool/schedules.rs`），记下的只有
 //! 她要做的。
@@ -129,6 +130,7 @@ async fn a_wakeup_says_when_and_shows_the_reason() {
         (
             "software/loop/wakeup/set".to_string(),
             vec![
+                ("delay".to_string(), "20m".to_string()),
                 ("next".to_string(), "2026-10-27 09:00".to_string()),
                 ("reason".to_string(), "CI 大约二十分钟".to_string()),
             ]
@@ -180,6 +182,32 @@ async fn with_no_loop_running_it_says_so() {
 }
 
 #[tokio::test]
+async fn with_no_loop_and_no_prompt_it_asks_for_the_prompt() {
+    let port = Fake::answering(Err(ScheduleRefused::NoPrompt));
+    let done = run(Some(&port), json!({"delay_seconds": 60})).await;
+    assert!(done.error);
+    assert_eq!(
+        text(&done),
+        "prompt is required when no loop is running in this session."
+    );
+    assert_eq!(said(&done).0, "software/loop/wakeup/no-prompt");
+}
+
+/// 给人看的「多久以后」：整天、整小时、整分钟的照那个单位，别的照秒（同 `/loop` 回执里的间隔）。
+#[tokio::test]
+async fn the_delay_people_see_takes_the_largest_whole_unit() {
+    for (given, shown) in [(5, "1m"), (90, "90s"), (7_200, "2h"), (172_800, "2d")] {
+        let port = Fake::answering(Ok(woken()));
+        let done = run(Some(&port), json!({"delay_seconds": given})).await;
+        let fields = said(&done).1;
+        assert!(
+            fields.contains(&("delay".to_string(), shown.to_string())),
+            "{given} 秒写成 {shown}：{fields:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn without_the_port_it_is_not_available() {
     let done = run(None, json!({"delay_seconds": 60})).await;
     assert!(done.error);
@@ -187,8 +215,9 @@ async fn without_the_port_it_is_not_available() {
 }
 
 /// 循环的工具面预算（Miyu `miyu-schedule/tests/budget.rs` 里 `loop` 的那一份）：`resources/software/loop/tools/` 下的一份说明
-/// 不超过 [`BUDGET`] 字节。预算：字节，回车 `\r` 不算（Windows 上检出的可能多出回车）。
-const BUDGET: usize = 588;
+/// 不超过 [`BUDGET`] 字节。预算：字节，回车 `\r` 不算（Windows 上检出的可能多出回车）。LM-20 从 588 放到 660：说明多了「没开
+/// 循环也能挂一个到点继续、只在会话开着时到点、`prompt` 什么时候要写」，另多一行 `scope`（不发给模型）。
+const BUDGET: usize = 660;
 
 #[test]
 fn the_loop_tool_face_stays_within_its_budget() {

@@ -273,6 +273,15 @@ impl Engine {
                 upto,
                 texts,
             } => self.spoken(&session, upto, texts).await,
+            Command::Changes {
+                session,
+                path,
+                after,
+                upto,
+                texts,
+            } => {
+                self.changes(&session, path, (after, upto), texts).await;
+            }
             Command::Loop(words) => self.looping(&words).await,
             Command::JobOutput(job) => {
                 let Some(main) = self.session.clone() else {

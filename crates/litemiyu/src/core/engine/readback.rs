@@ -8,7 +8,7 @@ use lm_engine::session::{Backlog, Handle};
 use super::super::{Push, Update, push};
 use super::{Engine, QUIET};
 use crate::config::Texts;
-use crate::transcript::Gather;
+use crate::transcript::{Gather, Lookup};
 
 impl Engine {
     /// 读回会话 `session` 从第 `piece` 段起的 `count` 段：日志里序号在 `after` 之后、`upto` 为止的事件。不是主会话、也不是
@@ -70,6 +70,48 @@ impl Engine {
                 });
             in_turn(before).await;
             if !deliver(Update::Spoken { session, said }) {}
+        }));
+        self.settle_later();
+    }
+
+    /// 找会话 `session` 日志里序号在 `after` 之后、`upto` 为止改过 `path` 的那几步：一块块读、当场补发、办进草稿
+    /// （`transcript/changed.rs` 的 `Lookup`），只交回那几步的差异。
+    pub(super) async fn changes(
+        &mut self,
+        session: &str,
+        path: String,
+        (after, upto): (u64, u64),
+        texts: Box<Texts>,
+    ) {
+        let Some((session, slice)) = self.slice(session, after, upto).await else {
+            return;
+        };
+        let deliver = std::sync::Arc::clone(&self.deliver);
+        let before = self.handed.take();
+        self.handed = Some(tokio::spawn(async move {
+            let state = (
+                push::replay::Replay::default(),
+                Lookup::new(texts, path.clone()),
+            );
+            let found = slice
+                .fold(state, |(replay, lookup), events| {
+                    for push in events.into_iter().flat_map(|e| replay.read(e)) {
+                        lookup.push(push);
+                    }
+                })
+                .await
+                .map(|(mut replay, mut lookup)| {
+                    for push in replay.finish() {
+                        lookup.push(push);
+                    }
+                    lookup.finish()
+                });
+            in_turn(before).await;
+            if !deliver(Update::Changes {
+                session,
+                path,
+                found,
+            }) {}
         }));
         self.settle_later();
     }

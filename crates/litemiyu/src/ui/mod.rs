@@ -16,6 +16,8 @@ mod done_row;
 mod drawer;
 pub(crate) mod effort_list;
 pub mod estimate;
+mod files_page;
+pub use files_page::FilesFrame;
 mod jobs_panel;
 mod loop_tag;
 pub use drawer::PreviewLook;
@@ -33,6 +35,7 @@ mod md_cache;
 mod overlay;
 mod panel;
 mod panels;
+mod pinned;
 
 pub use history::{
     Room as HistoryRoom, index_at as history_index_at, lines as history_lines,
@@ -78,6 +81,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     if let Some(open) = &app.settings {
         if let Some(at) = settings::draw(frame, open) {
             app.screen.caret.put(at, true);
+        }
+        return;
+    }
+    // 「文件修改」那一页开着：整屏归它，对话不画（`files_page.rs`）。
+    if app.files_open() {
+        let (seen, screen) = app.parts();
+        if let Some(page) = &seen.boxes.files_page {
+            files_page::draw(frame, page, &seen, &mut screen.files_page);
         }
         return;
     }

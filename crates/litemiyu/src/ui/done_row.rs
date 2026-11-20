@@ -6,8 +6,9 @@ use unicode_width::UnicodeWidthStr;
 use super::rows::clip;
 use crate::config::Layout;
 
-/// 收尾行：打头的符号（`✻`）、多空的，接着做完的时刻、模型、用时这些（`tui.md`「正文」第 4 条）。Miyu 打头的是这一轮
-/// 开始时的权限级别的图标，LiteMiyu 没有权限级别，一律是兜底的那一个。
+/// 收尾行：打头的符号（`done_icon`）、多空的（`done_gap`），接着做完的时刻、模型、用时这些（`tui.md`「正文」第 4 条）。Miyu
+/// 打头的是这一轮开始时的权限级别的图标，LiteMiyu 没有权限级别，一律是 `layout.json` 的那一个：Miyu 以前「工作区」那一级的
+/// `▣`、后面多空一格（2026-11-20 项目主人定，两套图标都用它）。
 pub fn line(text: &str, layout: &Layout) -> String {
     format!("{}{}{text}", layout.done_icon, layout.done_gap)
 }

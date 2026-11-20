@@ -24,6 +24,7 @@ mod colors;
 mod commands;
 mod drawer;
 mod editor;
+mod files;
 mod floating;
 mod footer_model;
 mod history;
@@ -40,6 +41,7 @@ mod narrow_shots;
 mod opening;
 mod opening_steps;
 mod peers;
+mod pinned;
 mod pointer;
 mod recent;
 mod redo;
@@ -90,8 +92,8 @@ fn a_question_streams_an_answer_after_a_read_step() {
         screen.contains("看看笔记"),
         "你说的话还在正文里：\n{screen}"
     );
-    // 回合结束：收尾那一行（`✻` 打头）。
-    session.wait_for("✻", "回合结束的收尾行");
+    // 回合结束：收尾那一行（`done_icon` 打头）。
+    session.wait_for(support::DONE, "回合结束的收尾行");
     // 模型收到了 `read` 的结果：第二次请求里有文件的内容。
     let received = server.received();
     assert!(received.len() >= 2, "至少两次请求：{}", received.len());

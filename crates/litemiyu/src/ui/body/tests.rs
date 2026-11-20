@@ -332,6 +332,7 @@ fn a_long_reply_stops_at_its_first_row_until_her_next_step() {
     let mut view = BodyView::default();
     // 她的正文（编号 7）从第 15 行起。
     view.reading = Some((7, 15));
+    // 开头顶到第三行就停：最上面两行让给往上翻着时钉的那一行和它下面空的一行（`pinned.rs`，Miyu `b4aeb681`、`343bb02e`）。
     assert_eq!(
         first_row(
             &rows(20),
@@ -345,14 +346,14 @@ fn a_long_reply_stops_at_its_first_row_until_her_next_step() {
     );
     assert_eq!(
         first_row(
-            &rows(26),
+            &rows(25),
             area,
             &mut view,
             (true, false),
             &Transcript::default()
         ),
-        15,
-        "开头顶到最上面：停住"
+        13,
+        "开头顶到第三行：停住"
     );
     assert_eq!(
         first_row(
@@ -362,7 +363,7 @@ fn a_long_reply_stops_at_its_first_row_until_her_next_step() {
             (true, false),
             &Transcript::default()
         ),
-        15,
+        13,
         "后面的字在下面长"
     );
     // 她开始下一步：回到最底下接着跟。
@@ -387,7 +388,7 @@ fn a_long_reply_stops_at_its_first_row_until_her_next_step() {
             (true, false),
             &Transcript::default()
         ),
-        44
+        42
     );
 }
 
@@ -404,7 +405,7 @@ fn scrolled_back_to_the_bottom_the_same_reply_does_not_stop_again() {
         (true, false),
         &Transcript::default(),
     );
-    assert_eq!(view.first, 15);
+    assert_eq!(view.first, 13);
     // 人往下翻到底：跟着最新的，这一段不再停。
     while view.top.is_some() {
         view.page(true);

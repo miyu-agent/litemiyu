@@ -117,8 +117,14 @@ pub fn from_args(args: &serde_json::Value) -> Option<Rc<Diff>> {
     cache::get_or(cache::key(args), || build(args))
 }
 
-/// 照参数比一遍。
-fn build(args: &serde_json::Value) -> Option<Diff> {
+/// 照参数比出加了几行、删了几行（改过的文件的小账记的，`transcript/changed.rs`）：不经缓存，打开旧会话时补发的几千步
+/// 不把点开着的差异挤出去。不是写入、编辑的是 `None`。
+pub fn counts(args: &serde_json::Value) -> Option<(usize, usize)> {
+    build(args).map(|diff| (diff.added, diff.removed))
+}
+
+/// 照参数比一遍，不经缓存（「文件修改」那一页在读日志的线程里比，`core/engine/readback.rs`）。
+pub fn build(args: &serde_json::Value) -> Option<Diff> {
     if let Ok(write) = Write::deserialize(args) {
         return Some(compare("", &write.content));
     }

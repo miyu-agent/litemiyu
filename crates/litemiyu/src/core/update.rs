@@ -172,6 +172,15 @@ pub enum Update {
         /// 照先后。
         said: Result<Vec<crate::transcript::Said>, String>,
     },
+    /// 日志里改过一个文件的那几步（[`super::Command::Changes`]）：哪个会话、哪个文件；读不了的是原因。
+    Changes {
+        /// 会话编号：换了会话以后才到的不要。
+        session: String,
+        /// 哪个文件。
+        path: String,
+        /// 照先后。
+        found: Result<Vec<crate::transcript::Found>, String>,
+    },
     /// `/model` 的一行行（[`super::Command::Choices`]）：池在前，再是每一家的模型；读不了配置的是空的。
     Choices(Vec<super::Choice>),
     /// 一个模型有哪几档思考程度（[`super::Command::Efforts`]）：问的是默认的那个时 `reference` 是查到的引用。

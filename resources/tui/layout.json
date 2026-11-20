@@ -6,6 +6,7 @@
   "sidebar_width": 38,
   "sidebar_jumps": 8,
   "sidebar_sessions": 8,
+  "sidebar_files": 8,
   "side_here_mark": "❱",
   "session_rows": 10,
   "session_cwd_width": 24,
@@ -31,7 +32,7 @@
   "key_burst_ms": 0,
   "markdown_cache": 8,
   "relayout_budget_ms": 8,
-  "done_gap": "",
+  "done_gap": " ",
   "menu_rows": 5,
   "history_rows": 0,
   "jump_flash_ms": 1000,
@@ -90,7 +91,7 @@
   },
   "tab": 4,
   "user_bar": "┃ ",
-  "done_icon": "✻ ",
+  "done_icon": "▣ ",
   "prompt": "❯ ",
   "queued_mark": "↳ "
 }

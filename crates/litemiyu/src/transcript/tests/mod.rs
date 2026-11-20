@@ -6,6 +6,7 @@ use crate::core::{Block, CallError, Push, Update};
 
 mod beat;
 mod cache;
+mod changed;
 mod compaction;
 mod compaction_auto;
 mod copy;

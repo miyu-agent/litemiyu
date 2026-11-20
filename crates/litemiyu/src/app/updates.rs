@@ -16,6 +16,7 @@ impl App {
             Update::EffortSet(level) => return self.effort_set(level),
             read @ Update::ReadBack { .. } => return self.read_back(read),
             said @ Update::Spoken { .. } => return self.spoken_arrived(said),
+            found @ Update::Changes { .. } => return self.changes_arrived(found),
             // 打开旧会话时补发的一块：一条条办，办完回一声（读日志的那一头才接着交）。
             Update::Replayed { pushes, done } => return self.replayed(pushes, &done),
             // 切进的子会话日志里的一块（`child.rs`）：同上。
@@ -37,6 +38,10 @@ impl App {
         // 开了新的一段（上一段收完了）：底下几屏以外的放掉（打开旧会话时十几万条推送一路放下来，只留底下几屏）。
         if self.talk.transcript.pieces().len() != pieces {
             self.keep_window();
+            // 「文件修改」那一页开着：选中的文件有改动落进了刚放掉的段的，向引擎要（`files_page.rs`）。
+            if self.boxes.files_page.is_some() {
+                self.ask_changes();
+            }
         }
     }
 

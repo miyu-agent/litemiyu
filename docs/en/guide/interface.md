@@ -15,9 +15,13 @@ Most of the window is the conversation: what you and the AI have said, from top 
 - Your messages have a vertical bar on the left.
 - Each thing the AI does (thinking, running a command, reading or writing a file) is a step in the timeline. Running steps are shown live; when the reply is done they fold into one line, for example `Run echo · 1s`. Click that line to expand it.
 - The AI's reply is rendered as Markdown: headings, lists, tables, syntax-highlighted code and links. Math formulas are converted to Unicode characters.
-- Each turn ends with a small line such as `✻ 14:18 · deepseek/deepseek-chat · 1.4s · 6.5k(C62%) · 286 tok/s`: the time it finished, the provider and model, how long it took, the tokens this turn used (cache hit rate in parentheses), and the output speed.
+- Each turn ends with a small line such as `▣  14:18 · deepseek/deepseek-chat · 1.4s · 6.5k(C62%) · 286 tok/s`: the time it finished, the provider and model, how long it took, the tokens this turn used (cache hit rate in parentheses), and the output speed. For a turn you interrupted, the line only says `▣  Interrupted`.
 
 When the conversation is longer than the window, scroll with `PgUp`, `PgDn` or the mouse wheel. After scrolling up, `Jump to bottom (Ctrl+End) ↓` appears at the bottom.
+
+While you are scrolled up, if the message that the reply you are reading answers has scrolled out of the window, the first line of that message stays pinned at the top of the conversation with an empty row below it, so you always know which message the content in front of you is answering. Click the pinned line to jump back to that message.
+
+When a reply is longer than the window, the conversation stops at the beginning of that reply (leaving the top two rows free) instead of following it to the end, so you can read it from the start.
 
 ### Input box
 
@@ -55,11 +59,21 @@ When the window is at least 120 columns wide and a conversation has started, a s
 | `Workspace` | The directory the AI works in |
 | `Context` | Used and window size, with a progress bar below |
 | `Usage` | Total tokens, input and output, cache hit rate, cost |
-| `Loop` | The `/loop` running in this session; hidden when there is none |
 | `Jump to` | Messages you sent in this session; click one to jump to it |
+| `Changed files` | Files the AI changed in this session with the lines added and removed; click one to see its diff. Hidden when no file has been changed |
 | `Recent sessions` | Your latest sessions; click one to switch to it |
 
-The sidebar hides itself when the window gets narrower. How many entries `Jump to` and `Recent sessions` show can be changed in settings; see [Configuration](config.md).
+The sidebar hides itself when the window gets narrower. When the sidebar is taller than the window, scroll the wheel with the pointer over it to scroll it. How many entries `Jump to` and `Recent sessions` show can be changed in settings; see [Configuration](config.md).
+
+### Changed files
+
+Clicking an entry under `Changed files` in the sidebar, or running `/files`, opens the full-screen `Changed files` page:
+
+- In a wide enough window the diff of the selected file is on the left and the full list of files is on the right; in a narrow window the list is on top.
+- When the same file was changed several times, the diffs follow one another in order with a thin line between them.
+- `↑` and `↓` (or `j` and `k`) switch files, `PgUp`, `PgDn` or the mouse wheel scroll the diff, clicking an entry in the list switches straight to it, and `Esc` (or `q`) goes back to the session.
+
+> Only files the AI changed with the edit and write tools are counted, not files changed by commands it ran. The diff is computed from what the tool call contained: a written file shows entirely as added, and edited fragments have no line numbers. Changes made in turns you undid are not listed.
 
 ### Subagent rows
 
@@ -126,7 +140,7 @@ LiteMiyu takes over the mouse while it runs full-screen:
 
 - Wheel: scrolls the conversation. Over the sidebar, it scrolls the sidebar.
 - Drag: selects text in the conversation or the sidebar; releasing the button copies it to the clipboard and shows `Copied 32 character(s)`. `Ctrl+C` copies again and `Esc` clears the selection.
-- Click: a folded timeline line expands; the short ID in the sidebar copies the full session ID; entries under `Jump to` and `Recent sessions` jump or switch; `Background: 1` in the footer opens the background panel; links and file paths in a reply open with the system's default program.
+- Click: a folded timeline line expands; the short ID in the sidebar copies the full session ID; entries under `Jump to` and `Recent sessions` jump or switch; an entry under `Changed files` opens its diff; the message pinned at the top of the conversation jumps back to it; `Background: 1` in the footer opens the background panel; links and file paths in a reply open with the system's default program.
 
 > Because LiteMiyu owns the mouse, your terminal's own selection does not work. In most terminals, holding `Shift` while dragging brings it back temporarily.
 

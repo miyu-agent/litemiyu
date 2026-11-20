@@ -23,7 +23,7 @@ fn answered(options: &Options) -> (Session, String) {
     session.type_text("为什么天空是蓝色");
     session.press_enter();
     session.wait_for("完。", "回答收完");
-    session.wait_for("✻", "回合结束");
+    session.wait_for(crate::support::DONE, "回合结束");
     let screen = session.screen();
     (session, screen)
 }

@@ -38,8 +38,8 @@ fn a_wide_window_lists_what_was_said_and_a_click_jumps_back() {
     session.wait_for("❯", "输入框");
     session.type_text("最早那一句");
     session.press_enter();
-    wait_bottom(&session, "第一轮结束（✻）", |s| {
-        s.columns(0, SIDE - 1).contains("✻")
+    wait_bottom(&session, "第一轮结束（收尾行）", |s| {
+        s.columns(0, SIDE - 1).contains(crate::support::DONE)
     });
     session.type_text("后来那一句");
     session.press_enter();
@@ -52,7 +52,7 @@ fn a_wide_window_lists_what_was_said_and_a_click_jumps_back() {
             s.columns(SIDE, 38).contains("后来那一句")
                 && !body.contains("最早那一句")
                 && !body.contains("后来那一句")
-                && body.contains("✻")
+                && body.contains(crate::support::DONE)
                 && body.contains("第 60 段。")
         },
     );
@@ -83,7 +83,7 @@ fn a_narrow_window_has_no_sidebar() {
     session.wait_for("❯", "输入框");
     session.type_text("一句话");
     session.press_enter();
-    let screen = session.wait_for("✻", "回合结束");
+    let screen = session.wait_for(crate::support::DONE, "回合结束");
     assert!(screen.contains("好的。"));
     assert!(!screen.contains("跳转消息"), "窄屏没有侧边栏：\n{screen}");
 }

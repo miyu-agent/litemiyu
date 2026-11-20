@@ -4,6 +4,8 @@
 mod beat;
 mod blocks;
 mod cache;
+mod changed;
+pub use changed::{Changed, Found, Lookup, steps_of};
 mod chips;
 mod climb;
 mod clock;
@@ -156,6 +158,8 @@ pub struct Transcript {
     pieces: pieces::Pieces,
     /// 撤销、恢复记着的（`undo.rs`）。
     undos: undo::Undos,
+    /// 改过的文件的小账（`changed.rs`）。
+    changes: changed::Changes,
     /// 放掉、读回过几次：变了的，界面照「在哪一条的第几行」把视口找回来（`ui/body.rs`）。
     pub reshaped: u64,
     /// 会话日志中间坏了一行，只读打开的（[`Transcript::read_only`]）：只能看，输入框空着时写怎么新开会话。
@@ -351,6 +355,7 @@ impl Transcript {
             | Update::Ignored(_)
             | Update::ReadBack { .. }
             | Update::Spoken { .. }
+            | Update::Changes { .. }
             | Update::Replayed { .. }
             | Update::Choices(_)
             | Update::Efforts { .. }

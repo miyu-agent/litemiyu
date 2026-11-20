@@ -523,6 +523,10 @@ pub(super) const FILES: &[(&str, &str)] = &[
         include_str!("../../../../../resources/software/loop/wakeup/no-loop.txt"),
     ),
     (
+        "software/loop/wakeup/no-prompt.txt",
+        include_str!("../../../../../resources/software/loop/wakeup/no-prompt.txt"),
+    ),
+    (
         "software/loop/wakeup/set.txt",
         include_str!("../../../../../resources/software/loop/wakeup/set.txt"),
     ),

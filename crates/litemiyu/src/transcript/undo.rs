@@ -122,6 +122,11 @@ impl Transcript {
         }
     }
 
+    /// 第 `turn` 轮现在是撤掉了的（改过的文件的小账照它不算那一轮，`changed.rs`）。
+    pub(super) fn undone(&self, turn: u64) -> bool {
+        self.undos.decided.get(&turn).copied().unwrap_or(false)
+    }
+
     /// 画过几行撤销说明。
     pub fn undo_count(&self) -> u64 {
         self.undos.lines

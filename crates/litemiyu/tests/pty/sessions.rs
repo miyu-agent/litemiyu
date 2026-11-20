@@ -30,7 +30,7 @@ fn reopening_a_session_from_the_list_replays_it_and_says_the_loop_stopped() {
     second.press_enter();
     second.wait_for("CI 还在跑。", "从头补发了她回的那一句");
     second.wait_for(
-        "上次关闭窗口时循环已停止，输入 /loop 可以重新开始",
+        "上次关闭窗口时循环和定时触发已停止，输入 /loop 可以重新开始循环",
         "循环停了那一行",
     );
     second.wait_for("最近会话", "侧边栏里列着最近会话");

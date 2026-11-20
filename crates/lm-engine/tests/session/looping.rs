@@ -1,6 +1,7 @@
 //! 循环（L5 四，`docs/00-设计.md` 第五节第 9 条）：真 actor、假模型、真的 `schedule_wakeup`。人开一个她自己定节奏的循环，当场交一次，
 //! 她调 `schedule_wakeup` 定下一次，到点会话被叫醒开一轮，那一轮没再调就停着；固定间隔的照间隔交，停掉以后不再叫醒；重开时
-//! 关掉之前还开着的写一行 `command.ran`，只写一次；没开着循环的她调了说没有；无功能的一档不认 `/loop`。
+//! 关掉之前还开着的写一行 `command.ran`，只写一次；无功能的一档不认 `/loop`。没开着循环时她调 `schedule_wakeup` 的在
+//! `looping/once.rs`。
 //!
 //! 不真等：到点前把 tokio 的钟拨过去（[`skip`]），拨完马上放开，别的照真的钟走。
 
@@ -16,6 +17,8 @@ use lm_kernel::kernel::id::SessionId;
 use lm_kernel::kernel::origin::{By, ScheduleLoop};
 
 use crate::support::*;
+
+mod once;
 
 /// 有真的 `schedule_wakeup` 的目录。
 fn catalog() -> Catalog {
@@ -292,22 +295,9 @@ async fn reopening_tells_once_that_the_loop_stopped() {
 }
 
 #[tokio::test]
-async fn she_is_told_when_no_loop_runs_and_a_bare_session_has_no_loops() {
+async fn a_bare_session_has_no_loops() {
     let home = Home::new();
-    let models = script([
-        Play::calls(&[("schedule_wakeup", r#"{"delay_seconds":60}"#)]),
-        Play::Says("没有循环。"),
-    ]);
-    let handle = home.create_with(&models, &catalog()).await;
-    let mut subscription = watch(&handle).await;
-    ask(&handle, "m1", say("一分钟以后再看"))
-        .await
-        .expect("会话在跑");
-    let results = results(&turn(&mut subscription).await);
-    assert_eq!(
-        results,
-        [(false, "No loop is running in this session.".to_string())]
-    );
+    let models = script([]);
     let bare = home
         .create_as(
             &models,

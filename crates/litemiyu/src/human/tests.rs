@@ -263,3 +263,69 @@ fn every_core_saying_is_used() {
         assert!(said.len() > 50, "{code} 读到了：{}", said.len());
     }
 }
+
+/// 出厂的每件工具（`resources/software/<包>/tools/` 下的每一份说明）两种语言都有显示名：时间线里不直接印工具的原名（LM-20，
+/// 2026-11-20 项目主人：`schedule_wakeup` 那一步只印了原名）。
+#[test]
+fn every_shipped_tool_has_a_name_people_see() {
+    let software =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/software");
+    let mut shipped: Vec<String> = std::fs::read_dir(&software)
+        .unwrap()
+        .filter_map(|package| std::fs::read_dir(package.ok()?.path().join("tools")).ok())
+        .flatten()
+        .filter_map(|tool| tool.ok()?.path().file_stem()?.to_str().map(str::to_string))
+        .collect();
+    shipped.sort();
+    assert!(shipped.contains(&"schedule_wakeup".to_string()) && shipped.len() >= 12);
+    for language in ["zh", "en"] {
+        let human = Human::load(language);
+        let unnamed: Vec<&String> = shipped
+            .iter()
+            .filter(|tool| human.tool(tool).is_none())
+            .collect();
+        assert!(unnamed.is_empty(), "{language}：没有显示名的 {unnamed:?}");
+    }
+}
+
+#[test]
+fn a_scheduled_continuation_reads_in_both_languages() {
+    let set = said(
+        "software/loop/wakeup/set",
+        &[
+            ("next", "2026-11-20 13:07"),
+            ("reason", "CI 大约十分钟"),
+            ("delay", "10m"),
+        ],
+    );
+    let zh = Human::load("zh");
+    let face = zh.tool("schedule_wakeup").expect("有显示名");
+    assert_eq!(
+        (face.name.as_str(), face.subject.as_deref()),
+        ("定时触发", Some("reason"))
+    );
+    assert_eq!(zh.say(&set).as_deref(), Some("10m 后（2026-11-20 13:07）"));
+    assert_eq!(
+        zh.say(&said("software/loop/wakeup/stopped", &[]))
+            .as_deref(),
+        Some("已停止")
+    );
+    let en = Human::load("en");
+    assert_eq!(en.tool_name("schedule_wakeup"), "Schedule");
+    assert_eq!(en.say(&set).as_deref(), Some("in 10m (2026-11-20 13:07)"));
+    assert_eq!(
+        en.say(&said("software/loop/wakeup/stopped", &[]))
+            .as_deref(),
+        Some("Stopped")
+    );
+    for key in [
+        "wakeup/no-prompt",
+        "wakeup/no-loop",
+        "wakeup/no-delay",
+        "common/off",
+    ] {
+        let key = format!("software/loop/{key}");
+        assert!(zh.say(&said(&key, &[])).is_some(), "中文有 {key}");
+        assert!(en.say(&said(&key, &[])).is_some(), "英文有 {key}");
+    }
+}

@@ -105,6 +105,20 @@ pub enum Command {
         /// 界面的字。
         texts: Box<crate::config::Texts>,
     },
+    /// 找日志里改过一个文件的那几步（「文件修改」那一页，`transcript/changed.rs` 的 `Lookup`）：序号在 `after` 之后、`upto`
+    /// 为止（含）的那一截；草稿里的旁白照 `texts` 写。
+    Changes {
+        /// 哪个会话的（主会话、切进去看着的子会话）。
+        session: String,
+        /// 哪个文件（参数里写的 `file_path`）。
+        path: String,
+        /// 从这一条之后读起。
+        after: u64,
+        /// 读到这一条为止（含）。
+        upto: u64,
+        /// 界面的字。
+        texts: Box<crate::config::Texts>,
+    },
     /// 切进主会话派的子会话看它（Miyu「切进子会话」）：它的整个编号；`None` 是退回主会话。切进去以后说话、`!` 跑命令、
     /// 打断、撤回、压缩、清空都交给它。
     View(Option<String>),

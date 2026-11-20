@@ -12,6 +12,7 @@ mod deadline;
 mod drawer;
 mod effort;
 mod export;
+mod files_page;
 mod frame;
 mod help;
 mod jobs;
@@ -47,6 +48,7 @@ pub(crate) mod vim;
 mod window;
 
 pub use boxes::Panel;
+pub use files_page::{FilesPage, Shown};
 pub use frame::Lists;
 pub use jobs::JobsView;
 pub use screen::Screen;
@@ -166,6 +168,11 @@ impl App {
         }
         if self.settings.is_some() {
             self.settings_event(&event);
+            return;
+        }
+        // 「文件修改」那一页开着：按键、鼠标都归它（`files_page.rs`）。
+        if self.files_open() {
+            self.files_event(&event);
             return;
         }
         let menu_open = self.menu_matches().is_some();

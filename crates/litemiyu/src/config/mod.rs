@@ -37,7 +37,7 @@ pub(crate) use read::texts;
 pub use rescue::RescueWords;
 pub use timeline::{Body, Summary, Timeline, ToolKind};
 pub use words::{
-    ExportTexts, IgnoredTexts, JobTexts, LoopTexts, ModelTexts, RenameTexts, ShellTexts, UndoTexts,
+    ExportTexts, FilesTexts, IgnoredTexts, JobTexts, ModelTexts, RenameTexts, ShellTexts, UndoTexts,
 };
 
 texts! {
@@ -127,8 +127,8 @@ texts! {
         pub settings_not_saved: String,
         /// `Ctrl+C` 清空了输入框的提示：清掉的按 `↑` 找回。
         pub input_cleared: String,
-        /// 循环：输入框上面那一截、侧边栏那一段（`ui/loop_tag.rs`）。
-        pub loops: LoopTexts,
+        /// 「文件修改」：侧边栏那一段、`/files` 那一页（`ui/sidebar/files.rs`、`ui/files_page.rs`）。
+        pub files: FilesTexts,
         /// 后台任务：底栏的按钮、后台面板、正文里结束的那一行、子代理状态行。
         pub jobs: JobTexts,
         /// 终端的颜色记不进状态目录的提示，`{error}` 是为什么。

@@ -18,6 +18,9 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 /// 等一样东西最多多久。
 const WAIT: Duration = Duration::from_secs(30);
 /// 伪终端多大：同量尺（`bench/pty_run.py`）。
+/// 收尾行（做完的、被打断的）打头的符号（`layout.json` 的 `done_icon`：Miyu 以前「工作区」那一级的图标）。
+pub const DONE: &str = "\u{25a3}";
+
 const COLS: u16 = 160;
 const ROWS: u16 = 45;
 

@@ -32,7 +32,7 @@ impl Gather {
     /// 一份空的，草稿里的旁白照 `texts` 写（同界面）。
     pub fn new(texts: Box<Texts>) -> Gather {
         Gather {
-            draft: Transcript::default(),
+            draft: Transcript::untracked(),
             texts,
             done: 0,
             said: Vec::new(),

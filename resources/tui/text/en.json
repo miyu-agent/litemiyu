@@ -19,7 +19,7 @@
   "copy_failed": "Couldn't copy: {reason}",
   "nothing_to_copy": "No reply to copy yet",
   "core_failed": "Can't connect to the core: {reason}",
-  "loop_stopped": "The loop stopped when the window was closed. Run /loop to start it again",
+  "loop_stopped": "Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again",
   "refused": "The core refused: {reason}",
   "editing": " Editing your last message · Esc to cancel ",
   "interrupted": "Interrupted",
@@ -529,15 +529,17 @@
   "clipboard_text_only": "Only text can be pasted here",
   "clipboard_empty": "The clipboard is empty",
   "paste_label": "[pasted {lines} line(s)]",
-  "loops": {
-    "title": "Loop",
-    "next": "Next {time}",
-    "dynamic": "Dynamic interval",
-    "every": [
-      "Every {n} s",
-      "Every {n} min",
-      "Every {n} h",
-      "Every {n} d"
+  "files": {
+    "title": "Changed files",
+    "count": "{n} files",
+    "more": "{n} more",
+    "none": "No files changed in this session yet",
+    "loading": "Reading this change…",
+    "unreadable": "Can't read this change",
+    "hints": [
+      ["↑/↓", "switch file"],
+      ["PgUp/PgDn", "scroll"],
+      ["Esc", "back"]
     ]
   },
   "jobs": {

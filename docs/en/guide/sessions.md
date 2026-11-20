@@ -65,6 +65,7 @@ LiteMiyu does not title sessions automatically. Run `/rename a title` to set one
 ## Finding earlier content in a session
 
 - `/jump`: lists every message you sent in this session; pick one to jump to it. `Jump to` in the sidebar is a shortcut for it.
+- `/files`: shows the files the AI changed in this session and their diffs. `Changed files` in the sidebar is a shortcut for it.
 - `Ctrl+R`: lists what you have typed before (across all sessions); pick an entry to put it back into the input box.
 
 ## Undo and restore

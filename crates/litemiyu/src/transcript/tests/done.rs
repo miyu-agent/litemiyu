@@ -1,4 +1,4 @@
-//! 收尾行和用量（蓝图 `tui.md`「正文」第 4 条）：`✻ 时刻 · 端点/模型 · 用时 · 本轮用量(C命中%)`。
+//! 收尾行和用量（蓝图 `tui.md`「正文」第 4 条）：`▣  时刻 · 端点/模型 · 用时 · 本轮用量(C命中%)`。
 
 use super::apply;
 use crate::core::{EndReason, Push, Usage};

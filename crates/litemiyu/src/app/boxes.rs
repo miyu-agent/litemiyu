@@ -38,6 +38,8 @@ pub struct Boxes {
     pub sessions: Option<crate::session_list::SessionList>,
     /// 开着的 `/model` 框。
     pub model_list: Option<super::model_list::ModelList>,
+    /// 开着的「文件修改」那一页（`files_page.rs`）：整屏归它。
+    pub files_page: Option<super::files_page::FilesPage>,
     /// `/effort` 框改哪个模型、有哪几级：引擎交回来以前是 `None`。
     pub efforts: Option<crate::core::Efforts>,
 }

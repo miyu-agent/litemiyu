@@ -1,5 +1,5 @@
-//! 侧边栏的几段（Miyu 终端 `ui/sidebar/parts.rs`，蓝图 `tui.md`「挂载位」第 4 条）：会话、工作目录、上下文、用量、循环、跳转消息、
-//! 最近会话，照这个先后（Miyu `config/slots.rs` 的 `SIDE_PARTS`，去掉头像）。每段照宽度排出自己那几行；要点的（短编号、跳转
+//! 侧边栏的几段（Miyu 终端 `ui/sidebar/parts.rs`，蓝图 `tui.md`「挂载位」第 4 条）：会话、工作目录、上下文、用量、跳转消息、
+//! 文件修改（`files.rs`）、最近会话，照这个先后（Miyu `config/slots.rs` 的 `SIDE_PARTS`，去掉头像、循环）。每段照宽度排出自己那几行；要点的（短编号、跳转
 //! 消息、最近会话）画好以后照给它的那一块记点击区。
 
 use ratatui::layout::Rect;
@@ -84,21 +84,6 @@ impl Part<Side<'_, '_>> for Usage {
         let mut lines = super::usage_lines(&seen.talk.transcript, &total, seen.config);
         lines.extend(super::spent_lines(seen.spent(), seen.config));
         lines
-    }
-}
-
-/// `loops`：这个会话挂着的循环（「循环」第 3 条）。
-pub struct Loops;
-
-impl Part<Side<'_, '_>> for Loops {
-    fn lay(&mut self, side: &Side, width: u16) -> Vec<Line<'static>> {
-        let seen = side.seen;
-        super::super::loop_tag::sidebar(
-            seen.talk.looping.as_ref(),
-            seen.config,
-            (jiff::Timestamp::now(), crate::zone::local()),
-            width,
-        )
     }
 }
 
@@ -229,14 +214,22 @@ fn current_said(seen: &Seen, screen: &Screen) -> Option<u64> {
 }
 
 /// 这几段，照出厂的先后。
-pub fn all() -> (Session, Cwd, Context, Usage, Loops, Jumps, Recent) {
+pub fn all() -> (
+    Session,
+    Cwd,
+    Context,
+    Usage,
+    Jumps,
+    super::files::Files,
+    Recent,
+) {
     (
         Session::default(),
         Cwd,
         Context,
         Usage,
-        Loops,
         Jumps::default(),
+        super::files::Files::default(),
         Recent::default(),
     )
 }

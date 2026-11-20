@@ -122,6 +122,9 @@ impl Ui {
         app.media.keep_screens = keep;
         // 整份重排一帧排完：照时间分帧的话全留的那一份排几帧、视口跟着找几次全看机器快慢，没法逐格比。
         app.config.layout.relayout_budget_ms = 60_000;
+        // 工作目录钉住（日志里记的也是 `/tmp`）：不钉的照跑测试的目录，路径长了侧边栏「工作区」折成几行，下面几段的位置
+        // 跟着跑测试的地方变（从很深的目录里跑时「文件修改」被挤出窗口，点不着）。
+        app.talk.workdir = Some(std::path::PathBuf::from("/tmp"));
         let mut ui = Ui {
             app,
             events: events.to_vec(),
@@ -176,7 +179,10 @@ impl Ui {
                 upto,
             } = command
             else {
-                self.spoken(command);
+                match command {
+                    changes @ Command::Changes { .. } => self.changes(changes),
+                    other => self.spoken(other),
+                }
                 continue;
             };
             let pushes = Ok(replayed(&self.slice(&session, after, upto)));
@@ -220,6 +226,29 @@ impl Ui {
         self.app.core(Update::Spoken {
             session,
             said: Ok(gather.finish()),
+        });
+    }
+
+    /// 照引擎的做法交回「文件修改」那一页要的日志里改过一个文件的那几步（`Command::Changes`，办进草稿、当场比差异）。
+    fn changes(&mut self, command: Command) {
+        let Command::Changes {
+            session,
+            path,
+            after,
+            upto,
+            texts,
+        } = command
+        else {
+            panic!("要的不是改过的文件：{command:?}");
+        };
+        let mut lookup = crate::transcript::Lookup::new(texts, path.clone());
+        for push in replayed(&self.slice(&session, after, upto)) {
+            lookup.push(push);
+        }
+        self.app.core(Update::Changes {
+            session,
+            path,
+            found: Ok(lookup.finish()),
         });
     }
 
@@ -420,10 +449,12 @@ fn a_selection_across_rows_shed_and_read_back_copies_the_same_text() {
 }
 
 mod child;
+mod files;
 mod held;
 mod jump;
 mod late;
 mod live;
+mod pinned;
 mod pixel;
 mod redo;
 mod undo;

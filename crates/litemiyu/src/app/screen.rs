@@ -37,6 +37,13 @@ pub struct Screen {
     pub pulse: crate::pulse::Pulse,
     /// 侧边栏「跳转消息」每一行是哪一条（条目编号），照 `areas.jumps` 从上往下；上一帧排出来的。
     pub jumps: Vec<u64>,
+    /// 侧边栏「文件修改」每一行是第几个文件（「还有 N 个」那一行是第一个没列出来的），照 `areas.files` 从上往下；上一帧
+    /// 排出来的。
+    pub files: Vec<usize>,
+    /// 「文件修改」那一页上一帧画成什么样（`ui/files_page.rs`）。
+    pub files_page: crate::ui::FilesFrame,
+    /// 正文顶上钉着的是哪一条你说的话（条目编号，`ui/pinned.rs`）；没钉时是 `None`。
+    pub pinned: Option<u64>,
     /// 侧边栏「最近会话」每一行是哪个会话，照 `areas.recent` 从上往下；上一帧排出来的。
     pub recent: Vec<String>,
     /// 侧边栏从第几行露起（Miyu 排期第 14 条：内容比侧边栏高时滚轮滚它，画的时候照一共多高限住）。
@@ -61,6 +68,9 @@ impl Screen {
             grab: None,
             draw_now: false,
             jumps: Vec::new(),
+            files: Vec::new(),
+            files_page: crate::ui::FilesFrame::default(),
+            pinned: None,
             recent: Vec::new(),
             side_top: 0,
             side_select: crate::side_select::SideSelect::default(),

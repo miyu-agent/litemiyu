@@ -69,3 +69,13 @@ pub(crate) fn line(template: &Template, fields: &[(&str, &str)]) -> String {
 pub(crate) fn clock(at: Timestamp, offset: UtcOffset) -> String {
     at.local_minute(offset)
 }
+
+/// 多久以后写成给人看的：整天、整小时、整分钟的照那个单位，别的照秒（`1d`、`2h`、`5m`、`90s`，同 `/loop` 回执里的间隔）。
+pub(crate) fn span(seconds: u64) -> String {
+    match seconds {
+        s if s > 0 && s % 86_400 == 0 => format!("{}d", s / 86_400),
+        s if s > 0 && s % 3_600 == 0 => format!("{}h", s / 3_600),
+        s if s > 0 && s % 60 == 0 => format!("{}m", s / 60),
+        s => format!("{s}s"),
+    }
+}

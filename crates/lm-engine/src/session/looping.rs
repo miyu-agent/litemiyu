@@ -8,6 +8,9 @@
 //! - 固定间隔的：开的那一刻先交一次，之后每隔 `every` 秒交一次（Miyu 照上一次往后数整数个间隔、错过的跳过；这里定时器照交的那一刻
 //!   往后数，不会错过）。
 //! - 她自己定节奏的：开的那一刻先交一次，交过以后停着等，她调 `schedule_wakeup` 定下一次；不调就一直停着（同 Miyu「停着等」）。
+//! - 到点继续（LM-20，Miyu 没有）：没开着循环时她调 `schedule_wakeup` 并写了那句话，挂一个只交一次的（[`LoopRun::once`]）。
+//!   用的是同一个定时器、同一格 [`Looping`]（界面照循环的样子画下一次几点，`/loop off` 停得掉）；到点交过就没了，交进来的话
+//!   照定时任务记（`by` 的 `loop` 不写），不算循环的一轮：她在那一轮里再调一次才有下一次。
 
 use tokio::task::AbortHandle;
 
@@ -17,6 +20,9 @@ use lm_kernel::kernel::time::Timestamp;
 
 /// `schedule_wakeup` 停掉循环时给人看的说法的编号（`schedule/wakeup.rs`）：载入时照它认出循环是她停的。
 const STOPPED_KEY: &str = "software/loop/wakeup/stopped";
+
+/// `schedule_wakeup` 定上了的说法的编号：载入时照它认出有一个挂着（循环的下一次，或者到点继续）。
+const SET_KEY: &str = "software/loop/wakeup/set";
 
 /// 记重开时那一行用的命令名（`command.ran` 的 `command`，人敲 `/loop` 时界面记的也是它）。
 pub(crate) const COMMAND: &str = "loop";
@@ -48,7 +54,7 @@ impl Pace {
 pub struct Looping {
     /// 编号：`t1`、`t2`……这次运行里照开的先后数，写进交进来那句话的 `by`。
     pub id: String,
-    /// 节奏。
+    /// 节奏。到点继续的也写 [`Pace::Dynamic`]：下一次是她定的。
     pub pace: Pace,
     /// 到点交进来的话。
     pub prompt: String,
@@ -68,8 +74,10 @@ pub(crate) enum Order {
 /// actor 里这次运行的循环：现在的那一个、开过几个、等着到点的定时器。
 #[derive(Debug, Default)]
 pub(crate) struct LoopRun {
-    /// 现在的循环。
+    /// 现在的循环，或者挂着的到点继续。
     pub(crate) now: Option<Looping>,
+    /// 现在的那一个是到点继续（她在没开着循环时挂的）：到点交一次就没了。
+    once: bool,
     /// 这次运行里开过几个：编号照它数。
     made: u32,
     /// 等着到点的定时器：换、停、actor 退出时掐掉。
@@ -81,6 +89,7 @@ pub(crate) struct LoopRun {
 impl LoopRun {
     /// 开一个新的，换掉原来的：交回它的编号。
     pub(crate) fn start(&mut self, pace: Pace, prompt: String, at: Timestamp) -> &Looping {
+        self.once = false;
         self.made = self.made.saturating_add(1);
         self.now.insert(Looping {
             id: format!("t{}", self.made),
@@ -90,9 +99,21 @@ impl LoopRun {
         })
     }
 
+    /// 挂一个到点继续：`at` 是到点的时刻。编号照循环的接着数。
+    pub(crate) fn start_once(&mut self, prompt: String, at: Timestamp) {
+        self.start(Pace::Dynamic, prompt, at);
+        self.once = true;
+    }
+
+    /// 现在的那一个是到点继续。
+    pub(crate) fn once(&self) -> bool {
+        self.once && self.now.is_some()
+    }
+
     /// 停掉：有的交回真。
     pub(crate) fn stop(&mut self) -> bool {
         self.disarm();
+        self.once = false;
         self.now.take().is_some()
     }
 
@@ -128,9 +149,9 @@ impl Drop for LoopRun {
     }
 }
 
-/// 载入时一路记的：上一次运行关掉时循环是不是还开着（设计第五节第 9 条）。最后一条循环交进来的话以后，没有人敲过 `/loop`
-/// （`command.ran` 的 `loop`，重开时写的那一行也是它）、她也没用 `schedule_wakeup` 停掉的，算还开着：窗口关了它跟着停了，
-/// 要写一行告诉人。
+/// 载入时一路记的：上一次运行关掉时循环是不是还开着、到点继续是不是还挂着（设计第五节第 9 条）。最后一条循环交进来的话、
+/// 最后一次她用 `schedule_wakeup` 定上以后，没有人敲过 `/loop`（`command.ran` 的 `loop`，重开时写的那一行也是它）、她也没用
+/// `schedule_wakeup` 停掉、挂着的到点继续也没交过的，算还开着：窗口关了它跟着停了，要写一行告诉人。
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Trail {
     left: bool,
@@ -140,19 +161,18 @@ impl Trail {
     /// 记一条。
     pub(crate) fn note(&mut self, event: &Event) {
         match &event.body {
-            Body::MessageUser(_) if matches!(&event.by, By::Schedule(schedule) if schedule.looping.is_some()) =>
-            {
-                self.left = true;
+            // 循环交进来的一句：循环开着。到点继续交进来的（`loop` 没写）：它交过就没了。
+            Body::MessageUser(_) => {
+                if let By::Schedule(schedule) = &event.by {
+                    self.left = schedule.looping.is_some();
+                }
             }
             Body::CommandRan(ran) if ran.command == COMMAND => self.left = false,
-            Body::ToolResult(result)
-                if result
-                    .human
-                    .as_ref()
-                    .is_some_and(|said| said.key == STOPPED_KEY) =>
-            {
-                self.left = false;
-            }
+            Body::ToolResult(result) => match result.human.as_ref().map(|said| said.key.as_str()) {
+                Some(STOPPED_KEY) => self.left = false,
+                Some(SET_KEY) => self.left = true,
+                _ => {}
+            },
             _ => {}
         }
     }

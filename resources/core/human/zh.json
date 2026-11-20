@@ -23,7 +23,7 @@
     "permissions/unresolvable": "说不清它指向哪里：{reason}",
     "commands/loop-fixed": "已开始循环：每 {every} · {text}",
     "commands/loop-dynamic": "已开始循环：由 AI 定下一次 · {text}",
-    "commands/loop-off": "已停止此会话的循环。",
+    "commands/loop-off": "已停止此会话的循环和定时触发。",
     "commands/loop-none": "此会话没有循环。",
     "software/basesystem": "基础系统",
     "config/reference-header": "LiteMiyu 的全部配置项和默认值。这份是生成的，改它没有用。",

@@ -117,14 +117,26 @@ Without an interval, the AI decides after each run when to come back (at least 1
 
 ### Viewing and stopping
 
-While a loop is running, the time of the next run is shown above the input box on the right. In a wide enough window, the `Loop` section of the sidebar shows the interval, the next run and the prompt:
+While a loop is running, the time of the next run is shown above the input box on the right.
+
+Run `/loop off` to stop it; you see `Stopped this session's loops and scheduled continuations.`.
+
+> Loops only run while the window is open. Closing the window stops the loop, and the next time you open the session it says `Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again`. For scheduled tasks that keep running with the window closed, use [Miyu](https://github.com/miyu-agent/miyu).
+
+## Scheduled continuation
+
+Without running `/loop`, the AI can also set a time for this session and carry on by itself when that time comes. For example, when you ask it to "check in 10 minutes whether CI has finished", it calls the `schedule_wakeup` tool and the timeline gets one more step:
 
 ```text
-Loop
-  Every 1 min · Next 14:36
-  check whether the tests have finished
+Schedule · CI takes about ten minutes · in 10m (2026-11-20 14:22)
 ```
 
-Run `/loop off` to stop it; you see `Stopped this session's loops.`.
+The time is then shown above the input box on the right, the same way a loop is shown. When the time comes, the prompt the AI set is handed to this session and the AI runs one more turn. A scheduled continuation runs once: if the AI schedules another one during that turn, it runs once more; if it does not, that is the end.
 
-> Loops only run while the window is open. Closing the window stops the loop, and the next time you open the session it says `The loop stopped when the window was closed. Run /loop to start it again`. For scheduled tasks that keep running with the window closed, use [Miyu](https://github.com/miyu-agent/miyu).
+- The delay is at least 1 minute.
+- A session has one scheduled continuation at a time; when the AI schedules again, the new one replaces the old one.
+- If the AI is in the middle of a turn when the time comes, the prompt is queued and handed to the AI at the next step of that turn, without interrupting what it is doing.
+- Pressing `Esc` to interrupt the current reply does not cancel the scheduled continuation. To cancel it, run `/loop off` or ask the AI to cancel it.
+- Subagents and `litemiyu ask` cannot schedule a continuation, because they end as soon as they have answered.
+
+> Like loops, a scheduled continuation only works while the window is open, because LiteMiyu has no process that stays in the background. Closing the window, or switching to another session in this window, cancels it and it will not run; the next time you open the session it says `Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again`. If you still need it, ask the AI to schedule it again.

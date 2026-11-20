@@ -1,7 +1,8 @@
 //! 侧边栏（Miyu 终端 `ui/sidebar.rs`，蓝图 `tui.md`「后台命令、子代理和侧边栏」第 7 条，`docs/00-设计.md` 第五节第 12 条）：
 //! 不在首页、窗口不少于 `sidebar_from` 列时右边一栏，和主列之间一根暗色竖线，从顶到底；窄了收起，这里的代码不跑。
 //!
-//! 几段照先后（`parts.rs`）：会话（名字、短编号）、工作区、上下文、用量、循环、跳转消息、最近会话（`recent.rs`）。一段一个
+//! 几段照先后（`parts.rs`）：会话（名字、短编号）、工作区、上下文、用量、跳转消息、文件修改（`files.rs`）、最近会话
+//! （`recent.rs`）。一段一个
 //! 小标题（蓝色、不加粗），内容缩进两格一律暗色，段和段之间空一行（`stack.rs`）；比侧边栏高的滚轮滚它（`app/mouse.rs`），
 //! 指针停在侧边栏上时最右边那一列画滚动条。数都是底栏、`/status` 用的那一份（`Transcript` 的上下文、窗口、压缩线、压缩和
 //! 断裂次数，`Talk::usage_total`、`Seen::spent`），不另算、不另要。
@@ -9,7 +10,8 @@
 //! 侧边栏的字能拖选（`side_select.rs`）：画的时候把写了字的行记下来，选中的那几格反显（同 Miyu）。
 //!
 //! 和 Miyu 不一样的：头像、吉祥物、人格和预设那两行、扩展包的界面块、挂载位的配置，LiteMiyu 没有这些，不搬；
-//! 子代理在输入框下面的子代理状态行（`agents.rs`），侧边栏没有子代理那一段（Miyu 也没有）。
+//! 子代理在输入框下面的子代理状态行（`agents.rs`），侧边栏没有子代理那一段（Miyu 也没有）。Miyu 的「循环」一段不要
+//! （2026-11-20 项目主人：「移除右侧边栏的循环部分」）：循环只在输入框上面那一行写下一次几点（`loop_tag.rs`）。
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -26,6 +28,7 @@ use crate::transcript::Transcript;
 use crate::ui::Frame;
 use crate::{meter, theme};
 
+pub mod files;
 mod parts;
 mod stack;
 
@@ -237,6 +240,8 @@ pub fn clear(screen: &mut Screen) {
     screen.areas.session_id = Rect::default();
     screen.areas.jumps = Rect::default();
     screen.jumps.clear();
+    screen.areas.files = Rect::default();
+    screen.files.clear();
     screen.areas.recent = Rect::default();
     screen.recent.clear();
 }
@@ -256,7 +261,7 @@ pub fn draw(frame: &mut Frame, area: Rect, seen: &Seen, screen: &mut Screen) {
     );
     let inner = area.width.saturating_sub(2);
     let body = Rect::new(area.x + 1, area.y + 1, inner, area.height.saturating_sub(1));
-    let (mut session, mut cwd, mut context, mut usage, mut loops, mut jumps, mut recent) =
+    let (mut session, mut cwd, mut context, mut usage, mut jumps, mut files, mut recent) =
         parts::all();
     let top = screen.side_top;
     let stacked = {
@@ -269,8 +274,8 @@ pub fn draw(frame: &mut Frame, area: Rect, seen: &Seen, screen: &mut Screen) {
             &mut cwd,
             &mut context,
             &mut usage,
-            &mut loops,
             &mut jumps,
+            &mut files,
             &mut recent,
         ];
         stack::stack(frame, body, &mut all, (1, top), &mut side)

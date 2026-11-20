@@ -78,17 +78,23 @@ texts! {
 }
 
 texts! {
-    /// 循环的字（Miyu `text` 的 `loops`，蓝图 `tui.md`「循环」）：没有暂停，不要 Miyu 的 `paused`。
+    /// 「文件修改」的字（Miyu `text` 的 `files`，蓝图 `tui.md`「文件修改」）。
     #[derive(Debug, Clone)]
-    pub struct LoopTexts {
-        /// 侧边栏那一段的标题（第 3 条）。
+    pub struct FilesTexts {
+        /// 侧边栏那一段的小标题、那一页列表上面的标题。
         pub title: String,
-        /// 下一次，`{time}`。
-        pub next: String,
-        /// 动态间隔。
-        pub dynamic: String,
-        /// 固定间隔，`{n}`：秒、分钟、小时、天。
-        pub every: [String; 4],
+        /// 那一页标题后面：`{n}` 几个文件。
+        pub count: String,
+        /// 侧边栏放不下的：`{n}` 还有几个。
+        pub more: String,
+        /// `/files` 时这个会话还没改过文件。
+        pub none: String,
+        /// 那一页里还在从会话记录读的那一处改动（LiteMiyu 自己的：正文只留几屏，较早的改动点开时才读）。
+        pub loading: String,
+        /// 那一页里读不出来的那一处改动。
+        pub unreadable: String,
+        /// 那一页下面的按键提示：一条一个 `[键, 做什么]`。
+        pub hints: Vec<[String; 2]>,
     }
 }
 

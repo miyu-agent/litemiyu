@@ -99,6 +99,15 @@ impl App {
             }
             return Action::None;
         }
+        // 正文顶上钉着的你说的话：点一下跳回那句话（`ui/pinned.rs`）。
+        if !captured && self.screen.areas.pinned.contains(at) {
+            if matches!(mouse.kind, MouseEventKind::Down(_))
+                && let Some(id) = self.screen.pinned
+            {
+                self.jump_to(id);
+            }
+            return Action::None;
+        }
         // 回到底部的按钮（`ui/bottom_button.rs`）。
         if !captured && self.screen.areas.bottom.contains(at) {
             if matches!(mouse.kind, MouseEventKind::Down(_)) {
@@ -204,6 +213,8 @@ impl App {
                         self.copy(&session);
                     } else if areas.recent.contains(at) {
                         self.recent_clicked(at.y - areas.recent.y);
+                    } else if areas.files.contains(at) {
+                        self.files_clicked(at.y - areas.files.y);
                     } else if areas.jumps.contains(at) {
                         self.jump_clicked(at.y - areas.jumps.y);
                     }
@@ -267,6 +278,8 @@ impl App {
             || over(self.screen.areas.jobs_button)
             || over(self.screen.areas.session_id)
             || over(self.screen.areas.jumps)
+            || over(self.screen.areas.pinned)
+            || over(self.screen.areas.files)
             || over(self.screen.areas.recent)
             || agent
             // 正文的滚动条（`body_view.rs`）。

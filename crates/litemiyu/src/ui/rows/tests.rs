@@ -11,11 +11,39 @@ fn in_a_narrow_window_the_done_line_keeps_the_body_indent() {
     let f = Fixture::new();
     let mut t = Transcript::default();
     t.note(Kind::Done, "20:32 · deepseek/deepseek-v4 · 0.0s".into());
-    let icon = &f.config.layout.done_icon;
+    let icon = format!("{}{}", f.config.layout.done_icon, f.config.layout.done_gap);
     let rows = super::entry_rows(0, &t.entries[0], &f.ctx());
     let line = rows[0].line.to_string();
     assert!(line.starts_with(&format!("  {icon}20:32")), "{line:?}");
     assert_eq!(rows[0].content_x, 2);
+}
+
+#[test]
+fn the_done_line_starts_with_the_old_workspace_icon_in_both_icon_sets() {
+    // 2026-11-20 项目主人：收尾行打头换成 Miyu 以前「工作区」那一级的 `▣`（后面多空一格），Nerd Font、普通字符两套图标都
+    // 用它；「已中断」那一行跟着用同一个。
+    use crate::transcript::{Kind, Transcript};
+    use crate::ui::test_support::Fixture;
+    let mut f = Fixture::new();
+    assert_eq!(f.config.layout.done_icon, "\u{25a3} ");
+    assert_eq!(f.config.layout.done_gap, " ");
+    let mut t = Transcript::default();
+    t.note(Kind::Done, "20:32 · deepseek/deepseek-v4 · 0.0s".into());
+    t.note(Kind::Done, "已中断".into());
+    let first = |f: &Fixture, i: usize| {
+        super::entry_rows(i, &t.entries[i], &f.ctx())[0]
+            .line
+            .to_string()
+    };
+    for set in ["nerd", "plain"] {
+        f.config.icons = crate::config::named_icons(set).unwrap();
+        assert_eq!(
+            first(&f, 0),
+            "  ▣  20:32 · deepseek/deepseek-v4 · 0.0s",
+            "{set}"
+        );
+        assert_eq!(first(&f, 1), "  ▣  已中断", "{set}");
+    }
 }
 
 #[test]

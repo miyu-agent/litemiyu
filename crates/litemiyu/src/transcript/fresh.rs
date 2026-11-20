@@ -44,6 +44,7 @@ impl Default for Transcript {
             folded: 0,
             pieces: super::pieces::Pieces::default(),
             undos: Default::default(),
+            changes: Default::default(),
             reshaped: 0,
             read_only: false,
             returned: Vec::new(),

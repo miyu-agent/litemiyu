@@ -47,7 +47,7 @@ fn stop_interrupts_the_running_turn() {
     session.wait_for("tail -f /dev/null", "命令跑起来了");
     session.type_text("/stop");
     session.press_enter();
-    let screen = session.wait_for("✻", "这一轮停下的收尾行");
+    let screen = session.wait_for(crate::support::DONE, "这一轮停下的收尾行");
     assert!(
         !screen.contains("不该走到这里。"),
         "停了就不再请求模型：\n{screen}"
@@ -66,7 +66,7 @@ fn compact_summarises_the_session_and_says_so() {
     session.type_text("记住紫色");
     session.paste(&"x".repeat(70_000));
     session.press_enter();
-    session.wait_for("✻", "第一轮结束");
+    session.wait_for(crate::support::DONE, "第一轮结束");
     // 带上要求（LM-3 删了命令行的 `litemiyu compact`，它那条测试查的「摘要请求带着要求」挪到这里查）。
     session.type_text("/compact 只留颜色");
     session.press_enter();

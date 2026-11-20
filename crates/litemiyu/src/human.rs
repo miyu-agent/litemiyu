@@ -15,7 +15,7 @@ use phrases::Phrases;
 const MCP: &str = "mcp__";
 
 /// 编进程序的表：语言、编号的前缀、原文。
-const TABLES: [(&str, &str, &str); 4] = [
+const TABLES: [(&str, &str, &str); 6] = [
     (
         "zh",
         "core",
@@ -26,6 +26,7 @@ const TABLES: [(&str, &str, &str); 4] = [
         "software/basesystem",
         tui_json!("human/basesystem/zh.json"),
     ),
+    ("zh", "software/loop", tui_json!("human/loop/zh.json")),
     (
         "en",
         "core",
@@ -36,6 +37,7 @@ const TABLES: [(&str, &str, &str); 4] = [
         "software/basesystem",
         tui_json!("human/basesystem/en.json"),
     ),
+    ("en", "software/loop", tui_json!("human/loop/en.json")),
 ];
 
 /// 一件工具给人看的样子（Miyu `miyu-store` 的 `human::Face`）。

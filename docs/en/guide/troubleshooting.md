@@ -74,9 +74,9 @@ The conversation is still short and does not need compacting.
 
 When the footer shows this, the latest request was larger than the model's context window. Click `Compact` next to it, or run `/compact`. Simply sending your next message works too: LiteMiyu compacts first and then carries on.
 
-### `The loop stopped when the window was closed. Run /loop to start it again`
+### `Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again`
 
-`/loop` only runs while the window is open. After reopening the session, run `/loop` again.
+`/loop` and a [scheduled continuation](agents.md#scheduled-continuation) set by the AI only run while the window is open. After reopening the session, run `/loop` again, or ask the AI to schedule it again.
 
 ## Tools and commands
 

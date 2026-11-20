@@ -117,6 +117,14 @@
       "run": "jump"
     },
     {
+      "name": "files",
+      "summary": {
+        "zh": "看这个会话改过的文件和差异",
+        "en": "See the files this session changed and their diffs"
+      },
+      "run": "files"
+    },
+    {
       "name": "model",
       "summary": {
         "zh": "换这个会话的模型",

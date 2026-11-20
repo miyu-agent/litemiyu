@@ -290,7 +290,7 @@ fn piece_rows(t: &Transcript, cache: &RowCache, p: usize, width: u16) -> (u32, u
 /// 照读回来的推送办出的草稿正文：同打开旧会话时补发的那一路（只是正文自己办的那几样；界面那一头写进正文的几样所在的段
 /// 钉住了，不会放、不会读回）。
 fn replayed(pushes: Vec<Push>, texts: &crate::config::Texts) -> Transcript {
-    let mut draft = Transcript::default();
+    let mut draft = Transcript::untracked();
     for push in pushes {
         draft.update(Update::Push(push), texts);
     }

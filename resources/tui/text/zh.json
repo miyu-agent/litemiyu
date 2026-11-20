@@ -19,7 +19,7 @@
   "copy_failed": "复制失败：{reason}",
   "nothing_to_copy": "没有可复制的回答",
   "core_failed": "连不上核心：{reason}",
-  "loop_stopped": "上次关闭窗口时循环已停止，输入 /loop 可以重新开始",
+  "loop_stopped": "上次关闭窗口时循环和定时触发已停止，输入 /loop 可以重新开始循环",
   "refused": "核心拒绝：{reason}",
   "editing": " 编辑上一条 · Esc 取消 ",
   "interrupted": "已中断",
@@ -529,15 +529,17 @@
   "clipboard_text_only": "这里只能粘贴文字",
   "clipboard_empty": "剪贴板为空",
   "paste_label": "[已粘贴 {lines} 行]",
-  "loops": {
-    "title": "循环",
-    "next": "下次 {time}",
-    "dynamic": "动态间隔",
-    "every": [
-      "每 {n} 秒",
-      "每 {n} 分钟",
-      "每 {n} 小时",
-      "每 {n} 天"
+  "files": {
+    "title": "文件修改",
+    "count": "{n} 个文件",
+    "more": "还有 {n} 个",
+    "none": "这个会话还没改过文件",
+    "loading": "正在读取这一处修改…",
+    "unreadable": "无法读取这一处修改",
+    "hints": [
+      ["↑/↓", "切换文件"],
+      ["PgUp/PgDn", "滚动"],
+      ["Esc", "返回"]
     ]
   },
   "jobs": {

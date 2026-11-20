@@ -6,13 +6,14 @@ This page describes every `/` command of the input box. Typing `/` opens the com
 
 > Only the commands listed below are commands. Anything else that starts with `/` (for example `/usr/bin has what in it`) is sent to the AI as an ordinary message.
 
-LiteMiyu has 22 commands:
+LiteMiyu has 23 commands:
 
 | Command | What it does |
 |---|---|
 | [`/new`](#new) | Start a new session |
 | [`/sessions`](#sessions) (`/resume`) | List sessions and switch to one |
 | [`/jump`](#jump) | List what you said in this session and jump to it |
+| [`/files`](#files) | See the files this session changed and their diffs |
 | [`/rename`](#rename) | Rename the session |
 | [`/delete`](#delete) | Delete this session |
 | [`/export`](#export) | Export this session to a Markdown file |
@@ -54,6 +55,10 @@ Lists every session on disk, grouped by when it was last used. Select one and pr
 ### /jump
 
 Lists every message you sent in this session, with a preview of the selected one on the right. Press `Enter` on one and the conversation scrolls to it. It is a handy way to find earlier content in a long session.
+
+### /files
+
+Opens the full-screen `Changed files` page with the files the AI changed in this session and the diff of every change; `Esc` goes back. See [Interface](interface.md#changed-files) for the details. When no file has been changed in this session yet, it shows `No files changed in this session yet`.
 
 ### /rename
 

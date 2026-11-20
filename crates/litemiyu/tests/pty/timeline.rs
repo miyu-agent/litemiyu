@@ -41,7 +41,7 @@ fn four_tools_with_words_between_end_in_one_timeline() {
     session.type_text("把笔记里的 TODO 改成 DONE");
     session.press_enter();
     session.wait_for("别的文件没有要改的。", "最后的回答");
-    let screen = session.wait_for("✻", "回合结束的收尾行");
+    let screen = session.wait_for(crate::support::DONE, "回合结束的收尾行");
     for said in [
         "先看看笔记。",
         "再找找还有哪里写着 TODO。",

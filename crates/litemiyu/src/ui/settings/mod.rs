@@ -3,7 +3,7 @@
 
 mod columns;
 mod extras;
-mod floating;
+pub(in crate::ui) mod floating;
 mod model_popups;
 mod models;
 mod opening;

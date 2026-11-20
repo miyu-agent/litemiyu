@@ -327,6 +327,7 @@ impl App {
             Run::Clear => self.link.core.send(Command::Clear),
             Run::Stop => self.link.core.send(Command::Stop),
             Run::Jump => self.open_jump(),
+            Run::Files => self.open_files(0),
             Run::Copy => self.copy_reply(),
             Run::New => self.new_session_with(words),
             Run::Sessions => self.open_sessions(),

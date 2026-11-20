@@ -23,7 +23,7 @@
     "permissions/unresolvable": "can't tell where it points: {reason}",
     "commands/loop-fixed": "Loop started: every {every} · {text}",
     "commands/loop-dynamic": "Loop started: the AI picks when to run next · {text}",
-    "commands/loop-off": "Stopped this session's loops.",
+    "commands/loop-off": "Stopped this session's loops and scheduled continuations.",
     "commands/loop-none": "This session has no loop.",
     "software/basesystem": "Base system",
     "config/reference-header": "Every LiteMiyu setting and its default. This file is generated. Editing it has no effect.",

@@ -111,7 +111,7 @@ impl Transcript {
                 let rate = self.turn_rate(texts);
                 self.push(Kind::Done, text + &usage + &rate);
             }
-            // 和收尾行一个样子：`✻ 已中断`（`tui.md`「正文」第 4 条）。
+            // 和收尾行一个样子：记号后面写「已中断」（`tui.md`「正文」第 4 条）。
             EndReason::Interrupted => self.push(Kind::Done, texts.interrupted.clone()),
             EndReason::Error => {
                 let reason = failure.map_or_else(

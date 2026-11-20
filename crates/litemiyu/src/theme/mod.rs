@@ -24,7 +24,7 @@ use std::sync::{PoisonError, RwLock};
 
 pub use answer::{Catch, Caught, QUERY, Which};
 pub use depth::Depth;
-pub use ground::{Choice, Mode, float};
+pub use ground::{Choice, Mode, float, panel};
 pub use seen::Rgb;
 pub use shimmer::lifted;
 

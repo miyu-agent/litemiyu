@@ -71,33 +71,45 @@ impl Actor {
         Mail::Done
     }
 
-    /// `schedule_wakeup` 交来的：她自己定节奏的循环才认（同 Miyu 端口的 `dynamic`），当场答。
+    /// `schedule_wakeup` 交来的，当场答。她自己定节奏的循环、挂着的到点继续：改下一次、停（同 Miyu 端口的 `dynamic`）。
+    /// 人开着固定间隔的循环：拒，它的节奏不归她定。什么都没开着（LM-20）：写了那句话的挂一个到点继续，没写的说要写，要停的
+    /// 说没有；子会话（它答完就交回报，没人等它到点）、没人看着的一次运行（`litemiyu ask` 答完就退）里说用不了。
     pub(super) fn schedule_asked(
         &mut self,
         ask: ScheduleAsk,
         reply: oneshot::Sender<Result<ScheduleAnswer, ScheduleRefused>>,
     ) {
-        let dynamic = self
-            .looping
-            .now
-            .as_ref()
-            .is_some_and(|looping| looping.pace == Pace::Dynamic);
-        let answered = match (dynamic, ask) {
-            (false, _) => Err(ScheduleRefused::NoLoop),
-            (true, ScheduleAsk::StopLoop) => {
+        let running = self.looping.now.as_ref().map(|looping| looping.pace);
+        let answered = match (running, ask) {
+            (Some(Pace::Fixed { .. }), _) | (None, ScheduleAsk::StopLoop) => {
+                Err(ScheduleRefused::NoLoop)
+            }
+            (None, ScheduleAsk::Wakeup { .. })
+                if self.reporter.is_some() || !self.session.attended() =>
+            {
+                Err(ScheduleRefused::Unavailable)
+            }
+            (None, ScheduleAsk::Wakeup { prompt: None, .. }) => Err(ScheduleRefused::NoPrompt),
+            (
+                None,
+                ScheduleAsk::Wakeup {
+                    delay,
+                    prompt: Some(prompt),
+                },
+            ) => {
+                let millis = delay.saturating_mul(1000);
+                let next = self.after(millis);
+                self.looping.start_once(prompt, next);
+                self.arm_loop(millis);
+                Ok(ScheduleAnswer::Woken { next })
+            }
+            (Some(Pace::Dynamic), ScheduleAsk::StopLoop) => {
                 self.looping.stop();
                 Ok(ScheduleAnswer::LoopStopped)
             }
-            (true, ScheduleAsk::Wakeup { delay, prompt }) => {
+            (Some(Pace::Dynamic), ScheduleAsk::Wakeup { delay, prompt }) => {
                 let millis = delay.saturating_mul(1000);
-                // 没有上限（施工 WK-1）：写不下的照最晚的时刻；定时器照 tokio 的办法收在三十来年以内。
-                let next = Timestamp::from_unix_millis(
-                    self.clock
-                        .now()
-                        .unix_millis()
-                        .saturating_add(i64::try_from(millis).unwrap_or(i64::MAX)),
-                )
-                .unwrap_or(Timestamp::LATEST);
+                let next = self.after(millis);
                 if let Some(looping) = self.looping.now.as_mut() {
                     looping.next = Some(next);
                     if let Some(prompt) = prompt {
@@ -112,13 +124,31 @@ impl Actor {
         answer(reply, answered);
     }
 
-    /// 第 `generation` 代的定时器到点了：交一条说话的命令。固定间隔的先换上下一次的定时器，她自己定节奏的停着等她定。旧一代的、
-    /// 循环已经停了的不理。
+    /// 过 `millis` 毫秒以后的时刻。没有上限（施工 WK-1）：写不下的照最晚的时刻；定时器照 tokio 的办法收在三十来年以内。
+    fn after(&mut self, millis: u64) -> Timestamp {
+        Timestamp::from_unix_millis(
+            self.clock
+                .now()
+                .unix_millis()
+                .saturating_add(i64::try_from(millis).unwrap_or(i64::MAX)),
+        )
+        .unwrap_or(Timestamp::LATEST)
+    }
+
+    /// 第 `generation` 代的定时器到点了：交一条说话的命令。固定间隔的先换上下一次的定时器，她自己定节奏的停着等她定；到点
+    /// 继续的交这一次就没了，照定时任务记（`by` 的 `loop` 不写：组装包定时任务的标签，载入时不算循环还开着）。旧一代的、循环
+    /// 已经停了的不理。
     pub(super) fn loop_due(&mut self, generation: u64) -> Option<Input> {
         if !self.looping.due(generation) {
             return None;
         }
         let at = self.clock.now();
+        if self.looping.once() {
+            let once = self.looping.now.take()?;
+            self.looping.stop();
+            self.show_loop();
+            return fire(once.id, once.prompt, None, at);
+        }
         let looping = self.looping.now.as_mut()?;
         let (id, prompt, pace) = (looping.id.clone(), looping.prompt.clone(), looping.pace);
         looping.next = match pace {
@@ -133,20 +163,7 @@ impl Actor {
             self.arm_loop(every.saturating_mul(1000));
         }
         self.show_loop();
-        // 每次一个新的编号（见模块的说明）：写不成编号的（任务编号不会这样）这一次不交。
-        let command = CommandId::parse(&format!("schedule/{id}/{}/say", unique(at))).ok()?;
-        Some(Input::Command(Received {
-            id: command,
-            by: By::Schedule(Schedule {
-                schedule: id,
-                looping: Some(pace.kind()),
-            }),
-            at,
-            command: Command::Send {
-                blocks: vec![Block::Text(Text { text: prompt })],
-                urgent: false,
-            },
-        }))
+        fire(id, prompt, Some(pace.kind()), at)
     }
 
     /// 换上过 `millis` 毫秒到点的定时器：到点送回「到点了」（带这一代），旧的掐掉。
@@ -166,4 +183,26 @@ impl Actor {
         let now = self.looping.now.clone();
         self.counted().looping = now;
     }
+}
+
+/// 任务 `id` 到点交的那一条说话的命令。每次一个新的编号（见模块的说明）：写不成编号的（任务编号不会这样）这一次不交。
+fn fire(
+    id: String,
+    prompt: String,
+    looping: Option<lm_kernel::kernel::origin::ScheduleLoop>,
+    at: Timestamp,
+) -> Option<Input> {
+    let command = CommandId::parse(&format!("schedule/{id}/{}/say", unique(at))).ok()?;
+    Some(Input::Command(Received {
+        id: command,
+        by: By::Schedule(Schedule {
+            schedule: id,
+            looping,
+        }),
+        at,
+        command: Command::Send {
+            blocks: vec![Block::Text(Text { text: prompt })],
+            urgent: false,
+        },
+    }))
 }

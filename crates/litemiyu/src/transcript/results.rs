@@ -41,6 +41,10 @@ impl Transcript {
                 *said = result_said;
             }
         }
+        // 编辑、写入成了的记进改过的文件的小账（`changed.rs`）。
+        if let Some(at) = at {
+            self.note_change(at, status);
+        }
     }
 
     /// 在跑的工具推来一段输出：收全了一行进度的，写进那一步。

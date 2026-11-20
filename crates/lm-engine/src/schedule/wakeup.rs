@@ -4,7 +4,9 @@
 //! - 间隔短于 [`WAKEUP_MIN`] 的照它，不报错，没有上限（施工 WK-1）；`prompt` 覆盖醒来交进来的话，不写的照旧（照 Claude Code，
 //!   她每次把同一句原话传回来）；`reason` 只给人看。成了说下一次几点，照会话的时区写。
 //! - `stop: true` 停掉这个会话的动态循环，别的参数不看。
-//! - 这个会话没开着动态循环的，端口拒，说没有在跑的循环。
+//! - 这个会话没开着循环的（LM-20，Miyu 一律拒）：写了 `prompt` 的挂一个到点继续，过 `delay_seconds` 秒把那句话交进这个会话
+//!   开一轮，只交一次；那一轮里再调一次才有下一次。没写 `prompt` 的说要写。`stop` 撤掉挂着的，没有挂着的说没有在跑的循环。
+//!   子会话、没人看着的一次运行（`litemiyu ask`）里端口拒，说用不了。
 
 use serde::Deserialize;
 
@@ -27,6 +29,7 @@ pub(crate) struct Wakeup {
     set: Template,
     stopped: Template,
     no_loop: Template,
+    no_prompt: Template,
     no_delay: Template,
 }
 
@@ -53,18 +56,20 @@ impl Wakeup {
             set: wakeup("set", &["next"])?,
             stopped: wakeup("stopped", &[])?,
             no_loop: wakeup("no-loop", &[])?,
+            no_prompt: wakeup("no-prompt", &[])?,
             no_delay: wakeup("no-delay", &[])?,
         })
     }
 
-    /// 端口办成了。
-    fn answered(&self, answer: ScheduleAnswer, offset: UtcOffset, reason: &str) -> Done {
+    /// 端口办成了。`shown` 是给人看的那两格：多久以后（照收过下限的秒数写）、理由。
+    fn answered(&self, answer: ScheduleAnswer, offset: UtcOffset, shown: (&str, &str)) -> Done {
         match answer {
             ScheduleAnswer::Woken { next } => {
                 let next = clock(next, offset);
+                let (delay, reason) = shown;
                 Done::ok(texts::line(&self.set, &[("next", &next)])).said(texts::said(
                     "wakeup/set",
-                    &[("next", &next), ("reason", reason)],
+                    &[("next", &next), ("reason", reason), ("delay", delay)],
                 ))
             }
             ScheduleAnswer::LoopStopped => texts::ok(&self.stopped, "wakeup/stopped", &[]),
@@ -75,6 +80,7 @@ impl Wakeup {
     fn refused(&self, refused: ScheduleRefused) -> Done {
         match refused {
             ScheduleRefused::NoLoop => texts::error(&self.no_loop, "wakeup/no-loop", &[]),
+            ScheduleRefused::NoPrompt => texts::error(&self.no_prompt, "wakeup/no-prompt", &[]),
             ScheduleRefused::Unavailable => self.common.off(),
         }
     }
@@ -91,12 +97,17 @@ impl Tool for Wakeup {
                 Ok(args) => args,
                 Err(error) => return self.common.bad_args(&error),
             };
+            let mut delay = String::new();
             let ask = match (args.stop, args.delay_seconds) {
                 (true, _) => ScheduleAsk::StopLoop,
-                (false, Some(delay)) => ScheduleAsk::Wakeup {
-                    delay: clamp(delay),
-                    prompt: args.prompt.filter(|prompt| !prompt.trim().is_empty()),
-                },
+                (false, Some(seconds)) => {
+                    let seconds = clamp(seconds);
+                    delay = texts::span(seconds);
+                    ScheduleAsk::Wakeup {
+                        delay: seconds,
+                        prompt: args.prompt.filter(|prompt| !prompt.trim().is_empty()),
+                    }
+                }
                 (false, None) => return texts::error(&self.no_delay, "wakeup/no-delay", &[]),
             };
             let Some(port) = call.schedules.as_ref() else {
@@ -104,7 +115,7 @@ impl Tool for Wakeup {
             };
             let reason = args.reason.unwrap_or_default();
             match port.schedule(ask).await {
-                Ok(answer) => self.answered(answer, call.offset, &reason),
+                Ok(answer) => self.answered(answer, call.offset, (&delay, &reason)),
                 Err(refused) => self.refused(refused),
             }
         })

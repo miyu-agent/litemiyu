@@ -302,6 +302,11 @@ impl Session {
         }
     }
 
+    /// 这一刻有没有人能确认、能回答：快照里写的，或者 [`Session::set_attended`] 交的。
+    pub fn attended(&self) -> bool {
+        self.policy.current.attended
+    }
+
     /// 回合开始的挂接点跑完了：带着新快照的哈希 `hash`、又有放着的那一份的，换上它，记一条 `session.policy_changed`（只写
     /// `policy`，`by` 是内核，`cause` 是回合的）。回合开头的事实是照旧的那一份查的：照新的再查一次角色扮演提示，到了轮数
     /// 的跟着记（旧人格没有提示、新的有，这一轮就带上）。缺一样的什么都不记，放着的扔掉。

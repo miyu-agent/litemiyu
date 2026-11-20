@@ -20,7 +20,7 @@ fn input_history_comes_back_from_the_file_and_new_lines_go_into_it() {
     session.type_text("\x1b[B");
     session.type_text("这次说的");
     session.press_enter();
-    session.wait_for("✻", "回合结束");
+    session.wait_for(crate::support::DONE, "回合结束");
     let file = session.state().join("history.jsonl");
     let text = std::fs::read_to_string(&file).expect("记着输入历史");
     let lines: Vec<&str> = text.lines().collect();

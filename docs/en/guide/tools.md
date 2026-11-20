@@ -21,7 +21,7 @@ LiteMiyu comes with 12 tools, all built into the program; nothing needs installi
 | `session_usage` | Shows how many tokens this session has used and how full the context is |
 | `history` | Searches and reads back earlier parts of this session, including what compaction removed |
 | `ask_user` | Asks you questions with options and waits for your answers |
-| `schedule_wakeup` | In a self-paced `/loop`, decides when the next run happens |
+| `schedule_wakeup` | Sets a time at which this session carries on by itself; in a self-paced `/loop`, it decides when the next run happens. See [Scheduled continuation](agents.md#scheduled-continuation) |
 
 In addition, tools offered by the MCP servers you connect are handed to the AI as well; see [Skills and MCP](skills-mcp.md).
 
@@ -36,7 +36,7 @@ Different sessions have different tools:
 | All features (default) | All 12, plus MCP tools |
 | No features (`/new bare`, `litemiyu --bare`) | None |
 | Rescue mode (`litemiyu --rescue`) | Only `read`, `write`, `edit`, `shell`, `jobs` |
-| Subagent | No `ask_user` or `sessions` |
+| Subagent | No `ask_user`, `sessions` or `schedule_wakeup` |
 
 ## Permissions: no questions by default
 

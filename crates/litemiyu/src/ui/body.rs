@@ -103,6 +103,8 @@ pub fn draw(frame: &mut Frame, areas: Areas, seen: &Seen, screen: &mut Screen) {
         &mut screen.view,
         &seen.config.layout.user_bar,
     );
+    // 往上翻过时顶上钉一行你说的那句话（`pinned.rs`）。
+    super::pinned::draw(frame, area, (&rows, first), seen, screen);
     // 鼠标、复制照这一帧的行；共享记着的那一份，不复制。
     screen.view.rows = rows.clone();
     // 悬停在链接上：这个链接露出来的每一截都加下划线。
@@ -436,13 +438,18 @@ fn first_row(
     let rest = lowest.max(view.floor_end.saturating_sub(height)).min(cap);
     let first = match view.top {
         Some(top) => top.min(rest),
-        // 她正在写的一段正文长过视口：第一行顶到最上面就停住，一段只停一次（`tui.md`「正文」第 1 条）。
+        // 她正在写的一段正文长过视口：第一行顶到第三行就停住，一段只停一次（`tui.md`「正文」第 1 条）。最上面让两行：
+        // 往上翻着时顶上钉的那一行和它下面空的一行（`pinned.rs`）盖在最上面，原来停在第一行，正文的第一行被它盖住
+        // （Miyu `b4aeb681`、`343bb02e`）。
         None => match view.reading {
-            Some((id, start)) if rest > start && view.paused != Some(id) => {
+            Some((id, start))
+                if rest > start.saturating_sub(super::pinned::ROWS) && view.paused != Some(id) =>
+            {
+                let stop = start.saturating_sub(super::pinned::ROWS);
                 view.paused = Some(id);
-                view.top = Some(start);
+                view.top = Some(stop);
                 view.auto = true;
-                start
+                stop
             }
             _ => rest,
         },

@@ -97,6 +97,8 @@ fn the_squeezed_resources_read_the_same_as_the_originals() {
         "commands.json",
         "human/basesystem/en.json",
         "human/basesystem/zh.json",
+        "human/loop/en.json",
+        "human/loop/zh.json",
         "icons/nerd.json",
         "icons/plain.json",
         "languages.json",

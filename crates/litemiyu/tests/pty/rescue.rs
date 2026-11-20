@@ -200,7 +200,7 @@ fn one_round(root: &Root, session: &Session, server: &Served) {
     session.type_text("看看环境");
     session.press_enter();
     session.wait_for("看过了，没事。", "回答");
-    session.wait_for("✻", "回合结束的收尾行");
+    session.wait_for(super::support::DONE, "回合结束的收尾行");
     let pid = session.pid().expect("有进程号");
     assert_eq!(writable_files(pid), Vec::<String>::new(), "开着能写的文件");
     assert_eq!(root.tree(), before, "一个文件、一个目录都不该多");
@@ -312,7 +312,7 @@ fn an_address_and_model_without_a_key_go_without_authentication() {
     session.wait_for("未提供密钥", "说一句没给 key");
     session.type_text("在吗");
     session.press_enter();
-    session.wait_for("✻", "回合结束的收尾行");
+    session.wait_for(super::support::DONE, "回合结束的收尾行");
     let requests = server.requests();
     let auth = requests[0]
         .headers

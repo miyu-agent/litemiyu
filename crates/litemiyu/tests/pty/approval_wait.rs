@@ -49,7 +49,7 @@ fn an_approval_counts_down_takes_the_footer_and_its_wait_is_not_timed() {
     let screen = session.screen().to_string() + &screen;
     let done = screen
         .lines()
-        .find(|l| l.contains("✻ ") && l.contains(" · fake/"))
+        .find(|l| l.contains(crate::support::DONE) && l.contains(" · fake/"))
         .expect("有收尾行");
     let took = done
         .split(" · ")

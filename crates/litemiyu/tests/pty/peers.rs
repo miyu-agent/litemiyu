@@ -244,7 +244,7 @@ fn not_open_after_the_turn_is_a_line_of_its_own() {
         let screen = s.screen();
         screen
             .split_once("等着了。")
-            .is_some_and(|(_, after)| after.contains('✻'))
+            .is_some_and(|(_, after)| after.contains(crate::support::DONE))
     });
     // 对方读完了登记的那封信（名单上有了这一边）才关：不然关的时候名单是空的，不回「关了」。
     let deadline = Instant::now() + WAIT;
@@ -258,7 +258,8 @@ fn not_open_after_the_turn_is_a_line_of_its_own() {
     let screen = me.wait_for("未打开，已停止等待", "对方关了：单独一行");
     let lines: Vec<&str> = screen.lines().collect();
     let at = |text: &str| lines.iter().position(|l| l.contains(text));
-    let (Some(end), Some(note)) = (at("✻"), at("未打开，已停止等待")) else {
+    let (Some(end), Some(note)) = (at(crate::support::DONE), at("未打开，已停止等待"))
+    else {
         panic!("收尾行、那一句都在：\n{screen}");
     };
     assert!(end < note, "那一句在收尾行下面：\n{screen}");

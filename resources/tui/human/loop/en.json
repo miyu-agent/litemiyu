@@ -1,0 +1,18 @@
+{
+  "tools": {
+    "schedule_wakeup": {
+      "name": "Schedule",
+      "subject": "reason",
+      "icon": "◷"
+    }
+  },
+  "said": {
+    "wakeup/set": "in {delay} ({next})",
+    "wakeup/stopped": "Stopped",
+    "wakeup/no-loop": "No loop is running",
+    "wakeup/no-prompt": "No prompt given",
+    "wakeup/no-delay": "No delay given",
+    "common/bad-args": "Bad arguments: {error}",
+    "common/off": "Scheduling is not available in this session"
+  }
+}
