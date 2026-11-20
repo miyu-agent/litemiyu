@@ -28,6 +28,7 @@ PUBLIC=(
   LICENSE
   THIRD-PARTY-LICENSES.txt
   README.md
+  README.zh-CN.md
   bench
   crates
   docs/00-设计.md
@@ -52,6 +53,7 @@ REQUIRED=(
   LICENSE
   THIRD-PARTY-LICENSES.txt
   README.md
+  README.zh-CN.md
   docs/00-设计.md
   .github/workflows/ci.yml
   .github/workflows/release.yml
@@ -142,7 +144,8 @@ def mail(m):
 # 通用的规则：名字、正则、要不要再判一下（None 是命中就算）、命中时印不印原文。
 RULES = [
     ("私网地址", r"(?<![0-9.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?![0-9])", None, True),
-    ("家目录", r"/(?:home|Users)/([A-Za-z0-9_][A-Za-z0-9_.-]*)", home, True),
+    # `$RIVALS_ROOT/home/<程序>` 是对比测试给每一家建的沙箱家目录（`bench/rivals/`），不是谁的家目录。
+    ("家目录", r"(?<!\$RIVALS_ROOT)/(?:home|Users)/([A-Za-z0-9_][A-Za-z0-9_.-]*)", home, True),
     ("家目录", r"-home-([a-z0-9_]+)-", home, True),
     ("个人目录", r"~/Docu[m]ents|/tmp/clau[d]e-", None, True),
     ("邮箱", r"[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})\b", mail, True),

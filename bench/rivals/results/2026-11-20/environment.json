@@ -1,0 +1,344 @@
+{
+ "measured_on": "2026-11-20",
+ "machine": {
+  "cpu": "AMD Ryzen 7 8745HS w/ Radeon 780M Graphics",
+  "logical_cpus": 16,
+  "memory_kb": 23858064,
+  "kernel": "7.2.11-zen1-1-zen",
+  "os": "Arch Linux",
+  "filesystem": "btrfs rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home",
+  "transparent_hugepage": "[always] madvise never",
+  "cpufreq_driver": "amd-pstate-epp",
+  "cpufreq_governor": "powersave",
+  "energy_performance_preference": "power",
+  "swap": "/dev/zram0 partition 4G",
+  "systemd": "systemd 262 (262.1-1-arch)",
+  "bubblewrap": "bubblewrap 0.13.1",
+  "python": "3.14.8"
+ },
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "TERM": "xterm-256color",
+  "COLORTERM": "truecolor"
+ },
+ "installs": [
+  {
+   "app": "node",
+   "package": "node",
+   "version": "v26.13.1",
+   "source": "https://nodejs.org/dist/v26.13.1/node-v26.13.1-linux-x64.tar.xz",
+   "integrity": "sha256:5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864",
+   "installed_at": "2026-11-20T14:04:40+0900",
+   "note": "和 SHASUMS256.txt 对过"
+  },
+  {
+   "app": "claude",
+   "package": "@anthropic-ai/claude-code",
+   "version": "2.1.329",
+   "source": "npm registry",
+   "integrity": "sha512-WQ7RY331gsODjOoDBbeG1fjMfKY1Ur9yxWAOI9SgdLZvqA9sAREaezXt7e3uNbHlgjVAZg1IqlJT1J7WKViEFA==",
+   "installed_at": "2026-11-20T14:04:47+0900",
+   "note": "连依赖一共 2 个包"
+  },
+  {
+   "app": "codex",
+   "package": "@openai/codex",
+   "version": "0.171.0",
+   "source": "npm registry",
+   "integrity": "sha512-1IOFzL2Xg86tLdw6kDo3GoKbkQENgQi7TI6rlEvN132R7ngSw7SNOIQoTcnKzSZZ8kf9N9GynCweSoaFbqk2Eg==",
+   "installed_at": "2026-11-20T14:04:53+0900",
+   "note": "连依赖一共 2 个包"
+  },
+  {
+   "app": "pi",
+   "package": "@earendil-works/pi-coding-agent",
+   "version": "1.5.2",
+   "source": "npm registry",
+   "integrity": "sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==",
+   "installed_at": "2026-11-20T14:04:57+0900",
+   "note": "连依赖一共 123 个包"
+  },
+  {
+   "app": "dsh",
+   "package": "@deepseek-ai/dsh",
+   "version": "0.2.2-rc.5",
+   "source": "npm registry",
+   "integrity": "sha512-cNbp12tLYLUTXaVli7zwwMjzmmEVCD1PRldg4oKtXM4+lFYckcaliMS2PU/FoThB4iAN/fKOSID0nrtRZU4Gjw==",
+   "installed_at": "2026-11-20T14:05:45+0900",
+   "note": "连依赖一共 671 个包"
+  },
+  {
+   "app": "dsh",
+   "package": "@deepseek-harness-tui/dsh-tui",
+   "version": "0.20.2",
+   "source": "npm registry",
+   "integrity": "sha512-IREY2vEdz5cdRriiSHjCysOf55u/eRcnrXEarQIn32t+P4fxDZRfixhIbxydij1tUDIZ03A/2Su59xFW3j6IDA==",
+   "installed_at": "2026-11-20T14:05:49+0900",
+   "note": "连依赖一共 106 个包"
+  },
+  {
+   "app": "dsh",
+   "package": "pnpm",
+   "version": "12.21.0",
+   "source": "npm registry",
+   "integrity": "sha512-Zv2CeO4ok1zpUXktNDZ/869cQyonVkRYIwKVM4NbjaUpu+C+UTCv1W7QcT+4eJ5Hutgtk71a4v5UsVVi1idu8A==",
+   "installed_at": "2026-11-20T14:05:52+0900",
+   "note": "连依赖一共 2 个包"
+  },
+  {
+   "app": "opencode",
+   "package": "opencode-ai",
+   "version": "1.19.6",
+   "source": "npm registry",
+   "integrity": "sha512-x0yTvlq3Cyhp3z1IhsNlktLa9M/FSbpMWiDlcGljKMTlBKdHM/um/03JedJa71N2yNlHkOvOPI0H4tbyXuuGwA==",
+   "installed_at": "2026-11-20T14:06:02+0900",
+   "note": "连依赖一共 3 个包"
+  },
+  {
+   "app": "opencode2",
+   "package": "opencode-linux-x64.tar.gz",
+   "version": "v2.3.2",
+   "source": "https://github.com/anomalyco/opencode/releases/download/v2.3.2/opencode-linux-x64.tar.gz",
+   "integrity": "sha256:563b5d663637226b6e3bb4bb6803281bc39b0d2cd88db06d674b6420aab009b0",
+   "installed_at": "2026-11-20T14:06:11+0900",
+   "note": "和发行页给的 sha256 对过"
+  },
+  {
+   "app": "litemiyu",
+   "package": "litemiyu",
+   "version": "main ceb86ff（程序同 137bfc8）",
+   "source": "本地文件",
+   "integrity": "sha256:17af7e2740c30b9e4ca4cbe59f412807445492dece14689e47746037fc441413",
+   "installed_at": "2026-11-20T14:06:11+0900"
+  },
+  {
+   "app": "litemiyu",
+   "package": "litemiyu",
+   "version": "2026.11.0-pre.1（公开仓库 e2502ba，cargo xtask dist）",
+   "source": "本地文件",
+   "integrity": "sha256:7ced26c6b8273704784b54b64f7b755f957acdf878ff7d14a308f6ad3f66db1e",
+   "installed_at": "2026-11-20T23:58:28+0900"
+  }
+ ],
+ "apps": {
+  "litemiyu": {
+   "label": "LiteMiyu",
+   "argv": [
+    "prefix/litemiyu/litemiyu"
+   ],
+   "entry": "prefix/litemiyu/litemiyu",
+   "entry_sha256": "7ced26c6b8273704784b54b64f7b755f957acdf878ff7d14a308f6ad3f66db1e",
+   "program": "prefix/litemiyu/litemiyu",
+   "program_sha256": "7ced26c6b8273704784b54b64f7b755f957acdf878ff7d14a308f6ad3f66db1e",
+   "program_bytes": 8098528,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/litemiyu",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/litemiyu/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/litemiyu/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/litemiyu/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/litemiyu/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost",
+    "FAKE_KEY": "fake"
+   }
+  },
+  "claude": {
+   "label": "Claude Code",
+   "argv": [
+    "prefix/claude/node_modules/.bin/claude"
+   ],
+   "entry": "prefix/claude/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+   "entry_sha256": "30e2724e2aecb1bf5dc9f3130901afb71c5fa229051c190a6d7ad9aff6378d6d",
+   "program": "prefix/claude/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+   "program_sha256": "30e2724e2aecb1bf5dc9f3130901afb71c5fa229051c190a6d7ad9aff6378d6d",
+   "program_bytes": 377545232,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/claude",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/claude/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/claude/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/claude/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/claude/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost",
+    "CLAUDE_CONFIG_DIR": "$RIVALS_ROOT/home/claude/.claude",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:18477",
+    "ANTHROPIC_AUTH_TOKEN": "fake",
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+   }
+  },
+  "codex": {
+   "label": "codex",
+   "argv": [
+    "prefix/codex/node_modules/.bin/codex"
+   ],
+   "entry": "prefix/codex/node_modules/@openai/codex/bin/codex.js",
+   "entry_sha256": "0e0c66f50074965a40cbd12f625b0a35963baf41bbd8c201a93e32fddbe2e073",
+   "program": "prefix/node/bin/node",
+   "program_sha256": "d931c649850ffa7155b8ceffb400dc916ef325866e509cc52ae36e33e8fbb9a9",
+   "program_bytes": 150348872,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/codex",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/codex/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/codex/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/codex/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/codex/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost",
+    "CODEX_HOME": "$RIVALS_ROOT/home/codex/.codex",
+    "FAKE_KEY": "fake"
+   }
+  },
+  "pi": {
+   "label": "pi",
+   "argv": [
+    "prefix/pi/node_modules/.bin/pi"
+   ],
+   "entry": "prefix/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+   "entry_sha256": "e79626f2dd6f94aa45d30f3fa63cd84319a6eefcd150b353cfaf274366926774",
+   "program": "prefix/node/bin/node",
+   "program_sha256": "d931c649850ffa7155b8ceffb400dc916ef325866e509cc52ae36e33e8fbb9a9",
+   "program_bytes": 150348872,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/pi",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/pi/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/pi/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/pi/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/pi/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost",
+    "PI_CODING_AGENT_DIR": "$RIVALS_ROOT/home/pi/.pi/agent",
+    "PI_SKIP_VERSION_CHECK": "1",
+    "PI_TELEMETRY": "0",
+    "FAKE_KEY": "fake"
+   }
+  },
+  "dsh": {
+   "label": "dsh（dsh-tui）",
+   "argv": [
+    "prefix/dsh-tui/node_modules/.bin/dsh-tui"
+   ],
+   "entry": "prefix/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js",
+   "entry_sha256": "bafa6e4815ffd8b0ca8ed4dd1279f204fe01da28507a175797052b14f01661d2",
+   "program": "prefix/node/bin/node",
+   "program_sha256": "d931c649850ffa7155b8ceffb400dc916ef325866e509cc52ae36e33e8fbb9a9",
+   "program_bytes": 150348872,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/dsh",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/dsh/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/dsh/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/dsh/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/dsh/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/dsh/node_modules/.bin:$RIVALS_ROOT/prefix/dsh-tui/node_modules/.bin:$RIVALS_ROOT/prefix/pnpm/node_modules/.bin:$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost",
+    "DSH_HOME": "$RIVALS_ROOT/home/dsh/.dsh",
+    "FAKE_KEY": "fake"
+   }
+  },
+  "opencode": {
+   "label": "opencode 1.x",
+   "argv": [
+    "prefix/opencode/node_modules/.bin/opencode"
+   ],
+   "entry": "prefix/opencode/node_modules/opencode-ai/bin/opencode.exe",
+   "entry_sha256": "aab0a58cd7fc5a1f17495b76c08e79989d331653d8b63156aca2f6e9e36d1173",
+   "program": "prefix/opencode/node_modules/opencode-ai/bin/opencode.exe",
+   "program_sha256": "aab0a58cd7fc5a1f17495b76c08e79989d331653d8b63156aca2f6e9e36d1173",
+   "program_bytes": 215845040,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/opencode",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/opencode/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/opencode/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/opencode/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/opencode/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost"
+   }
+  },
+  "opencode2": {
+   "label": "opencode 2.x",
+   "argv": [
+    "prefix/opencode2/opencode"
+   ],
+   "entry": "prefix/opencode2/opencode",
+   "entry_sha256": "e6543f6e5c39c40971ba38afd1819ac852c29ac735b5a89065d3d148d47f27ad",
+   "program": "prefix/opencode2/opencode",
+   "program_sha256": "e6543f6e5c39c40971ba38afd1819ac852c29ac735b5a89065d3d148d47f27ad",
+   "program_bytes": 252848304,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/opencode2",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/opencode2/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/opencode2/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/opencode2/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/opencode2/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost"
+   }
+  },
+  "baseline": {
+   "label": "参照：sh + stty + cat",
+   "argv": [
+    "/usr/bin/sh",
+    "-c",
+    "stty raw -echo; printf '\\r\\033[K> '; exec cat"
+   ],
+   "entry": "/usr/bin/bash",
+   "entry_sha256": "c14c8f498f3be96f076ceb07d65dba584a86dca3c86b5dce65ed0f6cae73358d",
+   "program": "/usr/bin/bash",
+   "program_sha256": "c14c8f498f3be96f076ceb07d65dba584a86dca3c86b5dce65ed0f6cae73358d",
+   "program_bytes": 1195144,
+   "env": {
+    "HOME": "$RIVALS_ROOT/home/baseline",
+    "XDG_CONFIG_HOME": "$RIVALS_ROOT/home/baseline/.config",
+    "XDG_DATA_HOME": "$RIVALS_ROOT/home/baseline/.local/share",
+    "XDG_STATE_HOME": "$RIVALS_ROOT/home/baseline/.local/state",
+    "XDG_CACHE_HOME": "$RIVALS_ROOT/home/baseline/.cache",
+    "PATH": "$RIVALS_ROOT/prefix/node/bin:/usr/bin:/bin",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "en_US.UTF-8",
+    "SHELL": "/bin/bash",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "no_proxy": "127.0.0.1,localhost"
+   }
+  }
+ }
+}
