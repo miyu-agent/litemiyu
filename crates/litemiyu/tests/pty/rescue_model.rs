@@ -430,6 +430,8 @@ fn effort_switches_for_this_run_and_writes_nothing() {
     session.press_enter();
     session.wait_for("该模型没有可选的思考程度", "没有档位的照实说");
     session.press(b"\x1b");
+    // 等窗真关了再按下一个键：`Esc` 和紧跟着的 `Ctrl+D` 要是被程序一次读到，会被认成一个带 `Esc` 前缀的键，窗不关、也不退出。
+    session.wait_until("窗关了", |s| !s.screen().contains("─ 思考程度"));
     assert_eq!(root.bytes(), before, "一个字节没变、没有新文件");
     session.press(b"\x04");
     assert!(session.wait_exit(), "Ctrl+D 好好退出");
