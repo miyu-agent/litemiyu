@@ -36,18 +36,17 @@ pub async fn watch(main: &Handle, id: &str, deliver: Deliver, more: mpsc::Unboun
         return;
     };
     // 从头补：派出去到订阅上之间它可能已经在问人了（只推订阅以后的那一份里就没有那一句）。日志里落了盘的照先后交一遍，
-    // 问过又答了的抽屉照推送收（`app/asking.rs`）。
+    // 问过又答了的抽屉照推送收（`app/asking.rs`）；它已经说完的那几步照补发的读法读（[`landed`]）。
     let Ok((subscription, backlog)) = child.subscribe_after(0).await else {
         return;
     };
     let rejoin = child.rejoin();
     drop(child);
     let seen = backlog.upto();
-    if let Ok(events) = backlog.read().await {
-        let pushes: Vec<Push> = events.iter().flat_map(push::read).collect();
-        if !hand_over(&pushes, id, &deliver, &more) {
-            return;
-        }
+    if let Ok(events) = backlog.read().await
+        && !hand_over(&landed(events), id, &deliver, &more)
+    {
+        return;
     }
     let followed = Followed {
         subscription,
@@ -55,6 +54,21 @@ pub async fn watch(main: &Handle, id: &str, deliver: Deliver, more: mpsc::Unboun
         seen,
     };
     tokio::spawn(forward(followed, id.to_string(), deliver, more));
+}
+
+/// 订阅上以前子会话已经落了盘的那一截读成推送，照补发的读法（`push::replay`）：回答照 `message.assistant` 的块开一块、写字、
+/// 收一块，和看着流出来时一样。流式的增量只推给当时订阅着的（正在流的那一次订阅时另补，`Handle::subscribe_after`），已经
+/// 说完落了盘的那几步照平常读只读得出调用的编号：子代理状态行照块记它在做什么（`jobs/activity.rs`），没有这几块就不知道，
+/// 它跑着命令也只写名字和计时。补发垫的钟这里没人看，不交。
+fn landed(events: Vec<Event>) -> Vec<Push> {
+    let mut replay = push::replay::Replay::default();
+    let mut pushes: Vec<Push> = events
+        .into_iter()
+        .flat_map(|event| replay.read(event))
+        .collect();
+    pushes.extend(replay.finish());
+    pushes.retain(|push| !matches!(push, Push::Clock(_)));
+    pushes
 }
 
 /// 跟着的一个会话：订阅，掉了队照它重新订阅（不拖住会话），落了盘的看到了第几条。
@@ -183,6 +197,56 @@ pub async fn stop(
         Ok(Err(lm_engine::tool::JobError::Ended)) => Some("job_ended".to_string()),
         Ok(Err(lm_engine::tool::JobError::Unknown)) => Some("unknown_job".to_string()),
         Err(_) => Some("session stopped".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod landed {
+    use lm_kernel::kernel::event::Event;
+
+    use crate::human::Human;
+    use crate::jobs::{Activity, Doing};
+
+    fn event(json: &str) -> Event {
+        serde_json::from_str(json).expect("事件的写法")
+    }
+
+    /// 子会话的第一步：开了一轮，说一句、调 `shell`，这次请求说完了。三条都落了盘，命令还在跑（没有结果）。
+    fn first_step() -> Vec<Event> {
+        vec![
+            event(
+                r#"{"seq":3,"at":"2026-11-20T16:41:19.934Z","kind":"turn.started","turn":3,"by":{"kind":"kernel"},"body":{"trigger":2,"cwd":"/w"}}"#,
+            ),
+            event(
+                r#"{"seq":8,"at":"2026-11-20T16:41:19.939Z","kind":"message.assistant","turn":3,"by":{"kind":"model","endpoint":"fake","model":"m1"},"body":{"seen":7,"blocks":[{"type":"text","text":"一号说完了。"},{"type":"tool_call","call_id":"call_8_1","name":"shell","args":"{\"command\":\"sleep 9\",\"description\":\"Wait for go\"}"}]}}"#,
+            ),
+            event(
+                r#"{"seq":9,"at":"2026-11-20T16:41:19.939Z","kind":"model.called","turn":3,"by":{"kind":"kernel"},"body":{"seen":7,"messages":1,"duration_ms":0,"blocks":[{"start_ms":0,"end_ms":0},{"start_ms":0,"end_ms":0}],"result":"ok"}}"#,
+            ),
+        ]
+    }
+
+    /// LM-24：子会话一派出去就开它的第一轮，界面要等主会话那一步的 `job.started` 推到了才订阅它。订阅晚了一步（机器忙、模型回得
+    /// 快），它这一步的回答已经整个落了盘、流式的增量早推完了，补上的只有落了盘的那一截。原来这一截照平常读，回答只读出调用的
+    /// 编号，没有「开一块、写字、收一块」：子代理状态行不知道它在做什么，跑着命令也只写名字和计时，看着像挂着不动（伪终端测试
+    /// `switching` 加压时 60 遍红 4～10 遍，红的每一遍都是补上的那一截里带着回答的那个子代理）。补上的照补发的读法读
+    /// （`push::replay`），和看着流出来时一样。
+    #[test]
+    fn a_step_that_landed_before_the_subscription_still_says_what_the_child_is_doing() {
+        let human = Human::default();
+        let mut activity = Activity::default();
+        for push in super::landed(first_step()) {
+            activity.push(&push, &human);
+        }
+        assert!(activity.busy, "一轮开着");
+        assert_eq!(
+            activity.doing,
+            Doing::Tool {
+                name: "shell".into(),
+                subject: Some("Wait for go".into()),
+            },
+            "补上的那一截里它最后在调 shell"
+        );
     }
 }
 
