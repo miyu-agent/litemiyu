@@ -15,6 +15,7 @@ mod export;
 mod files_page;
 mod frame;
 mod help;
+mod herdr;
 mod jobs;
 mod jump;
 mod keys;

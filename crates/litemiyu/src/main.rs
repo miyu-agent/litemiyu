@@ -31,6 +31,7 @@ mod drawer;
 mod editor;
 mod focus;
 mod fuzzy;
+mod herdr;
 mod history;
 mod human;
 mod incoming;
@@ -190,7 +191,17 @@ fn run() -> io::Result<ExitCode> {
         app.open_session(id);
     }
     let mut pointer = pointer::Pointer::default();
+    // 在 herdr 的窗格里（`herdr.rs`）：状态、恢复命令报给它。不在的是 `None`，下面什么都不做。
+    let mut herdr = herdr::Herdr::detect(
+        |name| std::env::var(name).ok(),
+        || std::env::args_os().next()?.into_string().ok(),
+    );
     while !app.quit {
+        if let Some(herdr) = &mut herdr
+            && let Some((state, session)) = app.herdr_now()
+        {
+            herdr.sync(state, session);
+        }
         // `/jump` 跳到放掉的段里的一句，上一帧跳过去了：等的时候攒着的键接着办，办完画这一帧（`app/jump.rs`）。
         app.release_held();
         // 开好的旧会话还在收补发：不画，屏幕上照旧是上一帧，补完了当场画（`app/sessions.rs` 的 `Opening`）。
@@ -257,6 +268,12 @@ fn run() -> io::Result<ExitCode> {
     // 收尾（毛病二）：屏幕上先说「正在收尾」，再等还没写完的配置、引擎线程（日志落盘、写概要、放锁），一共最多三秒，到点照退。
     app.closing();
     frame(&mut screen, &mut app, &mut pointer)?;
+    // 人退出的才向 herdr 退还窗格；读终端的那一头断了（终端被挂断）的不退还，herdr 重启时照恢复命令接回来。
+    if app.quit
+        && let Some(herdr) = &mut herdr
+    {
+        herdr.release();
+    }
     let until = Instant::now() + core::CLOSING;
     app.finish_writes(until);
     app.link.core.finish(until);

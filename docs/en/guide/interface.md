@@ -164,3 +164,14 @@ Copy files or folders in your file manager, return to the input box and press `C
 ## Icons
 
 The interface uses Nerd Font icons by default. If your terminal font does not have them and you see boxes or garbage, run `/icons` to switch to plain characters; run it again to switch back.
+
+## Using LiteMiyu with herdr
+
+[herdr](https://herdr.dev) is a program that manages several terminal agents side by side in panes. When LiteMiyu runs in a herdr pane, nothing needs to be configured:
+
+- LiteMiyu reports its state to herdr (working, waiting for your reply, or idle), and herdr shows it in its sidebar. It is "waiting for your reply" while a confirmation or question drawer is open, and "working" while a turn is in progress or a subagent it started is still running; background commands do not count.
+- When you open or switch sessions, LiteMiyu reports the resume command `litemiyu -s <ID>` automatically. After herdr restarts, each pane picks up its own session again. Running `/new` clears the old resume command, and so does quitting LiteMiyu normally (`/exit`, `Ctrl+D`). If you only close the herdr client, LiteMiyu keeps running.
+- The resume command requires the command name you typed to be found on `PATH`; when it is not, no resume command is reported. Temporary environment variables written in front of the command (for example `LITEMIYU_HOME=… litemiyu`) are not saved by herdr; if you need them, write a launcher script that sets them and put it on `PATH`.
+- [Rescue mode](rescue.md) does not save conversations, so it reports the state only, without a resume command.
+
+> Outside herdr this feature does nothing and uses no resources.

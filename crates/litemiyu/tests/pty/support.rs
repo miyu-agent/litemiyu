@@ -129,6 +129,8 @@ pub struct Options {
     /// 只设这几个环境变量（另加 `PATH`、`TERM`、`LANG`），不设 `LITEMIYU_HOME`、`HOME`、测试的 key：应急模式往坏里测用
     /// （`rescue.rs`）。空的照常设。
     pub only_env: Vec<(String, std::ffi::OsString)>,
+    /// 再多设的环境变量，值是测试当场定的（假 herdr 的路径这些，`herdr.rs`）；排在最后，同名的照它。
+    pub more_env: Vec<(String, std::ffi::OsString)>,
     /// 起这个程序（`None` 的照 `LITEMIYU_PTY_BIN`、这一次编的）：演程序文件被换掉（`/export` 审计 #068）。
     pub program: Option<PathBuf>,
     /// 起来以前在缓存目录里放好一份取到过的模型目录（真目录裁出来的那一份，`lm-kernel/testdata`）：LM-9 起程序不带目录，要照
@@ -224,6 +226,11 @@ impl Session {
     /// 在同一个数据目录、家目录、工作目录里再起一个（另一个窗口），命令行带 `args`：配置、会话都是第一个的那一份。
     /// 临时目录归第一个管，它先放下也不删（留给第一个放下时删）。
     pub fn another(&self, args: &[&str]) -> Session {
+        self.another_with(args, &Options::default())
+    }
+
+    /// 同 [`Session::another`]，另外照 `options`。
+    pub fn another_with(&self, args: &[&str], options: &Options) -> Session {
         let home = self
             .data
             .parent()
@@ -233,7 +240,7 @@ impl Session {
             (self.data.clone(), home, self.work.clone()),
             None,
             args,
-            &Options::default(),
+            options,
         )
     }
 
@@ -298,6 +305,9 @@ impl Session {
             command.env(key, value);
         }
         for (key, value) in &options.env {
+            command.env(key, value);
+        }
+        for (key, value) in &options.more_env {
             command.env(key, value);
         }
         let child = pty.slave.spawn_command(command).expect("起得来");

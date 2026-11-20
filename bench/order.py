@@ -23,11 +23,15 @@
    认得的那一家，假服务器听 `127.0.0.2`（照网上的供应商走，`fake_model.home`）；第一段第一次说话读整份目录、记下查目录的答，
    日常那几段照记下的答。HTTPS 那一段以后另录一段没有目录的（新的数据目录，供应商在本机、缓存里没有目录：首次使用、只用本机
    模型的样子），排在有目录的几段后面、公式那一段前面。公式那一段照旧没有目录（目录的路前面录过了，不再在模拟器里读一遍整份
-   目录）。`--no-catalog` 照 LM-9补 以前录（几段都没有目录，也没有单录的那一段）。
+   目录）。最后再录一段在 herdr 的窗格里起来的（LM-21，herdr 那一段）：新的数据目录，环境变量 `HERDR_ENV`、`HERDR_PANE_ID`、
+   `HERDR_BIN_PATH` 指向临时目录里一个假的 herdr（`/bin/sh` 脚本，只把参数记进文件），起来、等它报完第一次状态、闲一会儿。
+   在 herdr 里一起来就要起一条上报的线程、起一次子进程，这些函数前面几段一个都录不到，散在程序各处，每碰一处带进 64 kB 的
+   邻居页（2026-11-20 量的：在 herdr 里空闲多 896 kB 代码页，分成 11 片）；排在最后、挨在一起，不影响前面几段的先后。
+   `--no-catalog` 照 LM-9补 以前录（几段都没有目录，也没有单录的那一段）。
    用模拟器而不用覆盖率：标准库是预先编好的，覆盖率记不到它，启动时跑的又大半是它；
 3. 地址照程序的符号表换成函数名，照第一次跑到的先后写成清单：启动那一段跑到的自然排在最前，发话那一段新跑到的排在其后，
-   日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，公式那一段新跑到的最后（前面几段的
-   先后不受它影响）；
+   日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，公式那一段新跑到的再其后，herdr 那一段
+   新跑到的最后（前面几段的先后不受后面的影响）；
 4. 带着清单再链一遍。
 
 轨迹不落盘（占用 四）：一段剧本的轨迹有 9 GB 上下，模拟器写进临时目录里的一个命名管道，这边边读边认出跑过的地址（重复的
@@ -44,7 +48,7 @@ x86_64-unknown-linux-gnu 默认用的就是它），不另装 lld。`--no-pie` �
 记的是执行过的地址，换成函数名照的是程序自己的符号表。
 
 用法：order.py <crate 目录> <程序名> [--target <三元组>] [--no-pie] [--typed <敲的字>] [--settle <秒>] [--said <说的话，空的不说>]
-      [--daily new,continue] [--no-https] [--no-formula] [--no-catalog]
+      [--daily new,continue] [--no-https] [--no-formula] [--no-herdr] [--no-catalog]
 产物：<crate 目录>/target-ordered/<三元组>/release/<程序名>，清单在 <crate 目录>/target-ordered/order.txt；
 设了 LITEMIYU_ORDER_TARGET 就编在它指的目录里。
 """
@@ -199,7 +203,7 @@ def scratch(root, url, trusted=None, catalog=None):
     return env
 
 
-def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True):
+def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True, herdr=True):
     """在模拟器里照剧本跑，交回 [(跑过的地址, 装载的起点)]，照先后。`said` 是说的那句话，空的不说（也就没有日常、HTTPS 那几段）。
 
     第一段（一个进程）：新的数据目录第一次起来、敲几个字；清掉、说一句、等回完、闲一会儿。
@@ -210,7 +214,9 @@ def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True
     `catalog`（LM-9补）：上面几段的数据目录缓存里放 `catalog.py` 造的目录，供应商是目录里认得的那一家（假服务器听
     `fake_model.REMOTE`）；HTTPS 那一段以后另录一段没有目录的（新的数据目录，供应商在本机，起来、说一句）。
     公式那一段（`formula`，一个进程）：又一个新的数据目录（没有目录），假服务器这一回答带公式的话（`FORMULA_ANSWER`），起来、
-    说一句、等回完。"""
+    说一句、等回完。
+    herdr 那一段（`herdr`，一个进程，LM-21）：又一个新的数据目录，在假的 herdr 的窗格里起来、等它报完第一次状态、闲一会儿
+    （[`run_in_herdr`]）；不说话。"""
     runs = []
     # 假服务器等两秒再回：等着的那几帧每次都画得出来，那几个函数每次都录得到（`fake_model.DELAY`）。
     fake_model.DELAY[0] = ANSWER_DELAY
@@ -240,6 +246,10 @@ def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True
                     runs.append(run(binary, qemu, pipe, mathy, [], b"", settle, said, first=False))
                 finally:
                     fake_model.ANSWER[:] = plain
+        if herdr:
+            pane = os.path.join(root, "herdr")
+            inside = scratch(pane, fake_model.start())
+            runs.append(run_in_herdr(binary, qemu, pipe, inside, pane, settle))
     return runs
 
 
@@ -315,6 +325,33 @@ def run(binary, qemu, pipe, env, args, typed, settle, said, first, expect=None):
     return reader.done(), base
 
 
+def run_in_herdr(binary, qemu, pipe, env, root, settle):
+    """在模拟器里、假的 herdr 的窗格里起一个，等它报完第一次状态、闲一会儿，交回 (跑过的地址, 装载的起点)。假的 herdr 是 `root`
+    下的一个 `/bin/sh` 脚本，只把收到的参数记进 `root` 下的文件：不碰真的 herdr。起子进程的那一头（模拟器照 fork 办）在换成
+    脚本以前跑的也是程序里的函数，轨迹写进同一条管道。"""
+    script = os.path.join(root, "fake-herdr")
+    log = os.path.join(root, "fake-herdr.log")
+    with open(script, "w") as out:
+        out.write(f"#!/bin/sh\necho \"$*\" >> '{log}'\n")
+    os.chmod(script, 0o755)
+    env = dict(env, HERDR_ENV="1", HERDR_PANE_ID="order", HERDR_BIN_PATH=script)
+    reader = Reader(pipe)
+    pid, fd = pty_run.spawn([qemu, "-d", "exec,nochain", "-D", pipe, binary], env)
+    try:
+        if not wait_for(fd, "❯".encode(), WAIT):
+            raise SystemExit("模拟器里没画出输入框（herdr 那一段）")
+        base = load_base(pid, binary)
+        end = time.monotonic() + WAIT
+        while not (os.path.exists(log) and os.path.getsize(log)):
+            if time.monotonic() >= end:
+                raise SystemExit("模拟器里没等到报给假 herdr 的第一次状态")
+            pty_run.pump(fd, 0.2)
+        pty_run.pump(fd, settle)
+    finally:
+        pty_run.kill(pid, fd)
+    return reader.done(), base
+
+
 def wait_for(fd, text, seconds, after=None):
     """读输出，等到出现 `text`（一串字，或者几串字的表：都出现了才算）；等到了交回 `True`。给了 `after` 的，它成真以前读到的
     不算。"""
@@ -366,6 +403,7 @@ def main():
     )
     parser.add_argument("--no-https", action="store_true", help="不录 HTTPS 那一段")
     parser.add_argument("--no-formula", action="store_true", help="不录最后那一段带公式的回答")
+    parser.add_argument("--no-herdr", action="store_true", help="不录最后那一段在 herdr 的窗格里起来的")
     parser.add_argument(
         "--no-catalog", action="store_true", help="录的沙箱缓存里不放模型目录（LM-9补 以前的录法），也不单录没有目录的那一段"
     )
@@ -400,7 +438,7 @@ def main():
     daily = [DAILY_ARGS[name] for name in args.daily.split(",") if name]
     runs = trace(
         final, qemu, args.typed.encode(), args.settle, args.said, daily, not args.no_https, not args.no_formula,
-        catalog=not args.no_catalog,
+        catalog=not args.no_catalog, herdr=not args.no_herdr,
     )
     order, blocks = first_touch(runs, table)
     with open(order_file, "w") as out:

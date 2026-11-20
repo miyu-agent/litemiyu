@@ -27,6 +27,7 @@ mod editor;
 mod files;
 mod floating;
 mod footer_model;
+mod herdr;
 mod history;
 mod import;
 mod interrupt;
