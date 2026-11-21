@@ -305,6 +305,8 @@ fn the_first_screen_does_not_read_the_rest_of_the_texts() {
     let mut app = crate::app::App::new(Config::builtin().unwrap(), core);
     let mut buffer = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 160, 45));
     for _ in 0..3 {
+        // 每一帧画以前给输入框里的图片块编号（`main.rs` 的 `frame`）：没有图片块时它也不读。
+        app.renumber_images();
         super::draw(&mut super::Frame::new(&mut buffer), &mut app);
         app.tick();
     }

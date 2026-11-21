@@ -177,6 +177,12 @@ impl App {
 
     /// 输入框里的图片块照正文里已有几张接着编号（每一帧画之前，「输入框」第 12 条：整个会话一直往下排）。
     pub fn renumber_images(&mut self) {
+        // 每一帧都走这里（`main.rs` 的 `frame`）：没有图片块的不往下走。往下要读整份界面的字（`Config::text`，起一条线程
+        // 拆一大张表）：原来不管有没有图片块都先读，启动到画出输入框多了 0.6 ms，空闲多占几十 kB（LM-28 带进来的，
+        // 2026-11-22 量出来）。
+        if !self.typing.input.editor.has_images() {
+            return;
+        }
         let base = self.talk.transcript.image_count();
         let label = &self.config.text().image_label;
         self.typing.input.renumber(base, label);
