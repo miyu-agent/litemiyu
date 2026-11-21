@@ -24,7 +24,15 @@ pub(super) trait Runner {
     fn has(&self, cmd: &str) -> bool;
     /// 跑一下读输出；失败、卡住的是 `None`。
     fn run(&self, cmd: &str, args: &[&str]) -> Option<Vec<u8>>;
+    /// 读一张图的内容：同 [`Runner::run`]，真去跑的多等一会儿（[`IMAGE_WAIT`]）。
+    fn fetch(&self, cmd: &str, args: &[&str]) -> Option<Vec<u8>> {
+        self.run(cmd, args)
+    }
 }
+
+/// 读图片内容最多等多久：几兆的截图要经管道整个读过来，macOS 的 `osascript` 还要先换成两倍长的十六进制，一秒不一定够
+/// （公开 CI 的 macOS 机器上 5 MiB 的图就超了）。问有哪几种、读字照旧只等一秒。
+pub(super) const IMAGE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// 真的去跑。
 pub(super) struct System;
@@ -36,6 +44,10 @@ impl Runner for System {
 
     fn run(&self, cmd: &str, args: &[&str]) -> Option<Vec<u8>> {
         run_bytes(cmd, args, wait())
+    }
+
+    fn fetch(&self, cmd: &str, args: &[&str]) -> Option<Vec<u8>> {
+        run_bytes(cmd, args, IMAGE_WAIT)
     }
 }
 

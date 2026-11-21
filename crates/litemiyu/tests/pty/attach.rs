@@ -36,6 +36,10 @@ impl Clipboard {
         std::fs::create_dir_all(&dir).expect("建得了");
         std::fs::write(dir.join("types"), types).expect("写得进");
         std::fs::write(dir.join("data"), data).expect("写得进");
+        // macOS 的 `osascript` 交的是十六进制：先换好放着，假命令只管原样吐（现场用 `od` 换，几兆的图在 CI 的 macOS 机器上
+        // 要好几秒，程序等不到）。
+        let hex: String = data.iter().map(|byte| format!("{byte:02x}")).collect();
+        std::fs::write(dir.join("hex"), hex).expect("写得进");
         let script = |name: &str, body: &str| {
             let path = dir.join(name);
             std::fs::write(
@@ -54,7 +58,7 @@ impl Clipboard {
         script(
             "osascript",
             "case \"$*\" in *'clipboard info'*) printf '«class PNGf», 100' ;; \
-             *) printf '«data PNGf'; od -An -v -tx1 \"$here/data\" | tr -d ' \\n'; printf '»' ;; esac",
+             *) printf '«data PNGf'; cat \"$here/hex\"; printf '»' ;; esac",
         );
         script("pbpaste", "cat \"$here/data\"");
         // 桌面真的剪贴板一律不问。

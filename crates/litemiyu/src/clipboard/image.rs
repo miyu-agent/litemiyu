@@ -25,7 +25,7 @@ pub fn read_image() -> Option<Vec<u8>> {
 fn linux_image(wayland: bool, run: &dyn Runner) -> Option<Vec<u8>> {
     let (cmd, types, read) = offered(wayland, run)?;
     let mime = pick(&types)?;
-    let bytes = run.run(cmd, &read(mime))?;
+    let bytes = run.fetch(cmd, &read(mime))?;
     (!bytes.is_empty()).then_some(bytes)
 }
 
@@ -44,7 +44,7 @@ fn mac_image(run: &dyn Runner) -> Option<Vec<u8>> {
     if mac_has_files(&String::from_utf8_lossy(&info)) {
         return None;
     }
-    let out = run.run("osascript", &["-e", "the clipboard as «class PNGf»"])?;
+    let out = run.fetch("osascript", &["-e", "the clipboard as «class PNGf»"])?;
     mac_png(&String::from_utf8_lossy(&out))
 }
 
