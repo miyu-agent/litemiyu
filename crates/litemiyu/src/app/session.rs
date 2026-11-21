@@ -9,8 +9,10 @@ use crate::transcript::{Link, Transcript};
 impl App {
     /// 发给引擎的发不发得出去：引擎起不来时（左下角是红字）不发，弹提示。
     pub(super) fn reachable(&mut self) -> bool {
-        if let Link::Down(reason) = &self.talk.transcript.link {
-            let note = self.config.text().core_failed.replace("{reason}", reason);
+        // 左下角那一句已经是填好的（`core_failed`，`transcript/mod.rs`）：原样弹，不再套一层（LM-39：原来写成「连不上核心：
+        // 连不上核心：…」）。
+        if let Link::Down(said) = &self.talk.transcript.link {
+            let note = said.clone();
             self.hint(note, false);
             return false;
         }

@@ -35,8 +35,8 @@ fn a_session_unreadable_for_now_says_try_again_later() {
     });
     assert_eq!(
         notice(&app).as_deref(),
-        Some("无法打开此会话：the session log has no session.created"),
-        "别的原因照旧带原话"
+        Some("无法打开此会话：会话日志缺少开头的记录"),
+        "别的原因照 `why` 换成句子（LM-39）"
     );
 }
 
@@ -51,7 +51,7 @@ fn a_session_broken_in_the_middle_says_where_once_and_stays_view_only() {
         Some("s-one"),
         "照旧对着它"
     );
-    let line = "会话日志第 7 行坏了，只能看到这一行以前的内容，不能接着聊。要继续请新开一个会话。";
+    let line = "会话日志第 7 行已损坏，只能查看这一行之前的内容。如果要继续，请新建会话。";
     let count = |app: &App| {
         let t = &app.talk.transcript.entries;
         t.iter().filter(|e| e.text == line).count()
@@ -66,7 +66,7 @@ fn a_session_broken_in_the_middle_says_where_once_and_stays_view_only() {
     });
     assert_eq!(
         notice(&app).as_deref(),
-        Some("这个会话只能看，不能接着聊：输入 /new 新开会话")
+        Some("这个会话只能查看，不能继续对话。输入 /new 新建会话")
     );
     // `/new` 以后是新的一份：不再只读。
     app.core(Update::Opened("s-two".into()));

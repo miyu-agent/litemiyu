@@ -82,7 +82,7 @@ fn boxes(ground: bool) {
     shoot(
         &session,
         (&name("jump"), "/jump", true),
-        "Enter 跳过去",
+        "Enter 跳转",
         (1, 0),
     );
     shoot(&session, (&name("help"), "/help", true), "─ 帮助", (1, 0));

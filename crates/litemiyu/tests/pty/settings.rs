@@ -73,7 +73,7 @@ fn a_first_run_sets_up_a_provider_and_then_talks_to_it() {
     session.wait_for("m-listed", "列出来的模型");
     session.press_enter();
     // 写盘在写线程里（毛病二）：写完才进配色方案（同 Miyu 等存完）。
-    session.wait_for("整个界面铺配色方案的底色", "存完到配色方案那一步");
+    session.wait_for("整个界面使用配色方案的底色", "存完到配色方案那一步");
     session.wait_until("主对话的模型写进配置", |_| {
         std::fs::read_to_string(&file).is_ok_and(|text| text.contains("chat = "))
     });
@@ -164,7 +164,7 @@ fn a_first_run_with_no_list_sends_one_line_to_the_named_model() {
     let sent = String::from_utf8_lossy(&posts[0].body).into_owned();
     assert!(sent.contains("\"model\":\"m-named\""), "{sent}");
     session.press_enter();
-    session.wait_for("整个界面铺配色方案的底色", "存完到配色方案那一步");
+    session.wait_for("整个界面使用配色方案的底色", "存完到配色方案那一步");
     session.press(DOWN);
     session.press(DOWN);
     session.press_enter();

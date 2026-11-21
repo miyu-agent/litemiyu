@@ -74,7 +74,7 @@ LITEMIYU_HOME=/tmp/litemiyu-test litemiyu
 tar -czf litemiyu-backup.tar.gz -C ~ .config/litemiyu .local/share/litemiyu
 ```
 
-> 备份里有 `secrets.toml`，也就是你的 API 密钥，请像保管密码一样保管这个压缩包。
+> 备份里有 `secrets.toml`，也就是你的密钥，请像保管密码一样保管这个压缩包。
 
 搬到另一台电脑：在新电脑上装好 LiteMiyu，把这两个目录解压到同样的位置即可。
 

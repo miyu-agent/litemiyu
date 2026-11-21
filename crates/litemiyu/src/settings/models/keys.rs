@@ -93,10 +93,8 @@ impl Settings {
             _ => {}
         }
         if leave {
-            // 回主菜单：放掉目录，别的页没话时写的那一句照走的时候的选中记下。
-            if let Some(models) = self.models.take() {
-                self.models_note = Some(models.quiet(&self.texts.models));
-            }
+            // 回主菜单：放掉目录。
+            self.models = None;
             self.view = View::Menu(page);
         }
     }

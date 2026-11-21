@@ -171,7 +171,7 @@ After taking a screenshot or copying an image somewhere, return to the input box
 - PNG, JPEG, GIF and WebP are supported. An image may be at most 5 MB and at most 8000 pixels on each side; a larger one is refused with a hint and is not pasted.
 - Image blocks are numbered continuously through the whole session, so the AI can tell which image you mean.
 - A pasted image that has not been sent yet is kept in the cache directory and is deleted when LiteMiyu exits. Once sent, the image is saved in the session, and reopening the session, undoing and compaction do not affect it.
-- If the current model does not accept images, sending shows `This model doesn't take images`. In that case a configured vision model (`models.vision`) describes the image in text for the current model; without one, the current model only receives the image's file name and path. Whether a model accepts images comes from the model catalog, and you can also state it with `inputs` in the configuration; see [Configuration](config.md).
+- If the current model does not accept images, sending shows `This model doesn't take images`. In that case a configured multimodal model (`models.vision`) describes the image in text for the current model; without one, the current model only receives the image's file name and path. Whether a model accepts images comes from the model catalog, and you can also state it with `inputs` in the configuration; see [Configuration](config.md).
 - The drawers for questions and confirmations and the input history search accept text only. A command run with `!` cannot carry files or images.
 - In [rescue mode](rescue.md) images are kept in memory only and are not written to disk.
 

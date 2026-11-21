@@ -28,7 +28,8 @@ const INVOKED_ARGUMENTS: &str =
     include_str!("../../../../resources/core/skills/invoked-arguments.txt");
 
 /// 工具面 `face` 上有没有一件读文件的（声明了 [`Role::ReadFile`] 的）：没有的，列出来她也读不了。一件都没写职能的照名字认。
-fn reads_files(face: &[ToolEntry]) -> bool {
+/// 回合开始交记忆的目录、再找技能也照它（LM-36，`session/actor/kit.rs` 的 `Actor::reads_files`）。
+pub(crate) fn reads_files(face: &[ToolEntry]) -> bool {
     if face.iter().any(|tool| tool.role.is_some()) {
         face.iter().any(|tool| tool.role == Some(Role::ReadFile))
     } else {

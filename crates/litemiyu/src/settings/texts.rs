@@ -240,6 +240,8 @@ texts! {
     pub struct PromptTexts {
         /// 名字。
         pub name: String,
+        /// 说明：光标停在这一行时写在列表下面（LM-38）。
+        pub description: String,
         /// 还没有这份文件：用出厂的那一段。
         pub shipped: String,
         /// 自己写过。

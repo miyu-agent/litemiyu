@@ -12,14 +12,24 @@ use crate::settings::{Outcome, Settings};
 use crate::ui::frame::Frame;
 
 fn screen(settings: &Settings) -> (String, Option<ratatui::layout::Position>) {
-    let mut buffer = Buffer::empty(Rect::new(0, 0, 120, 30));
+    let (text, caret, _) = screen_of(settings, 120, 30);
+    (text, caret)
+}
+
+/// 同 [`screen`]，画成 `width` 列、`height` 行；另外交回画好的缓冲（看颜色）。
+fn screen_of(
+    settings: &Settings,
+    width: u16,
+    height: u16,
+) -> (String, Option<ratatui::layout::Position>, Buffer) {
+    let mut buffer = Buffer::empty(Rect::new(0, 0, width, height));
     let caret = draw(&mut Frame::new(&mut buffer), settings);
-    let text = (0..30)
+    let text = (0..height)
         .map(|y| {
             // 宽字后面那一格是空的：跳过，同终端上看到的。
             let mut line = String::new();
             let mut skip = false;
-            for x in 0..120 {
+            for x in 0..width {
                 let symbol = buffer[(x, y)].symbol();
                 if !std::mem::take(&mut skip) {
                     line.push_str(symbol);
@@ -30,7 +40,7 @@ fn screen(settings: &Settings) -> (String, Option<ratatui::layout::Position>) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    (text, caret)
+    (text, caret, buffer)
 }
 
 /// 临时的数据目录：放下就删（断言没过、测试中途退出也删）。
@@ -110,8 +120,96 @@ fn a_page_shows_names_and_values_without_origins_or_descriptions() {
         text.contains("Enter 编辑   d 恢复默认   Esc 返回"),
         "{text}"
     );
-    // 同 Miyu：一页里不写值从哪来、不写选中那一项的说明。
+    // 同 Miyu：一页里不写值从哪来（选中那一项的说明 LM-38 起写在列表下面，见下一条）。
     assert!(!text.contains("下次启动生效"), "{text}");
+}
+
+/// LM-38（同 Miyu 终端 11-20：原来只有默认模型那一页画说明）：光标停在一项上时，列表下面空一行、暗色写这一项的说明，换一项
+/// 跟着换；「提示词」那一行也有。说明放不下（窗口矮）的不写，列表照旧占满。
+#[test]
+fn the_focused_item_s_description_sits_under_the_list_lm38() {
+    let (mut settings, _scratch) = settings("about");
+    press(&mut settings, KeyCode::Enter);
+    let (text, _, buffer) = screen_of(&settings, 120, 50);
+    let lines: Vec<&str> = text.lines().collect();
+    let about = lines
+        .iter()
+        .position(|l| l.contains("界面文字使用的语言"))
+        .unwrap_or_else(|| panic!("光标在「界面语言」：说明写出来了\n{text}"));
+    let last = lines
+        .iter()
+        .position(|l| l.contains("按键模式"))
+        .expect("列表最后一行是按键模式");
+    assert_eq!(about, last + 2, "说明在列表下面空一行：\n{text}");
+    let x = lines[about].find("界面").unwrap();
+    let col = u16::try_from(lines[about][..x].width()).unwrap();
+    let row = u16::try_from(about).unwrap();
+    // 暗色：上了字色（一项的名字照终端的字色，是 `Reset`）；具体哪一色别的测试可能同时换了配色，不比。
+    assert_ne!(
+        buffer[(col, row)].fg,
+        ratatui::style::Color::Reset,
+        "说明是暗色的"
+    );
+    // 换一项，说明跟着换。
+    press(&mut settings, KeyCode::Down);
+    let (text, _, _) = screen_of(&settings, 120, 50);
+    assert!(!text.contains("界面文字使用的语言"), "{text}");
+    assert!(text.contains("新会话默认使用的预设"), "{text}");
+    // 「提示词」那一行（在默认预设下面）也有说明。
+    press(&mut settings, KeyCode::Down);
+    let (text, _, _) = screen_of(&settings, 120, 50);
+    assert!(text.contains("每个会话开头交给模型的一段话"), "{text}");
+    // 窗开着时不写（窗自己有标题）。
+    press(&mut settings, KeyCode::Up);
+    press(&mut settings, KeyCode::Up);
+    press(&mut settings, KeyCode::Enter);
+    let (text, _, _) = screen_of(&settings, 120, 50);
+    assert!(text.contains("中文"), "开了选择窗：{text}");
+    assert!(
+        !text.contains("界面文字使用的语言"),
+        "窗开着不写说明：\n{text}"
+    );
+    press(&mut settings, KeyCode::Esc);
+    // 矮窗口：列表连说明放不下，说明让位，列表照旧露满。
+    press(&mut settings, KeyCode::Esc);
+    press(&mut settings, KeyCode::Enter);
+    let (text, _, _) = screen_of(&settings, 120, 20);
+    assert!(
+        !text.contains("界面文字使用的语言"),
+        "矮窗口不写说明：\n{text}"
+    );
+    let shown = text
+        .lines()
+        .filter(|l| l.contains("显示") || l.contains("界面语言"))
+        .count();
+    assert!(shown >= 2, "列表照旧从头露：\n{text}");
+}
+
+/// LM-38（同 Miyu 终端 11-20 项目主人报的「设置页底下一直写『暂无模型 · 保存后按 r 获取』」）：别的页状态行不再写「供应商和
+/// 模型」那一页选中那一家的「暂无模型 · 保存后按 r 获取」（那几页按 r 什么都不做）；供应商分页照旧写。
+#[test]
+fn other_pages_do_not_carry_the_providers_note_lm38() {
+    let scratch = Scratch::new("note");
+    let paths = scratch.paths();
+    std::fs::write(
+        paths.config_file(),
+        "[providers.fake]\nbase_url = \"http://127.0.0.1:9/v1\"\ndriver = \"openai-chat\"\n",
+    )
+    .unwrap();
+    let mut settings = Settings::at(paths, "zh", Outcome::Back).unwrap();
+    press(&mut settings, KeyCode::Enter);
+    let (text, _) = screen(&settings);
+    assert!(text.contains("◉ 通用"), "{text}");
+    assert!(
+        !text.contains("暂无模型"),
+        "通用页不写供应商那一页的话：\n{text}"
+    );
+    settings.show_models();
+    let (text, _) = screen(&settings);
+    assert!(
+        text.contains("暂无模型 · 保存后按 r 获取"),
+        "供应商分页照旧写：\n{text}"
+    );
 }
 
 #[test]
@@ -210,7 +308,7 @@ fn the_models_page_has_two_tabs_and_columns_like_miyu() {
     // 默认模型分页：右边写当前的。
     press(&mut settings, KeyCode::Char('.'));
     let (text, _) = screen(&settings);
-    assert!(text.contains("默认文本模型"), "{text}");
+    assert!(text.contains("默认对话模型"), "{text}");
     assert!(text.contains("当前  fake/org/m1"), "{text}");
     // 默认模型是最后一页（LM-8 砍了原来第三页「模型池」）：再按 `.` 停在这里。
     press(&mut settings, KeyCode::Char('.'));
@@ -253,11 +351,11 @@ mod slow_disk;
 mod status;
 
 /// 编辑窗的名字那一栏照这一窗里最长的名字算（LM-9补）：英文的「Context window」「Thinking effort」比原来写死的 14 列宽，原来
-/// 顶到值上（「Context windowunknown」）；中文的「API 密钥」照样放得下。名字和值之间至少空两格。
+/// 顶到值上（「Context windowunknown」）；中文的「密钥」照样放得下。名字和值之间至少空两格。
 #[test]
 fn form_labels_never_run_into_their_values() {
     let gap = |text: &str, label: &str| {
-        // 名字那一栏的：这一行去掉左边的空格以后就是这个名字打头（值里也可能有这几个字，例如「认证  API 密钥」）。
+        // 名字那一栏的：这一行去掉左边的空格以后就是这个名字打头（值里也可能有这几个字，例如「认证  密钥」）。
         let line = text
             .lines()
             .find(|line| line.trim_start().starts_with(label))
@@ -294,6 +392,6 @@ fn form_labels_never_run_into_their_values() {
     chinese.show_models();
     press(&mut chinese, KeyCode::Enter);
     let (text, _) = screen(&chinese);
-    gap(&text, "API 密钥");
+    gap(&text, "密钥");
     gap(&text, "显示名称");
 }

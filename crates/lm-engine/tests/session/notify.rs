@@ -117,13 +117,20 @@ async fn closing_a_watched_window_tells_the_watcher() {
     let b_id = b.id().clone();
     let (a, _models) = watcher(&home, b_id.short()).await;
     // 甲放的那封登记什么时候到看不见：照甲日志里订的那一刻，测试自己再放一封一样的（同一个会话只记一个），等它被读掉，
-    // 乙的名单上就有甲了（闲着订的，不上膛、不当场回）。再关。
-    let since = home
-        .log(a.id())
+    // 乙的名单上就有甲了（闲着订的，不上膛、不当场回）。再关。订的那一刻是带着那次调用的回复的时刻（LM-36，同 Miyu FX-6）。
+    let log = home.log(a.id());
+    let result = log
         .iter()
-        .find(|event| matches!(&event.body, Body::ToolResult(result) if !result.effects.is_empty()))
-        .map(|event| event.at.unix_millis())
+        .position(
+            |event| matches!(&event.body, Body::ToolResult(result) if !result.effects.is_empty()),
+        )
         .expect("订过");
+    let since = log[..result]
+        .iter()
+        .rev()
+        .find(|event| matches!(event.body, Body::MessageAssistant(_)))
+        .map(|event| event.at.unix_millis())
+        .expect("结果前面有带调用的回复");
     let letter = serde_json::json!({ "kind": "watch", "from": a.id(), "since": since }).to_string();
     drop_in(&home, &b_id, "watch.json", &letter);
     let mine = home.root.session(&b_id).join("inbox").join("watch.json");

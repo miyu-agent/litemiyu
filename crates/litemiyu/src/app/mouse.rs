@@ -251,12 +251,15 @@ impl App {
             }
             return;
         }
-        let words = &self.config.text().open;
+        let texts = self.config.text();
+        let words = &texts.open;
         let note = match crate::open::open(url) {
             Ok(()) => return,
             Err(OpenError::Scheme) => words.refused.replace("{url}", url),
             Err(OpenError::Missing) => words.missing.replace("{path}", url),
-            Err(OpenError::Spawn(e)) => words.failed.replace("{reason}", &e.to_string()),
+            Err(OpenError::Spawn(e)) => {
+                words.failed.replace("{reason}", &texts.why(&e.to_string()))
+            }
         };
         self.hint(note, false);
     }

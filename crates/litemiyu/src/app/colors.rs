@@ -18,11 +18,10 @@ impl App {
             return;
         };
         if let Err(error) = theme::record::write(&path, recorded) {
-            let text = self
-                .config
-                .text()
+            let texts = self.config.text();
+            let text = texts
                 .colors_not_recorded
-                .replace("{error}", &error.to_string());
+                .replace("{error}", &texts.why(&error.to_string()));
             self.hint(text, false);
         }
     }

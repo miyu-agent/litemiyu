@@ -234,10 +234,13 @@ mod tests {
     use crate::language::LanguageTable;
 
     fn at(config: Option<&str>) -> super::Startup {
+        // 每次调用一个自己的目录：原来照配置的长度起名，两条并行的测试配置一样长就共用一个目录，一条删掉时另一条还在读
+        // （LM-39 的英文全仓测试里红过一次）。
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "litemiyu-startup-{}-{}",
             std::process::id(),
-            config.map_or(0, str::len)
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let paths = Paths::under(&dir);
         std::fs::create_dir_all(&paths.config).unwrap();

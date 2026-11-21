@@ -61,7 +61,7 @@ impl Session {
             return vec![rejected(id, Reason::EmptyMessage)];
         }
         if let Some(waker) = self.elsewhere(&by) {
-            return self.elsewhere_says(id, by, at, blocks, waker);
+            return self.elsewhere_says(id, by, at, (blocks, command), waker);
         }
         let body = Body::MessageUser(MessageUser {
             blocks,

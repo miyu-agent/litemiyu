@@ -87,10 +87,8 @@ fn the_window_floats_over_the_list_in_two_columns_and_explains_what_cannot_work(
     let (text, _) = screen(&settings);
     // 底下还是列表那一页（面包屑、列表的按键提示），窗盖在上面。
     assert!(text.contains("◉ 预设"), "{text}");
-    assert!(
-        text.contains("Enter 打开"),
-        "页底下照旧是列表的提示：{text}"
-    );
+    // 「开」压在窗的左边上，截掉（LM-38：框边上的宽字截成空格，不压进窗里）。
+    assert!(text.contains("Enter 打"), "页底下照旧是列表的提示：{text}");
     for said in [
         "名称  web",
         "内置工具  1/12",

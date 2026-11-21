@@ -18,7 +18,7 @@ use super::Session;
 use super::action::Action;
 use super::jobs::Waker;
 use crate::kernel::block::Block;
-use crate::kernel::event::{Body, MessageUser};
+use crate::kernel::event::{Body, MessageUser, TypedCommand};
 use crate::kernel::id::{CommandId, JobId, SessionId};
 use crate::kernel::ledger::Ledger;
 use crate::kernel::origin::By;
@@ -60,6 +60,11 @@ impl Session {
     /// 是这个命令，不带回合编号；照回报的规矩叫不叫醒她。落了盘回应，附上这一条的序号。别的会话发来的一律收：LiteMiyu 没有
     /// 共同的核心，收的一方拒了发的一方不知道，防刷屏改在发的一方当场拦（L7 二，`lm-engine` 的 `session/peers/outbox.rs`）。
     ///
+    /// 定时任务交来的、带着人敲的那一行的（[`crate::kernel::session::Command::Typed`]，`by` 是 `schedule`）：人亲手敲
+    /// `/loop` 的那一刻交进来的第一句（LM-34）。它是人的一次操作，和人说一句话一样：`message.user` 带上那一行，还能恢复撤销
+    /// 时照样开一轮（开了以后那次撤销就恢复不了，账本本来就这样）；别的几条照看，没人看着的一次性会话、要重启了的照旧只记下。
+    /// 别处来的其余几种不认那一行，照旧不带。
+    ///
     /// # Panics
     ///
     /// 过不了账本：不带回合编号的 `message.user` 哪条规矩都不犯，过不了只会是内核自己的 bug。
@@ -68,15 +73,17 @@ impl Session {
         id: CommandId,
         by: By,
         at: Timestamp,
-        blocks: Vec<Block>,
+        (blocks, command): (Vec<Block>, Option<TypedCommand>),
         waker: Waker,
     ) -> Vec<Action> {
+        let command = command.filter(|_| waker == Waker::Schedule);
+        let typed = command.is_some();
         let body = Body::MessageUser(MessageUser {
             blocks,
-            command: None,
+            command,
             shell: false,
         });
-        let events = match self.land(at, by, Some(id.clone()), body, Some(waker)) {
+        let events = match self.land_as(at, by, Some(id.clone()), body, Some(waker), typed) {
             Ok(events) => events,
             Err(error) => {
                 panic!("a message from elsewhere failed the ledger, a kernel bug: {error}")

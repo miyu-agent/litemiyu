@@ -191,6 +191,8 @@ impl App {
         {
             self.talk.listing = Listing::None;
             self.talk.held = Held::default();
+            // 这一下用掉了：上一下 `Esc` 不算了（LM-38）。
+            self.typing.esc_at = None;
             return None;
         }
         let held = &mut self.talk.held;

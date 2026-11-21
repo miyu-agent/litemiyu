@@ -114,7 +114,8 @@ impl App {
         }
         let idle = !writer.busy();
         if let Some(why) = failed {
-            let said = self.config.text().settings_not_saved.replace("{why}", &why);
+            let texts = self.config.text();
+            let said = texts.settings_not_saved.replace("{why}", &texts.why(&why));
             self.hint(said, false);
         }
         if idle

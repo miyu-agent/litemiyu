@@ -1,4 +1,4 @@
-//! 回合开始交文件记忆的目录（L6，`crate::session::memory`）：这一段上下文里没交过的交一块。无功能的一档、应急模式、目录里没有读文件的
+//! 回合开始交文件记忆的目录（L6，`crate::session::memory`）：这一段上下文里没交过的交一块。无功能的一档、应急模式、工具面上没有读文件的
 //! 工具的（读不了记忆，同技能列表的门槛）不交。
 
 use std::future::Future;
@@ -16,7 +16,7 @@ impl Actor {
         &self,
         present: &[Present],
     ) -> impl Future<Output = Option<Injection>> + Send + 'static {
-        let asking = (!self.bare && !self.rescue && self.tools.reads_files())
+        let asking = (!self.bare && !self.rescue && self.reads_files())
             .then(|| (self.tools.data_root().join("memory"), present.to_vec()));
         async move {
             let (folder, present) = asking?;

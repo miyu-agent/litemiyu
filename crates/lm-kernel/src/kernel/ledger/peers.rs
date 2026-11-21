@@ -1,7 +1,9 @@
 //! 账本里跨会话的几条（施工 C-1，`docs/blueprint/kernel/history.md`「账本查的规矩」，`cross-session.md`「效果
 //! peer.watch」「事件 peer.idle」）：在等哪几个会话的通知，`peer.idle` 只认在等的。
 //!
-//! 订的记录是工具结果的效果 `peer.watch`：一次订记一项，在哪一轮、从那条结果的时刻算起。算不算在等照回合看，撤销、恢复
+//! 订的记录是工具结果的效果 `peer.watch`：一次订记一项，在哪一轮、从带着这次调用的那条回复（`message.assistant`）的时刻
+//! 算起（LM-36，同 Miyu FX-6：原来从结果的时刻算。带话又订的，话在工具执行时就送到了，对方可能赶在结果记下以前就忙完一轮，
+//! 照结果的时刻比就成了「订在它忙完以后」，通知不来）。算不算在等照回合看，撤销、恢复
 //! 不动这些记录：订它的那一轮撤掉了就不算，恢复了又算。又订了一次的从新的时刻算，撤掉后订的那一轮，回到前一次的时刻。
 //! 收到 `peer.idle`，那个会话以前订的都了结、清掉，再订从新的算起。账本随订的次数长，收到通知时清掉那个会话的。
 //!
@@ -32,6 +34,9 @@ pub(super) struct Peers {
     said: BTreeMap<SessionId, Vec<Said>>,
     /// 还没听到的别的会话的话（施工 C-2）：主对话的请求、回复看到了就清掉。
     unheard: BTreeSet<Seq>,
+    /// 最近一条回复（`message.assistant`）的时刻（LM-36，同 Miyu FX-6）：工具结果总跟在带着那次调用的回复后面、下一条回复
+    /// 以前，订的从它算起。
+    replied: Option<Timestamp>,
 }
 
 /// 收下的一句别的会话的话：时刻、字的哈希。
@@ -41,7 +46,8 @@ struct Said {
     digest: ContentHash,
 }
 
-/// 订了一次：在哪一轮，从哪一刻算起，那一轮的 `cause`（施工 C-6：作废、不在了的 `peer.idle` 照它记 `cause`）。
+/// 订了一次：在哪一轮，从哪一刻算起（带着这次调用的那条回复的时刻，早于工具开始执行；老日志里找不到那条回复的照结果的时刻），
+/// 那一轮的 `cause`（施工 C-6：作废、不在了的 `peer.idle` 照它记 `cause`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Watch {
     turn: TurnId,
@@ -151,7 +157,7 @@ impl Peers {
         }
     }
 
-    /// 记下查过的这一条带来的变化：订的记下在哪一轮、从这条的时刻算起；收到通知，那个会话以前订的都了结。`peer` 是这一条
+    /// 记下查过的这一条带来的变化：订的记下在哪一轮、从带着那次调用的回复的时刻算起（LM-36）；收到通知，那个会话以前订的都了结。`peer` 是这一条
     /// 是别的会话发来的话时，发话的那个会话（施工 C-2，账本照 [`Ledger::is_peer`] 认好交来）：记下时刻、哈希，算没听到。
     /// 主对话的请求、回复看到了的，不再算没听到。
     pub(super) fn record(&mut self, event: &Event, peer: Option<SessionId>) {
@@ -180,6 +186,7 @@ impl Peers {
             }
             Body::MessageAssistant(reply) => {
                 self.unheard.retain(|unheard| *unheard > reply.seen);
+                self.replied = Some(event.at);
             }
             // 查过了：工具结果带着正在进行的回合。
             Body::ToolResult(result) => {
@@ -190,7 +197,7 @@ impl Peers {
                             .or_default()
                             .push(Watch {
                                 turn,
-                                since: event.at,
+                                since: self.replied.unwrap_or(event.at),
                                 cause: event.cause.clone(),
                             });
                     }

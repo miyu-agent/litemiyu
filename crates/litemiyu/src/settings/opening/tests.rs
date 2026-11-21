@@ -324,7 +324,7 @@ fn a_failed_test_says_why_and_save_anyway_asks_for_a_model_name() {
     press(&mut settings, KeyCode::Down);
     press(&mut settings, KeyCode::Enter);
     let model = &settings.opening.as_ref().unwrap().model;
-    assert_eq!(model.warn.as_deref(), Some("填上模型名再保存"));
+    assert_eq!(model.warn.as_deref(), Some("请填写模型名后再保存"));
     let Phase::Form(form) = &model.phase else {
         panic!();
     };

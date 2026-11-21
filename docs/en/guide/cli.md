@@ -191,7 +191,7 @@ Nobody can answer a confirmation while `ask` runs. So:
 
     ```console
     $ litemiyu ask "force-push my changes to the remote"
-    $ git push --force origin main · not done: Needs confirmation, no one to confirm
+    $ git push --force origin main · not run: Needs confirmation, no one to confirm
 
     Finished.
     · input 4,023 · cache hit 1,850 (46%) · output 34

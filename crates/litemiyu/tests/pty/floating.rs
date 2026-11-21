@@ -34,9 +34,8 @@ fn open_window(options: &Options) -> Session {
     session.press_enter();
     session.wait_for("◉ 通用", "通用页");
     session.press_enter();
-    session.wait_until("选择窗开了", |s| {
-        s.screen().matches("跟随系统").count() >= 2
-    });
+    // 等窗自己的按键提示：页上光标那一项的说明里也写着「跟随系统」（LM-38），数「跟随系统」分不出窗开没开。
+    session.wait_for("Enter 确定", "选择窗开了");
     session
 }
 

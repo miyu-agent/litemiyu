@@ -146,6 +146,6 @@ fn files_without_any_change_says_so() {
     session.wait_for("好的。", "答完");
     session.type_text("/files");
     session.press_enter();
-    let screen = session.wait_for("这个会话还没改过文件", "提示一句");
+    let screen = session.wait_for("这个会话还没有修改过文件", "提示一句");
     assert!(screen.contains("❯"), "不开那一页：\n{screen}");
 }

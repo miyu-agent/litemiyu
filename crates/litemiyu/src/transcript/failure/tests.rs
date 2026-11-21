@@ -79,10 +79,12 @@ fn running_out_of_quota_has_its_own_words() {
 fn a_stalled_model_is_named_and_keeps_the_idle_timeout_words() {
     // 核心 YC-3 新加的 `stalled`（Miyu `transcript/failure/tests.rs` 原样）：人话「模型没有响应」接原话；重试那一行也认它。
     let texts = Config::builtin().unwrap().text().clone();
+    // 发请求那一层的原话照 `why` 换成句子（LM-39）。
     let said = "空闲超时：180 秒没有收到新的内容";
+    let shown = "180 秒内没有收到新的内容";
     assert_eq!(
         reason(&error("stalled", said, None, None), &texts),
-        format!("模型没有响应：{said}")
+        format!("模型没有响应：{shown}")
     );
     assert_eq!(
         reason(&error("stalled", "", None, None), &texts),
@@ -90,11 +92,12 @@ fn a_stalled_model_is_named_and_keeps_the_idle_timeout_words() {
     );
     assert_eq!(
         retry_line(1, 5, "stalled", said, &texts),
-        format!("重试 1/5：模型没有响应：{said}")
+        format!("重试 1/5：模型没有响应：{shown}")
     );
     assert_eq!(
         retry_line(2, 5, "retryable", "connection reset", &texts),
-        "重试 2/5：connection reset"
+        "重试 2/5：连接被对方重置",
+        "系统错误的说法照 `why` 换成句子（LM-39）"
     );
 }
 

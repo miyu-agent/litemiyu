@@ -3,13 +3,29 @@
 use super::*;
 
 mod audit;
+mod fed;
 mod fresh;
+mod moves;
+
+/// LiteMiyu 自己的四处，照没设 XDG 变量时的默认（LM-37）。
+const OWN: [&str; 4] = [
+    "/home/me/.config/litemiyu",
+    "/home/me/.local/share/litemiyu",
+    "/home/me/.cache/litemiyu",
+    "/home/me/.local/state/litemiyu",
+];
+
+/// 里面让工具碰的：记忆、人放技能的文件夹。
+const OPEN: [&str; 2] = [
+    "/home/me/.local/share/litemiyu/memory",
+    "/home/me/.config/litemiyu/skills",
+];
 
 const PLACES: Places<'static> = Places {
     cwd: "/home/me/proj",
     home: Some("/home/me"),
-    data_root: "/home/me/.miyu",
-    workspaces: "/home/me/.miyu/workspace",
+    own: &OWN,
+    open: &OPEN,
 };
 
 fn kind(command: &str) -> Option<&'static str> {
@@ -30,11 +46,17 @@ fn deleting_the_big_places_is_refused() {
         ("rm -rf ../..", "delete_home"),
         ("rm -rf /usr", "delete_system"),
         ("/bin/rm -r /etc/", "delete_system"),
-        ("rm -rf ~/.miyu", "delete_data_root"),
-        ("rm ~/.miyu/sessions/s1/log.jsonl", "delete_data_root"),
+        ("rm -rf ~/.local/share/litemiyu", "delete_data_root"),
+        (
+            "rm ~/.local/share/litemiyu/sessions/s1/log.jsonl",
+            "delete_data_root",
+        ),
         ("find ~ -name x -delete", "delete_home"),
         ("find / -exec rm {} +", "delete_root"),
-        ("shred -u ~/.miyu/token", "delete_data_root"),
+        (
+            "shred -u ~/.config/litemiyu/secrets.toml",
+            "delete_data_root",
+        ),
     ] {
         assert_eq!(kind(command), Some(expected), "{command}");
         assert!(
@@ -67,7 +89,7 @@ fn ordinary_deletes_are_left_alone() {
         "rm -rf target",
         "rm -rf ./node_modules",
         "rm $FILE",
-        "rm -rf /home/me/.miyu/workspace/s1/out",
+        "rm -rf /home/me/.local/share/litemiyu/memory/old.md",
         "rm -rf /tmp/x",
         "find . -name '*.o' -print",
         "echo 'rm -rf /'",
@@ -187,28 +209,19 @@ fn the_corners_of_reading_a_command() {
     ] {
         assert_eq!(kind(command), expected, "{command}");
     }
-    // 数据根不在家目录里：删它上面那一层也算删它。
+    // 几处不在家目录里（`LITEMIYU_HOME`）：删它们上面那一层也算删它们。
     let places = Places {
-        data_root: "/srv/miyu/data",
-        workspaces: "/srv/miyu/data/workspace",
+        own: &["/srv/lm/config", "/srv/lm/data"],
+        open: &["/srv/lm/data/memory"],
         ..PLACES
     };
     assert_eq!(
-        assess("rm -rf /srv/miyu", &places).map(Kind::code),
+        assess("rm -rf /srv/lm", &places).map(Kind::code),
         Some("delete_data_root")
     );
-    // 放工作区的目录照给的认（施工 FH-2：调的一方照数据根的布局给），不照数据根下面的 `workspace/` 猜。
-    let moved = Places {
-        workspaces: "/home/me/.miyu/root/workspace",
-        ..PLACES
-    };
     assert_eq!(
-        assess("rm -rf ~/.miyu/root/workspace/s1/build", &moved).map(Kind::code),
+        assess("rm -rf /srv/lm/data/memory/old.md", &places).map(Kind::code),
         None
-    );
-    assert_eq!(
-        assess("rm -rf ~/.miyu/workspace/s1/build", &moved).map(Kind::code),
-        Some("delete_data_root")
     );
 }
 
@@ -345,7 +358,7 @@ fn the_edges_of_what_as9_added() {
         ("cd ~ && rm -rf ./cache/*", None),
         ("cat <<'EOF'\nrm -rf ~\nEOF", None),
         ("cat <<-EOF\n\trm -rf ~\n\tEOF\necho ok", None),
-        ("rm -rf ~/.miyu*.bak", None),
+        ("rm -rf ~/.local/share/litemiyu*.bak", None),
         ("git restore --staged src", None),
         ("git restore -S .", None),
         ("cp /dev/sda disk.img", None),

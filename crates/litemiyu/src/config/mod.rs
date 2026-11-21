@@ -111,6 +111,8 @@ texts! {
         pub nothing_to_copy: String,
         /// 上次关窗口时循环还开着、这次重开停了（设计第五节第 9 条）：正文里那一行。
         pub loop_stopped: String,
+        /// 循环搁着（LM-34）：到点时有一次撤回还能恢复，等撤回处理了再补交。输入框上面那一行写的。
+        pub loop_held: String,
         /// 一条请求被拒，`{reason}` 是核心说的原因。
         pub refused: String,
         /// 编辑上一句时输入框上边框写的（`/edit`，「输入框」第 13 条）。
@@ -153,6 +155,8 @@ texts! {
         pub done_usage: String,
         /// 请求被拒时，认得的原因码（`data.reason`）写的短话：只弹提示框，不写进正文，认不得的才照核心的原话写（蓝图「正文」第 6、9 条）。
         pub refusal_hints: HashMap<String, String>,
+        /// 引擎、系统交上来的原话换成的句子（LM-39，`human/why.rs`）。
+        pub why: crate::human::why::Why,
         /// 换模型的字（「配置与模型」第 2 条）。
         pub models: ModelTexts,
         /// 导出的字（`/export`）。
@@ -320,6 +324,41 @@ fn read_texts(language: &Language, auto: bool) -> Result<Texts, String> {
         text.summary = localize::summary(&summary_language)?;
     }
     Ok(text)
+}
+
+impl Texts {
+    /// 原因 `raw`（原因码、引擎和系统的原话）给人看的句子：原因码照 `refusal_hints`，别的照 `why`，认不出的照原话（LM-39）。
+    pub fn why(&self, raw: &str) -> String {
+        match self.refusal_hints.get(raw.trim()) {
+            Some(hint) => hint.clone(),
+            None => self.why.say(raw),
+        }
+    }
+}
+
+/// `code` 那种语言的 `text/<代码>.json` 里只取原因的两节（`why`、`refusal_hints`）：配置界面、命令行、工具结果的字用
+/// （[`crate::human::why::table`]），不为它读整份。
+///
+/// # Errors
+///
+/// 这种语言没编进来，或者那两节写坏了。
+pub fn why_table(code: &str) -> Result<crate::human::why::Table, String> {
+    let table = LanguageTable::builtin()?;
+    let language = table
+        .find(code)
+        .ok_or_else(|| format!("languages.json 里没有 {code}"))?;
+    let (name, json) = localize::text(&language)?;
+    let mut value: serde_json::Value = lm_kernel::kernel::json::from_str(json)
+        .map_err(|e| format!("resources/{name} 读不懂：{e}"))?;
+    let mut take = |key: &str| {
+        value
+            .get_mut(key)
+            .map(serde_json::Value::take)
+            .unwrap_or_default()
+    };
+    let why = read::Read::read(take("why"), "why")?;
+    let hints = read::Read::read(take("refusal_hints"), "refusal_hints")?;
+    Ok(crate::human::why::Table { why, hints })
 }
 
 impl Config {

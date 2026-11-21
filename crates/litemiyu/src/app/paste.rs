@@ -160,7 +160,8 @@ impl App {
                 self.typing.input.attach_image(path, label);
             }
             Err(error) => {
-                let note = words.unstaged.replace("{reason}", &error.to_string());
+                let reason = self.config.text().why(&error.to_string());
+                let note = words.unstaged.replace("{reason}", &reason);
                 self.hint(note, false);
             }
         }
@@ -246,7 +247,12 @@ impl App {
                     .replace("{count}", &text.chars().count().to_string()),
                 true,
             ),
-            Err(e) => (words.copy_failed.replace("{reason}", &e.to_string()), false),
+            Err(e) => (
+                words
+                    .copy_failed
+                    .replace("{reason}", &words.why(&e.to_string())),
+                false,
+            ),
         };
         self.hint(message, good);
     }
@@ -370,7 +376,7 @@ mod tests {
         app.paste_image(b"BM not a supported picture".to_vec());
         assert_eq!(
             notice(&app).as_deref(),
-            Some("剪贴板里的内容既不是文字，也不是支持的图片（PNG、JPEG、GIF、WebP），无法粘贴")
+            Some("剪贴板里既不是文字，也不是支持的图片（PNG、JPEG、GIF、WebP），无法粘贴")
         );
         assert!(app.typing.input.editor.is_empty(), "一块都没收");
     }
@@ -408,7 +414,7 @@ mod tests {
         );
         assert_eq!(
             notice(&app).as_deref(),
-            Some("图片 wide.png 超过了 5 MB 或者有一边超过 8000 像素，已改为只发送文件路径")
+            Some("图片 wide.png 超过 5 MB 或某一边超过 8000 像素，改为只发送文件路径")
         );
         let draft = app.typing.input.draft();
         let images = app.images(&draft);

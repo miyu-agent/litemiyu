@@ -1,6 +1,6 @@
 //! 删的目标照字面换成绝对路径再判（施工 5-17；施工 AS-9 从 `rules.rs` 挪出来，加上通配和 `cd`）：`~`、`$HOME` 接家目录，
 //! 相对的接这时的当前目录（同一条命令里 `cd` 过的照 `cd` 到的，说不清的交回空的），`.`、`..` 照字面去掉。通配的照它能删到
-//! 的最大的那一个算：`dir/*`、`dir/?*`、`dir/{*,.*}` 照删 `dir`，`~/.miyu*` 照删数据根。
+//! 的最大的那一个算：`dir/*`、`dir/?*`、`dir/{*,.*}` 照删 `dir`，`~/.cach*` 照删装着缓存那一处的 `~/.cache`。
 
 use super::Kind;
 use super::Places;
@@ -21,9 +21,6 @@ pub(super) fn target(
         return recursive.then_some(Kind::DeleteUnresolved);
     };
     let path = widest(&path, places);
-    let inside = |dir: &str, of: &str| {
-        of == dir || of.starts_with(&format!("{}/", dir.trim_end_matches('/')))
-    };
     if path == "/" {
         return Some(Kind::DeleteRoot);
     }
@@ -32,8 +29,10 @@ pub(super) fn target(
     {
         return Some(Kind::DeleteHome);
     }
-    if !in_workspace(&path, places.workspaces)
-        && (inside(&path, places.data_root) || inside(places.data_root, &path))
+    // 自己的几处之一、装着它的，或者几处里面不让工具碰的（LM-37：原来连记忆的文件也拒，配置、缓存、状态三处一处都不认）。
+    if holds_own(&path, places)
+        || (places.own.iter().any(|own| inside(own, &path))
+            && !places.open.iter().any(|open| inside(open, &path)))
     {
         return Some(Kind::DeleteDataRoot);
     }
@@ -44,6 +43,23 @@ pub(super) fn target(
         return Some(Kind::DeleteWorkingDir);
     }
     None
+}
+
+/// 挪走、扔进回收站一个来源（LM-37，同 Miyu RO-4补「只管数据根」）：照字面换成绝对路径（通配的照它挪得到的最大的那一个），
+/// 是自己的一处或者装着它的报删数据根，别的（系统目录、工作目录、几处里面的单个文件）不报。说不清的不报。
+pub(super) fn moved_away(word: &Word, places: &Places<'_>, cwd: Option<&str>) -> Option<Kind> {
+    let path = absolute(word, places, cwd)?;
+    holds_own(&widest(&path, places), places).then_some(Kind::DeleteDataRoot)
+}
+
+/// 规整过的绝对路径 `path` 是自己的一处或者装着它的。
+fn holds_own(path: &str, places: &Places<'_>) -> bool {
+    places.own.iter().any(|own| inside(path, own))
+}
+
+/// `of` 是 `dir` 自己或者在它里面。
+fn inside(dir: &str, of: &str) -> bool {
+    of == dir || of.starts_with(&format!("{}/", dir.trim_end_matches('/')))
 }
 
 /// 通配的路径删得到的最大的那一个（施工 AS-9）：通配只在最后一段才看。整段都是通配（`*`、`.*`、`?*`、`{*,.*}`）的照删它
@@ -80,21 +96,14 @@ fn widest(path: &str, places: &Places<'_>) -> String {
         name.starts_with(prefix)
             .then(|| format!("{}/{name}", dir.trim_end_matches('/')))
     };
-    let guarded = [places.home, Some(places.data_root), Some(places.cwd)];
     // 根下面的不用另算：照原样就是根下一级，照系统目录判。
-    guarded
+    places
+        .home
         .into_iter()
-        .flatten()
+        .chain(places.own.iter().copied())
+        .chain([places.cwd])
         .find_map(below)
         .unwrap_or_else(|| path.to_string())
-}
-
-/// 落在放工作区的目录 `workspaces` 里面（不是它本身：规整过的路径不以 `/` 结尾）。
-fn in_workspace(path: &str, workspaces: &str) -> bool {
-    !workspaces.is_empty()
-        && path
-            .strip_prefix(&format!("{}/", workspaces.trim_end_matches('/')))
-            .is_some()
 }
 
 /// 照字面换成绝对路径，去掉 `.`、`..`、多余的 `/`：`~`、`$HOME`、`${HOME}` 开头的接家目录，相对的接 `cwd`（空的交回空的）。
@@ -110,6 +119,10 @@ pub(super) fn absolute(word: &Word, places: &Places<'_>, cwd: Option<&str>) -> O
         return None;
     } else if text == "~" || text.starts_with("~/") {
         (places.home?, &text[1..])
+    } else if text.starts_with('~') {
+        // `~名字`（LM-37）：那个用户的家目录，不知道在哪，说不清。原来当成工作目录下一个叫 `~名字` 的文件，`rm -rf ~me`
+        // 删的是自己的家目录却判成安全。
+        return None;
     } else if text.starts_with('/') {
         ("/", text)
     } else {

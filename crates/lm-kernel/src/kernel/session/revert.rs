@@ -213,6 +213,12 @@ impl Session {
         actions
     }
 
+    /// 有一次撤销还能恢复（LM-34）：撤了以后没开过回合、没压缩过，`/restore` 收得下。纯查询：会话 actor 到点时照它决定循环
+    /// 这一次先搁着（不交、不记），等它不再是真再补交。
+    pub fn undo_pending(&self) -> bool {
+        self.ledger.last_reverted().is_some()
+    }
+
     /// 有效历史现在的检查点是第几条；没有检查点就没有。
     fn checkpoint_seq(&self) -> Option<Seq> {
         self.history.checkpoint().map(|checkpoint| checkpoint.seq)

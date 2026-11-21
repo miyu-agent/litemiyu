@@ -30,6 +30,9 @@ pub struct Call {
     /// LiteMiyu 的数据目录（施工 4-4 下，`docs/00-设计.md` 第五节第 6 条）：哪一件工具都不能碰。
     /// `shell` 照它认删它的命令是高危，`write`、`edit` 照它认记忆的目录。不知道的是空的。
     pub data_root: Option<PathBuf>,
+    /// LiteMiyu 自己的几处和里面让工具碰的（LM-37，[`Own`]）：`shell` 照它认删掉、挪走整个一处的命令。权限策略判的时候交；
+    /// 没有的（测试里直接造的调用、执行的时候）照 `data_root` 一处算。
+    pub own: Option<Arc<Own>>,
     /// 她这个会话里看过的文件（施工 4-6 上）：写的工具改一个已经在了的文件之前，照它核对。
     pub seen: Arc<Seen>,
     /// 叫停的旗（施工 4-9 再补一）：执行器「叫它停」、future 被丢掉时举起来。
@@ -68,6 +71,16 @@ pub struct Call {
     /// 调用的事实（施工 E-M，[`crate::tool::Caller`]）：执行器照派它的那一轮放进来，命令、脚本用。测试里直接造的调用、会话外面
     /// 的调用、执行前的链报路径时没有。
     pub caller: Option<crate::tool::Caller>,
+}
+
+/// LiteMiyu 自己的几处（LM-37）：配置、数据、缓存、状态四处，和里面让工具碰的记忆、技能的文件夹。原样的路径和换成真实位置的
+/// 都在里面（同一处两种写法都认）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Own {
+    /// 四处。
+    pub dirs: Vec<PathBuf>,
+    /// 里面让工具碰的。
+    pub open: Vec<PathBuf>,
 }
 
 /// 她看过的文件（`10-自带软件.md` 第五节「她看过的」，施工 4-6 上）：换成真实位置以后的路径，和她最后一次看到的

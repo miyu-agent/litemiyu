@@ -26,6 +26,7 @@ mod colors;
 mod commands;
 mod drawer;
 mod editor;
+mod esc_count;
 mod files;
 mod floating;
 mod footer_model;

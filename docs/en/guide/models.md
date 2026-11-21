@@ -9,7 +9,7 @@ LiteMiyu ships no model of its own; it needs at least one model provider before 
 - **Provider**: a service that offers a model API, such as DeepSeek, Anthropic or OpenAI, or a model service running on your own machine. Each provider has an ID, an address, an API type and a key.
 - **Model**: written as `provider/model`, for example `deepseek/deepseek-chat`.
 - **API**: LiteMiyu supports three: `OpenAI compatible` (`openai-chat`, used by most providers), `Anthropic` (`anthropic`) and `OpenAI Responses` (`openai-responses`).
-- **Model catalog**: a public data set (from [models.dev](https://models.dev)) with each provider's address and each model's context window, image support, thinking effort levels and price. LiteMiyu does not bundle it; it is downloaded the first time it is needed and refreshed every 24 hours after that.
+- **Model catalog**: a public data set (from [models.dev](https://models.dev)) with each provider's address and each model's context window, multimodal support, thinking effort levels and price. LiteMiyu does not bundle it; it is downloaded the first time it is needed and refreshed every 24 hours after that.
 
 A session uses one model at a time.
 
@@ -83,8 +83,8 @@ The `Providers & models` page has two sub-pages; switch with `,` and `.`. The se
 
 | Entry | Purpose |
 |---|---|
-| `Default text model` | The model new sessions use. This is the `models.chat` setting |
-| `Default vision model` | Reads images for the chat model when it cannot. This is the `models.vision` setting, and it may be left unset |
+| `Default chat model` | The model new sessions use. This is the `models.chat` setting |
+| `Default multimodal model` | Provides multimodal input when the chat model lacks it. This is the `models.vision` setting, and it may be left unset |
 
 Select an entry, press `Enter`, and pick a model from the list.
 

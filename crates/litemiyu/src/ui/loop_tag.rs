@@ -2,7 +2,8 @@
 //! 几点。
 //!
 //! 和 Miyu 不一样的：一个会话至多一个循环、没有暂停（循环只在会话的 actor 内存里，`lm_engine::session::looping`），所以只
-//! 画一个、不写「已暂停」；侧边栏没有「循环」那一段（2026-11-20 项目主人：「移除右侧边栏的循环部分」）。
+//! 画一个、不写「已暂停」；侧边栏没有「循环」那一段（2026-11-20 项目主人：「移除右侧边栏的循环部分」）。到点时有一次撤回还能
+//! 恢复、这一次搁着的，时刻换成一句「循环在等撤回处理」（LM-34）。
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -16,7 +17,8 @@ use crate::config::Config;
 use crate::theme;
 use crate::ui::Frame;
 
-/// 输入框上面那一截：「◷ 13:07」，还没定下一次的只写「◷」（记号照图标那一套的 `loop`）。没有循环的是 `None`。
+/// 输入框上面那一截：「◷ 13:07」，还没定下一次的只写「◷」（记号照图标那一套的 `loop`）；搁着等撤回处理的写「◷ 循环在等
+/// 撤回处理」（LM-34，[`Looping::held`]）。没有循环的是 `None`。
 pub fn tag(
     looping: Option<&Looping>,
     config: &Config,
@@ -25,6 +27,7 @@ pub fn tag(
     let looping = looping?;
     let mark = &config.icons.loop_mark;
     Some(match looping.next {
+        _ if looping.held => format!("{mark}{}", config.text().loop_held),
         Some(next) => format!("{mark}{}", when(next, now, tz)),
         None => mark.trim_end().to_string(),
     })
@@ -86,6 +89,7 @@ mod tests {
             pace,
             prompt: "看看 CI\n第二行".into(),
             next: next.and_then(lm_kernel::kernel::time::Timestamp::from_unix_millis),
+            held: false,
         }
     }
 
@@ -112,6 +116,31 @@ mod tests {
         assert_eq!(
             tag(Some(&tomorrow), &config, (now, &tz)).unwrap(),
             "\u{f017} 11-13 08:07"
+        );
+    }
+
+    #[test]
+    fn a_held_loop_says_it_waits_for_the_undo() {
+        // LM-34：到点时有一次撤回还能恢复，这一次搁着：时刻换成那一句，中英文各一句。
+        let tz = TimeZone::UTC;
+        let now: Timestamp = "2026-11-12T08:00:00Z".parse().unwrap();
+        let mut held = looping(Pace::Fixed { every: 600 }, Some(now.as_millisecond()));
+        held.held = true;
+        let config = Config::builtin().unwrap();
+        let tag_text = tag(Some(&held), &config, (now, &tz)).unwrap();
+        assert_eq!(tag_text, format!("\u{f017} {}", config.text().loop_held));
+        let zh: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../resources/tui/text/zh.json")).unwrap();
+        let en: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../resources/tui/text/en.json")).unwrap();
+        assert_eq!(zh["loop_held"], "循环在等撤销处理");
+        assert_eq!(en["loop_held"], "Loop waiting on undo");
+        held.pace = Pace::Dynamic;
+        held.next = None;
+        assert_eq!(
+            tag(Some(&held), &config, (now, &tz)).unwrap(),
+            tag_text,
+            "她自己定节奏的、到点继续的一样写"
         );
     }
 

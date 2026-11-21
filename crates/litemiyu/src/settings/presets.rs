@@ -300,7 +300,6 @@ impl Settings {
     /// `create_one`：不经过主菜单）。办完按 `Esc` 直接回对话。
     pub fn open_preset(&mut self, target: PresetTarget) {
         let page = self.presets_entry();
-        self.note_models();
         self.presets = Some(Presets {
             direct: true,
             ..Presets::default()

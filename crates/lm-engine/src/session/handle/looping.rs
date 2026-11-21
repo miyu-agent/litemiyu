@@ -1,6 +1,6 @@
 //! 人开、停循环（L5 四，`/loop` 的引擎那一半；Miyu 在核心的斜杠命令 `commands/looping.rs` 里）：界面照
 //! [`crate::schedule::parse`] 读 `/loop` 后面的字，再调这里。循环只记在 actor 内存里（`session/looping.rs`），不进内核、不写盘；
-//! 交进来的每一句照「别处来的话」记成 `by: schedule`。
+//! 交进来的每一句照「别处来的话」记成 `by: schedule`；开的那一刻交的第一句另带人敲的那一行（LM-34）。
 
 use tokio::sync::oneshot;
 
@@ -20,13 +20,24 @@ impl Handle {
     }
 
     /// 开一个循环，换掉原来的（一个会话同时只有一个，同 Miyu）：`every` 是固定间隔的秒数（照 [`crate::schedule::parse`]
-    /// 收过下限），没有的是她自己定节奏。开的那一刻先交一次那句话。交回原来有没有一个被换掉。
+    /// 收过下限），没有的是她自己定节奏；`typed` 是人敲的那一整行（例如 `/loop 10m 看一眼时间`）。开的那一刻先交一次那句话，
+    /// 带着 `typed`：算人的一次操作，有一次撤回还能恢复也照样开一轮，正文里照 `typed` 画（LM-34）。交回原来有没有一个被换掉。
     ///
     /// # Errors
     ///
     /// 会话停了。
-    pub async fn start_loop(&self, every: Option<u64>, prompt: String) -> Result<bool, Stopped> {
-        self.order(Order::Start { every, prompt }).await
+    pub async fn start_loop(
+        &self,
+        every: Option<u64>,
+        prompt: String,
+        typed: String,
+    ) -> Result<bool, Stopped> {
+        self.order(Order::Start {
+            every,
+            prompt,
+            typed,
+        })
+        .await
     }
 
     /// 停掉这个会话的循环（`/loop off`）：交回停掉了一个，还是本来就没有。

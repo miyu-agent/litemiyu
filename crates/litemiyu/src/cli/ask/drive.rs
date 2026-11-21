@@ -142,7 +142,10 @@ impl Run {
                 Update::OpenFailed { taken, message, .. } => {
                     let (reason, message) = match taken {
                         true => ("taken", words.say("taken", &[("id", &id)])),
-                        false => ("failed", words.say("open_failed", &[("reason", &message)])),
+                        false => (
+                            "failed",
+                            words.say("open_failed", &[("reason", &words.why(&message))]),
+                        ),
                     };
                     words.error(&message, None);
                     return Err(Ending::early(1, reason));
@@ -236,7 +239,10 @@ impl Run {
                 push: Push::Asking(asking),
             } => self.answer(session, &asking),
             Update::Unsent { reason, message } => {
-                words.error(&words.say("unsent", &[("reason", &message)]), None);
+                words.error(
+                    &words.say("unsent", &[("reason", &words.why(&message))]),
+                    None,
+                );
                 let why = if reason.is_some() {
                     "refused"
                 } else {
@@ -251,7 +257,10 @@ impl Run {
             // 子代理的推送掉了队、补不上（审计 #063）：警告一句，接着等。
             Update::ChildBehind => words.warn(words.get("child_behind"), None),
             Update::Refused { message, .. } => {
-                words.error(&words.say("refused", &[("reason", &message)]), None);
+                words.error(
+                    &words.say("refused", &[("reason", &words.why(&message))]),
+                    None,
+                );
                 return Err(Ending::early(1, "refused"));
             }
             // 补发的一截交过来了：回一声（读日志的那一头不等了的没处可回）。

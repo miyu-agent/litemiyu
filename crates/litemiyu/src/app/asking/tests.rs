@@ -27,7 +27,7 @@ fn an_answer_refused_as_id_reused_reopens_the_drawer_and_says_why() {
     let notice = app.typing.notice.as_ref().map(|n| n.text.clone());
     assert_eq!(
         notice.as_deref(),
-        Some("同一个请求编号换了参数，没有收。请换一个新的编号")
+        Some("这个请求编号已经用于不同的参数，请求未执行。请使用新的编号")
     );
 }
 

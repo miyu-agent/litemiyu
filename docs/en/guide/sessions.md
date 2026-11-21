@@ -129,4 +129,4 @@ The compaction line and pre-compaction can be adjusted on the `Advanced` page of
 ## When a session will not open
 
 - `The session can't be read right now; retrying in 5 seconds`: reading the session files failed. LiteMiyu retries a few times on its own, and if all attempts fail it says `The session can't be read right now. Please try again later`.
-- `The session log is broken at line …; only the part before it can be viewed and the session can't continue. Start a new session to go on.`: the session file is damaged in the middle. The session opens read-only so you can view what came before the damage; to keep working, run `/new`.
+- `The session log is broken at line …; only the part before it can be viewed. Start a new session to go on.`: the session file is damaged in the middle. The session opens read-only so you can view what came before the damage; to keep working, run `/new`.

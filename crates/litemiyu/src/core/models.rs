@@ -39,6 +39,6 @@ pub struct Efforts {
     pub name: String,
     /// 有哪几级，照引擎给的先后。
     pub levels: Vec<String>,
-    /// 会话自己定的那一级；跟着配置的是 `None`（第一行「跟随设置」打 `●`）。
+    /// 会话自己定的那一级；跟着配置的是 `None`（第一行「继承默认设置」打 `●`）。
     pub current: Option<String>,
 }

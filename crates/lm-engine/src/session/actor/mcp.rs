@@ -7,6 +7,8 @@
 //!   缓存不一样、头一次列完了），换一份快照：别的工具、system 原文不动，只换 MCP 的那几件和尾部的说明
 //!   （`Snapshot::reappended`），存成 blob，交给内核换上，记一条 `session.policy_changed`。工具变了要断工具那一段以后的缓存，
 //!   这是换工具面本来的代价；不变的什么都不记。
+//! - 拼目录照这一轮的开关（[`Actor::switches`]，LM-36）：会话中途在 MCP 页关掉的服务，从下一个回合起工具面上没有它的工具和
+//!   说明；读服务时就关着的不在这一份里，中途打开也要新开的会话才有（同 Miyu FX-8：开会话时没开的照旧不开）。
 
 use std::sync::Arc;
 
@@ -42,10 +44,11 @@ impl Actor {
     pub(super) async fn mcp_turn(&mut self) -> Option<ContentHash> {
         let kit = self.mcp.as_ref()?;
         let held = self.kit.as_ref()?;
+        let switches = self.switches();
         let servers = match kit.extras.servers.get() {
             Some(servers) => Arc::clone(servers),
             None => {
-                let switches = self.switches();
+                let switches = switches.clone();
                 let (paths, configs) = (kit.paths.clone(), kit.configs.clone());
                 let read =
                     blocking(move || Arc::new(Servers::read(&paths, &switches, configs))).await;
@@ -54,7 +57,7 @@ impl Actor {
                 servers
             }
         };
-        let catalog = servers.catalog(&kit.shipped);
+        let catalog = servers.catalog(&kit.shipped, &switches);
         let now = entries(&catalog);
         let was: Vec<&ToolEntry> = held
             .snapshot

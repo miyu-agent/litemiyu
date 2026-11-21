@@ -96,6 +96,7 @@
   },
   "prompt": {
     "name": "Prompt",
+    "description": "The text each session gives the model first; edited in your editor.",
     "shipped": "Built-in prompt",
     "custom": "Custom prompt",
     "blank": "Empty (adds nothing)",
@@ -383,7 +384,7 @@
         "On",
         "Off"
       ],
-      "ground_note": "Paint the whole screen in the color scheme's background",
+      "ground_note": "Use the color scheme's background on the whole screen",
       "next": "Next"
     },
     "done": {
@@ -433,12 +434,12 @@
       "Other"
     ],
     "uses": [
-      "Default text model",
-      "Default vision model"
+      "Default chat model",
+      "Default multimodal model"
     ],
     "use_notes": [
       "Used when a turn names no model",
-      "Reads images when the chat model can't"
+      "Provides multimodal input when the chat model lacks it"
     ],
     "detail": [
       "Now",
@@ -452,7 +453,7 @@
     ],
     "gone": " (gone)",
     "options": {
-      "": "Auto",
+      "": "Inherit default",
       "on": "On",
       "off": "Off",
       "secret": "API key",
@@ -460,7 +461,7 @@
       "text": "Text",
       "image": "Image",
       "pdf": "PDF",
-      "effort_default": "Default",
+      "effort_default": "Inherit default",
       "audio": "Audio",
       "video": "Video"
     },
@@ -583,7 +584,7 @@
       ]
     ],
     "pick": [
-      "Only models that see images",
+      "Only multimodal models",
       "/ search"
     ],
     "catalog": [
@@ -619,10 +620,10 @@
       "test_failed": "{name} failed: {why}",
       "save_first": "Save the new provider with s before testing",
       "saved": "Saved",
-      "saved_restart": "Takes effect after the core restarts",
+      "saved_restart": "Takes effect after LiteMiyu restarts",
       "saving": "Saving…",
       "conflict": "Changed elsewhere just now (now {current}); your changes are kept, reopen and save again",
-      "offline": "Not connected to the core",
+      "offline": "Couldn't read the config",
       "not_custom": "Only models added with n can be deleted",
       "nothing_here": "Nothing to delete on this page",
       "no_new": "Nothing to add on this page",

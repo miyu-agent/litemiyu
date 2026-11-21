@@ -421,3 +421,203 @@ async fn a_pasted_picture_still_goes_out_under_a_preset_without_read() {
     assert_eq!(pictures, 1, "图照样交给模型");
     stop(&handle).await;
 }
+
+/// 请求里的全部字（不算 system），连成一段。
+fn words(request: &Request) -> String {
+    use lm_kernel::kernel::block::Block;
+    request
+        .messages
+        .iter()
+        .flat_map(|message| match message {
+            Message::User { blocks }
+            | Message::Assistant { blocks }
+            | Message::Tool { blocks, .. } => blocks.iter(),
+        })
+        .filter_map(|block| match block {
+            Block::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 记忆的目录里写两行。
+fn remembered(home: &Home) {
+    std::fs::create_dir_all(home.root.memory()).expect("建得了");
+    std::fs::write(
+        home.root.memory().join("MEMORY.md"),
+        "- [Editor](editor.md) — the user edits in Helix\n",
+    )
+    .expect("写得进");
+}
+
+/// LM-36（同 Miyu FX-8「关了的从下一轮起工具面上没有、回合开始也不再去查」）：预设关了 `read`，技能和记忆是要 `read` 读的，
+/// 照设计第六节第 14 条不再提供。原来回合开始交记忆的目录、技能变了再交一份技能列表时，看的是执行器的目录（整张出厂的表，
+/// 预设关了的 `read` 也在里面），不是会话的工具面：这种会话第一轮照样交记忆的目录；技能的文件夹一变（她写了新技能、重开以后
+/// 第一轮）照样交新的技能列表。改成照快照的工具面看。
+#[tokio::test]
+async fn a_preset_without_read_gets_no_memory_and_no_skills_at_any_turn() {
+    let mut home = Home::new();
+    remembered(&home);
+    put(&home, "notes");
+    let shell_only = pin(false, &[("shell", true), ("skill-notes", true)]);
+    let models = Script::new([Play::Says("一。"), Play::Says("二。")]);
+    let handle = home
+        .create_as(&models, &base_system(), with(&home, shell_only.clone()))
+        .await;
+    talk(&handle, "m1", "在吗").await;
+    // 技能的文件夹变了：下一轮照指纹再找一遍。
+    put(&home, "deploy");
+    talk(&handle, "m2", "在吗").await;
+    let requests = models.requests();
+    let mut wrong = Vec::new();
+    for (at, (_, request)) in requests.iter().enumerate() {
+        assert_eq!(tools(request), ["shell"], "第 {at} 次");
+        let said = words(request);
+        if said.contains("<memory") {
+            wrong.push(format!("第 {at} 次交了记忆的目录"));
+        }
+        for text in [said.as_str(), request.system.as_str()] {
+            if text.contains("Skills you can use") || text.contains("- notes:") {
+                wrong.push(format!("第 {at} 次列了技能"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:?}");
+    let id = handle.id().clone();
+    stop(&handle).await;
+    drop(handle);
+    // 重开：第一轮照样再找一遍技能（载入的会话没有指纹）。
+    home.configs = configs("", &[]);
+    let again = Script::new([Play::Says("三。")]);
+    let handle = home.load_with(&id, &again, &base_system()).await;
+    talk(&handle, "m3", "在吗").await;
+    let requests = again.requests();
+    let request = &requests[0].1;
+    let said = words(request);
+    assert!(
+        !said.contains("<memory") && !said.contains("- notes:"),
+        "{said}"
+    );
+    stop(&handle).await;
+    // 对照：开着 `read` 的预设照样有记忆和技能。
+    let models = Script::new([Play::Says("在。")]);
+    let reading = pin(false, &[("read", true), ("skill-notes", true)]);
+    let handle = home
+        .create_as(&models, &base_system(), with(&home, reading))
+        .await;
+    talk(&handle, "m1", "在吗").await;
+    let request = &models.requests()[0].1;
+    assert!(words(request).contains("<memory"));
+    assert!(request.system.contains("- notes: About notes."));
+    stop(&handle).await;
+}
+
+/// LM-36（同 Miyu FX-8）：无功能的一档请求里只有对话：没有工具，回合开始什么都不交（环境、项目说明、记忆、技能、MCP 的说明）。
+#[tokio::test]
+async fn a_bare_session_sends_only_the_conversation() {
+    let home = Home::new();
+    remembered(&home);
+    put(&home, "notes");
+    let pids = home.scratch.0.join("pid");
+    configure(&home, &pids);
+    let repo = home.home.join("repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("建得了");
+    std::fs::write(repo.join("AGENTS.md"), "PROJECT-RULES\n").expect("写得进");
+    let models = Script::new([Play::Says("在。"), Play::Says("还在。")]);
+    let bare = Opening {
+        no_tools: true,
+        cwd: repo
+            .canonicalize()
+            .expect("在")
+            .to_string_lossy()
+            .into_owned(),
+        ..full(&home)
+    };
+    let handle = home.create_as(&models, &base_system(), bare).await;
+    talk(&handle, "m1", "在吗").await;
+    talk(&handle, "m2", "在吗").await;
+    for (_, request) in &models.requests() {
+        assert!(request.tools.is_empty());
+        let said = words(request);
+        for absent in ["<memory", "PROJECT-RULES", "<env ", "<session ", "- notes:"] {
+            assert!(!said.contains(absent), "有 {absent}：{said}");
+        }
+        assert!(
+            !request.system.contains("Skills you can use")
+                && !request.system.contains("<mcp-instructions"),
+            "{}",
+            request.system
+        );
+    }
+    assert!(!pids.exists(), "MCP 服务没起");
+    stop(&handle).await;
+}
+
+/// 一份不变的配置（测试照它换成另一份：会话的下一个回合照新的那一份）。
+#[derive(Debug)]
+struct Fixed(lm_kernel::config::merge::Resolved);
+
+impl lm_engine::session::ConfigSource for Fixed {
+    fn with_project(&self, _: &str) -> lm_kernel::config::merge::Resolved {
+        self.0.clone()
+    }
+
+    fn secret(
+        &self,
+        _: &lm_kernel::config::secret::Reference,
+    ) -> Option<lm_kernel::config::secret::Secret> {
+        None
+    }
+}
+
+/// 照配置的字 `text` 的一份。
+fn source(text: &str) -> std::sync::Arc<dyn lm_engine::session::ConfigSource> {
+    std::sync::Arc::new(Fixed(crate::support::routing::resolved(text)))
+}
+
+/// LM-36（同 Miyu FX-8「开了的照现在的开关，关了的从下一轮起工具面上没有」）：会话开着时在 MCP 页把一个服务关掉，下一个回合起
+/// 请求里没有它的工具，system 尾部也没有它的说明；再打开，下一个回合又有了。原来服务只在第一次读时照开关筛，之后一直照那一份
+/// 拼工具面，会话中途关掉的照样给模型。
+#[tokio::test]
+async fn an_mcp_server_switched_off_mid_session_is_gone_from_the_next_turn() {
+    let mut home = Home::new();
+    let text = format!("[mcp.probe]\ncommand = [{BIN:?}, \"instructions:PROBE-NOTES\"]\n");
+    std::fs::create_dir_all(&home.root.config).expect("建得了");
+    std::fs::write(home.root.config_file(), text).expect("写得进");
+    let (config, configs) = tokio::sync::watch::channel(source(""));
+    home.configs = configs;
+    let models = Script::new([
+        Play::Says("一。"),
+        Play::Says("二。"),
+        Play::Says("三。"),
+        Play::Says("四。"),
+    ]);
+    let handle = home.create_as(&models, &base_system(), full(&home)).await;
+    let mut live = handle.mcp_live().expect("读了配置");
+    talk(&handle, "m1", "在吗").await;
+    let listed = tokio::time::timeout(
+        Duration::from_secs(10),
+        live.wait_for(|names: &BTreeSet<String>| names.contains("probe")),
+    )
+    .await;
+    assert!(matches!(listed, Ok(Ok(_))), "十秒内连上");
+    talk(&handle, "m2", "在吗").await;
+    config.send_replace(source("[features]\nmcp-probe = false\n"));
+    talk(&handle, "m3", "在吗").await;
+    config.send_replace(source(""));
+    talk(&handle, "m4", "在吗").await;
+    let requests = models.requests();
+    let probe = |at: usize| {
+        let request = &requests[at].1;
+        (
+            tools(request)
+                .iter()
+                .any(|name| name.starts_with("mcp__probe__")),
+            request.system.contains("PROBE-NOTES"),
+        )
+    };
+    assert_eq!(probe(1), (true, true), "列完了的下一轮有工具、有说明");
+    assert_eq!(probe(2), (false, false), "关掉以后的下一轮都没有");
+    assert_eq!(probe(3), (true, true), "再打开又有了");
+    stop(&handle).await;
+}

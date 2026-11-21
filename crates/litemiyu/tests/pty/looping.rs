@@ -53,7 +53,7 @@ fn stopping_without_a_session_says_there_is_none() {
     session.wait_for("此会话没有循环。", "没开会话也当场答");
     session.type_text("/loop 5m");
     session.press_enter();
-    session.wait_for("bad_params", "只写了间隔：参数不对");
+    session.wait_for("命令的参数不正确", "只写了间隔：参数不对，不露原因码");
     assert!(
         server.received().is_empty(),
         "没为停一个不存在的循环去开会话、发请求"
@@ -107,4 +107,88 @@ fn a_wakeup_she_schedules_shows_its_name_and_time_and_stops() {
         })
     };
     assert!(!tagged(&session.screen()), "输入框上面的标记没了");
+}
+
+/// LM-34：说一句、`/undo`，再敲 `/loop 做一下`：人敲 `/loop` 算人的一次操作，循环的第一句马上交进去、她回了；回执照常是
+/// 「已开始循环」；撤掉的那一轮从此恢复不了，`/restore` 说没有。正文里那一句照人敲的原文画（「敲什么显示什么」），和人平常
+/// 说的话一个样子；请求里是那句话，不是人敲的那一行。重开以后照样是原文。
+#[test]
+fn a_loop_typed_after_an_undo_runs_at_once_and_reads_as_typed() {
+    let server = served(vec![
+        says(&["第一轮的回答。"]),
+        says(&["循环这一轮的回答。"]),
+        says(&["后来这一句的回答。"]),
+    ]);
+    let session = Session::start(&server.base_url, &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("说一句");
+    session.wait_for("❯ 说一句", "打进去了");
+    session.press_enter();
+    session.wait_for("第一轮的回答。", "这一轮做完");
+    session.type_text("/undo");
+    session.wait_for("❯ /undo", "打进去了");
+    session.press_enter();
+    session.wait_for("↶ 已撤销", "撤了");
+    session.wait_until("那一句放回输入框", |s| {
+        s.screen().lines().any(|l| l.contains("❯ 说一句"))
+    });
+    // 放回来的那句全选着：打字换掉它。
+    session.type_text("/loop 做一下");
+    session.wait_for("❯ /loop 做一下", "打进去了");
+    session.press_enter();
+    session.wait_for("已开始循环：由 AI 定下一次 · 做一下", "回执照常");
+    session.wait_for("循环这一轮的回答。", "第一句马上交进去、她回了");
+    let screen = session.screen();
+    assert!(
+        screen.contains("/loop 做一下"),
+        "正文里照人敲的原文画：{screen}"
+    );
+    assert!(!screen.contains("循环 · "), "没有替代的说法：{screen}");
+    // 回执的提示框收了以后再敲（它盖着输入框上面那一行）。
+    session.wait_until("回执收了", |s| !s.screen().contains("已开始循环"));
+    session.type_text("/restore");
+    session.wait_for("❯ /restore", "打进去了");
+    session.press_enter();
+    session.wait_for("没有可恢复的撤销", "撤掉的那一轮恢复不了");
+    session.type_text("后来这一句");
+    session.wait_for("❯ 后来这一句", "打进去了");
+    session.press_enter();
+    session.wait_for("后来这一句的回答。", "人说的下一句照常");
+    // 和人平常说的话一个样子：两行开头几格的底色、字色一样，打头那两格（记号）的字也一样。
+    let looped = session.row_of(0, "/loop 做一下").expect("那一句在屏幕上");
+    let said = session
+        .row_of(0, "后来这一句")
+        .expect("人说的那一句在屏幕上");
+    let look = |row: u16| {
+        (0..4)
+            .map(|col| {
+                let cell = session.cell(row, col);
+                let mark = cell
+                    .as_ref()
+                    .filter(|_| col < 2)
+                    .map(|(text, _)| text.clone());
+                (mark, cell.map(|(_, bg)| bg), session.fg(row, col))
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(look(looped), look(said), "样式和人说的话一样");
+    let requests = server.received();
+    let looped = String::from_utf8_lossy(&requests[1]).into_owned();
+    assert!(looped.contains("做一下"), "请求里有那句话：{looped}");
+    assert!(
+        !looped.contains("/loop 做一下"),
+        "人敲的那一行不进请求：{looped}"
+    );
+    // 重开：照样是原文。
+    session.type_text("/exit");
+    session.wait_for("❯ /exit", "打进去了");
+    session.press_enter();
+    assert!(session.wait_exit(), "/exit 退出");
+    let again = session.another(&["-c"]);
+    again.wait_for("后来这一句的回答。", "重开了那个会话");
+    let screen = again.screen();
+    assert!(
+        screen.contains("/loop 做一下"),
+        "重开以后照样是原文：{screen}"
+    );
 }

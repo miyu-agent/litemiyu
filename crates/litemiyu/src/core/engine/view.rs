@@ -8,10 +8,10 @@
 
 use std::sync::mpsc;
 
-use lm_engine::session::{Backlog, Ended, Handle, Pushed};
+use lm_engine::session::{Backlog, Ended, Handle};
 use lm_kernel::kernel::id::SessionId;
 
-use super::super::{Deliver, Push, Update, push};
+use super::super::{Deliver, Push, Update};
 use super::children::Followed;
 use super::handing::{Handing, To};
 
@@ -40,6 +40,7 @@ pub async fn enter(main: &Handle, id: &str, deliver: Deliver) -> Option<Viewing>
         subscription,
         rejoin: handle.rejoin(),
         seen: backlog.upto(),
+        heard: 0,
     };
     // 先交一条空的：界面照它开始攒子会话的正文，后面一块块的接着办，读完（钟回到现在）才换上屏幕（`app/child.rs`）。
     let (done, _) = mpsc::channel();
@@ -88,21 +89,17 @@ pub async fn enter(main: &Handle, id: &str, deliver: Deliver) -> Option<Viewing>
     })
 }
 
-/// 子会话推来的一条条照它的编号交给界面，直到它停了、界面不收了、人退回主会话（任务被掐掉）。掉了队的照落了盘的补上，补不上的
-/// 告诉界面一声（[`Update::ChildBehind`]，审计 #063）。
+/// 子会话推来的一条条照它的编号交给界面，直到它停了、界面不收了、人退回主会话（任务被掐掉）。掉了队的照落了盘的补上（掉队期间
+/// 说完的那几步照补发的读法画，LM-36，`children.rs` 的 `rejoined`），补不上的告诉界面一声（[`Update::ChildBehind`]，审计 #063）。
 async fn forward(mut followed: Followed, session: String, deliver: Deliver) {
     loop {
-        let pushed = match followed.next().await {
-            Ok(pushed) => pushed,
+        let pushes = match followed.next().await {
+            Ok(pushes) => pushes,
             Err(Ended::Stopped) => return,
             Err(Ended::Lagged) => {
                 deliver(Update::ChildBehind);
                 return;
             }
-        };
-        let pushes: Vec<Push> = match &*pushed {
-            Pushed::Events(events) => events.iter().flat_map(push::read).collect(),
-            Pushed::Transient(event) => push::read_transient(event),
         };
         for push in pushes {
             if !deliver(Update::ViewPush {

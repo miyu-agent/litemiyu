@@ -70,14 +70,20 @@ fn a_log_broken_in_the_middle_opens_view_only_from_the_list() {
     second.press_enter();
     second.wait_for("未打开", "列表里有那个会话");
     second.press_enter();
-    second.wait_for(&format!("会话日志第 {line} 行坏了"), "写坏在第几行");
-    let screen = second.wait_for("这个会话只能看，输入 /new 新开会话", "输入框写怎么新开会话");
+    second.wait_for(&format!("会话日志第 {line} 行已损坏"), "写坏在第几行");
+    let screen = second.wait_for(
+        "这个会话只能查看，输入 /new 新建会话",
+        "输入框写怎么新开会话",
+    );
     assert!(screen.contains("第一句"), "坏行以前的画着：{screen}");
     assert!(!screen.contains("第二句"), "坏行以后的没有：{screen}");
     // 还要说的：不发出去，字退回框里，弹「只能看」。
     second.type_text("再说一句");
     second.press_enter();
-    let screen = second.wait_for("这个会话只能看，不能接着聊：输入 /new 新开会话", "说话被拒");
+    let screen = second.wait_for(
+        "这个会话只能查看，不能继续对话。输入 /new 新建会话",
+        "说话被拒",
+    );
     assert!(screen.contains("再说一句"), "字退回框里：{screen}");
     assert_eq!(
         std::fs::read(&log).expect("读得了"),
@@ -136,8 +142,14 @@ fn continuing_a_broken_long_session_views_it_and_jumps_back() {
     let base = served_by(answer);
     let session = Session::seeded_with(&seed, &base, &Options::default(), &["-c"]);
     drop(std::fs::remove_dir_all(&seed));
-    session.wait_for(&format!("会话日志第 {line} 行坏了"), "-c 打开写坏在第几行");
-    let screen = session.wait_for("这个会话只能看，输入 /new 新开会话", "输入框写怎么新开会话");
+    session.wait_for(
+        &format!("会话日志第 {line} 行已损坏"),
+        "-c 打开写坏在第几行",
+    );
+    let screen = session.wait_for(
+        "这个会话只能查看，输入 /new 新建会话",
+        "输入框写怎么新开会话",
+    );
     assert!(
         screen.contains(&said(TURNS - 3)),
         "坏行以前的最后一句画着：{screen}"

@@ -283,8 +283,8 @@ impl App {
     }
 
     /// 输入框空着、没有列表和选区时的 `Esc`：看着子会话的照「切进子会话」第 4 条办，交回办没办。它停了、报完了（或者任务表
-    /// 里找不到它）回主会话；还在跑的第一下只提示，一小会儿以内再按一下停掉它。
-    pub(super) fn child_esc(&mut self) -> bool {
+    /// 里找不到它）回主会话；还在跑的第一下只提示，一小会儿以内再按一下停掉它（`armed` 同 [`App::esc`]）。
+    pub(super) fn child_esc(&mut self, armed: Option<std::time::Instant>) -> bool {
         let Some(job) = self.viewing_job() else {
             return false;
         };
@@ -293,7 +293,7 @@ impl App {
             return true;
         };
         let window = std::time::Duration::from_millis(self.config.layout.esc_window_ms);
-        match self.typing.esc_at.take() {
+        match armed {
             Some(at) if at.elapsed() <= window => {
                 self.typing.notice = None;
                 self.link.core.send(Command::StopJob(job));

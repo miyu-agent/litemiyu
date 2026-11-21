@@ -88,6 +88,69 @@ async fn wiping_out_home_or_the_data_is_refused() {
     }
 }
 
+/// LiteMiyu 自己的几处（配置、数据、缓存、状态）整个删掉、挪走、扔进回收站的都拒（同 Miyu RO-4、RO-4补，LiteMiyu 照设计第五节
+/// 第 6 条「数据目录不让工具碰」拒，不问）。修以前只认数据那一处的 `rm`：配置、缓存、状态整个删掉不拦，`gio trash`、`mv`
+/// 挪走数据目录也不拦。几处都在测试自己的临时目录里，工作目录不存在，拦漏了也一条都不跑。
+#[tokio::test]
+async fn wiping_out_or_moving_away_any_of_litemiyus_own_places_is_refused() {
+    let home = Home::new();
+    let root = home.root.clone();
+    for dir in [&root.config, &root.data, &root.cache, &root.state] {
+        std::fs::create_dir_all(dir).expect("建得了");
+    }
+    let other = home.scratch.0.join("other");
+    let all = root
+        .config
+        .parent()
+        .expect("四处在一个目录里")
+        .to_path_buf();
+    let quoted = |path: &Path| format!("'{}'", path.display());
+    for command in [
+        format!("rm -rf {}", quoted(&root.config)),
+        format!("rm -rf {}/*", quoted(&root.cache)),
+        format!("rm -r {}", quoted(&root.state)),
+        format!("gio trash {}", quoted(&root.data)),
+        format!("trash-put {}", quoted(&root.cache)),
+        format!("mv {} {}", quoted(&root.config), quoted(&other)),
+        format!("rm -rf {}", quoted(&all)),
+    ] {
+        let handle = ran(&home, &nowhere(&home), &command).await;
+        let log = home.log(handle.id());
+        stop(&handle).await;
+        assert!(requests(&log).is_empty(), "不问：{command}");
+        let result = results(&log).remove(0);
+        assert_eq!(result.status, ToolStatus::Denied, "{command}");
+        let text = format!("{:?}", result.blocks);
+        assert!(
+            text.contains("would delete LiteMiyu's own data, which is never allowed."),
+            "{command}：{text}"
+        );
+    }
+    for dir in [&root.config, &root.data, &root.cache, &root.state] {
+        assert!(dir.is_dir(), "没跑：{}", dir.display());
+    }
+}
+
+/// 记忆的文件夹、人放技能的文件夹里的单个文件，用 `shell` 删照常（设计第五节第 7 条：过时的记忆用 `shell` 删；同 Miyu RO-4
+/// 「数据根里的单个文件不问」）。修以前删记忆的文件也照删数据目录拒。工作目录不存在，这里的命令也不真跑。
+#[tokio::test]
+async fn deleting_a_memory_or_skill_file_is_not_held_up() {
+    let home = Home::new();
+    let memory = home.root.memory().join("old.md");
+    let skill = home.root.skills().join("mine");
+    for command in [
+        format!("rm '{}'", memory.display()),
+        format!("rm -rf '{}'", skill.display()),
+    ] {
+        let handle = ran(&home, &nowhere(&home), &command).await;
+        let log = home.log(handle.id());
+        stop(&handle).await;
+        assert!(requests(&log).is_empty(), "不问：{command}");
+        let result = results(&log).remove(0);
+        assert_ne!(result.status, ToolStatus::Denied, "{command}：{result:?}");
+    }
+}
+
 #[tokio::test]
 async fn a_force_push_asks_without_a_rule() {
     let home = Home::new();

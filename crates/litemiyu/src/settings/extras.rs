@@ -159,7 +159,7 @@ impl Settings {
                     .map_or_else(String::new, |line| line.to_string());
                 fill(
                     &texts.mcp_broken,
-                    &[("line", &line), ("why", problem.code.as_str())],
+                    &[("line", &line), ("why", &self.why(problem.code.as_str()))],
                 )
             })
             .collect();

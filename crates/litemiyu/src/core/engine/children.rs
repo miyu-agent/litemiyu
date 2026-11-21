@@ -6,7 +6,6 @@
 //! 跟着没，订阅跟着断）。子会话再派的（孙代理）照样订阅：它们的推送里有 `job.started`，交回这里再取。
 
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::Arc;
 
 use lm_engine::session::{Ended, Handle, Pushed, Rejoin, Subscription, Unreadable};
 use lm_kernel::kernel::event::Event;
@@ -52,6 +51,7 @@ pub async fn watch(main: &Handle, id: &str, deliver: Deliver, more: mpsc::Unboun
         subscription,
         rejoin,
         seen,
+        heard: 0,
     };
     tokio::spawn(forward(followed, id.to_string(), deliver, more));
 }
@@ -71,7 +71,7 @@ fn landed(events: Vec<Event>) -> Vec<Push> {
     pushes
 }
 
-/// 跟着的一个会话：订阅，掉了队照它重新订阅（不拖住会话），落了盘的看到了第几条。
+/// 跟着的一个会话：订阅，掉了队照它重新订阅（不拖住会话），落了盘的看到了第几条，流式的回答听到了哪一次请求的。
 pub struct Followed {
     /// 订阅。
     pub subscription: Subscription,
@@ -79,26 +79,37 @@ pub struct Followed {
     pub rejoin: Rejoin,
     /// 落了盘的最后看到的序号：重新订阅从它后面补。
     pub seen: u64,
+    /// 听到过流式的块的最后一次请求（[`Push::Heard`] 的 `seen`）：重新订阅补上的回答里，这一次以前的已经照流式画过了
+    /// （[`rejoined`]）。
+    pub heard: u64,
 }
 
 impl Followed {
-    /// 下一份推送；掉了队的照落了盘的补（审计 #063）：重新订阅、交回补上的那一截事件（当一份推送交），之后照新的订阅接着推。
-    /// 交回 `Err(Ended::Lagged)` 的是补不上（掉队以后会话停了、日志读不回来），`Err(Ended::Stopped)` 的是会话停了。
-    pub async fn next(&mut self) -> Result<Arc<Pushed>, Ended> {
-        let pushed = match self.subscription.next().await {
-            Err(Ended::Lagged) => self.rejoined().await?,
-            next => next?,
+    /// 下一份推送读成的几条；掉了队的照落了盘的补（审计 #063）：重新订阅、交回补上的那一截（[`rejoined`] 的读法），之后照新的
+    /// 订阅接着推。交回 `Err(Ended::Lagged)` 的是补不上（掉队以后会话停了、日志读不回来），`Err(Ended::Stopped)` 的是会话停了。
+    pub async fn next(&mut self) -> Result<Vec<Push>, Ended> {
+        let pushes = match self.subscription.next().await {
+            Err(Ended::Lagged) => self.rejoin_after().await?,
+            next => match &*next? {
+                Pushed::Events(events) => {
+                    if let Some(last) = events.last() {
+                        self.seen = self.seen.max(last.seq.get());
+                    }
+                    events.iter().flat_map(push::read).collect()
+                }
+                Pushed::Transient(event) => push::read_transient(event),
+            },
         };
-        if let Pushed::Events(events) = &*pushed
-            && let Some(last) = events.last()
-        {
-            self.seen = self.seen.max(last.seq.get());
+        for one in &pushes {
+            if let Push::Heard(seen) = one {
+                self.heard = self.heard.max(*seen);
+            }
         }
-        Ok(pushed)
+        Ok(pushes)
     }
 
-    /// 掉了队：照最后看到的序号重新订阅，交回补上的那一截（一条都没有的也是一份空的）。
-    async fn rejoined(&mut self) -> Result<Arc<Pushed>, Ended> {
+    /// 掉了队：照最后看到的序号重新订阅，交回补上的那一截读成的推送（一条都没有的也是一份空的）。
+    async fn rejoin_after(&mut self) -> Result<Vec<Push>, Ended> {
         let (subscription, backlog) = self
             .rejoin
             .subscribe_after(self.seen)
@@ -106,8 +117,33 @@ impl Followed {
             .map_err(|_| Ended::Lagged)?;
         let events: Vec<Event> = backlog.read().await.map_err(|_| Ended::Lagged)?;
         self.subscription = subscription;
-        Ok(Arc::new(Pushed::Events(events)))
+        if let Some(last) = events.last() {
+            self.seen = self.seen.max(last.seq.get());
+        }
+        Ok(rejoined(events, self.heard))
     }
+}
+
+/// 掉了队重新订阅时补上的那一截读成推送（LM-36，同 Miyu LM-25 710203654「晚订阅的一方拿不到正在做什么」；LM-24 留下的那一处）：
+/// 掉队期间说完、落了盘的回答，流式的块一条都没收到，照补发的读法读成「开一块、写字、收一块」（同 [`landed`]）：子代理状态行
+/// 才知道它在调什么，正在看的子会话的正文里才有这一步。流式的块已经收到过的（请求的 `seen` 不晚于听到过的 `heard`）照平常
+/// 读，只配调用的编号：那几块照流式画过了，再开一遍就画重了。别的事件照平常读：补发的读法会把人说的话再画一遍（看着发的那句
+/// 先画上了）。补发垫的钟不交。
+fn rejoined(events: Vec<Event>, heard: u64) -> Vec<Push> {
+    use lm_kernel::kernel::event::Body;
+    let mut pushes = Vec::new();
+    for event in events {
+        match &event.body {
+            Body::MessageAssistant(reply) if reply.seen.get() > heard => {
+                let mut replay = push::replay::Replay::default();
+                pushes.extend(replay.read(event));
+                pushes.extend(replay.finish());
+            }
+            _ => pushes.extend(push::read(&event)),
+        }
+    }
+    pushes.retain(|push| !matches!(push, Push::Clock(_)));
+    pushes
 }
 
 /// 一批推送照子会话的编号交给界面，派出去的子代理交回引擎线程订阅；界面、引擎线程不在了的交回假的。
@@ -139,17 +175,13 @@ async fn forward(
     more: mpsc::UnboundedSender<String>,
 ) {
     loop {
-        let pushed = match followed.next().await {
-            Ok(pushed) => pushed,
+        let pushes = match followed.next().await {
+            Ok(pushes) => pushes,
             Err(Ended::Stopped) => return,
             Err(Ended::Lagged) => {
                 deliver(Update::ChildBehind);
                 return;
             }
-        };
-        let pushes: Vec<Push> = match &*pushed {
-            Pushed::Events(events) => events.iter().flat_map(push::read).collect(),
-            Pushed::Transient(event) => push::read_transient(event),
         };
         if !hand_over(&pushes, &session, &deliver, &more) {
             return;
@@ -212,7 +244,7 @@ mod landed {
     }
 
     /// 子会话的第一步：开了一轮，说一句、调 `shell`，这次请求说完了。三条都落了盘，命令还在跑（没有结果）。
-    fn first_step() -> Vec<Event> {
+    pub(super) fn first_step() -> Vec<Event> {
         vec![
             event(
                 r#"{"seq":3,"at":"2026-11-20T16:41:19.934Z","kind":"turn.started","turn":3,"by":{"kind":"kernel"},"body":{"trigger":2,"cwd":"/w"}}"#,
@@ -246,6 +278,54 @@ mod landed {
                 subject: Some("Wait for go".into()),
             },
             "补上的那一截里它最后在调 shell"
+        );
+    }
+}
+
+/// LM-36（同 Miyu LM-25 710203654）：子会话的推送掉了队、重新订阅补上的那一截（[`super::rejoined`]）。
+#[cfg(test)]
+mod rejoined {
+    use super::landed::first_step;
+    use crate::core::{Push, push};
+    use crate::human::Human;
+    use crate::jobs::{Activity, Doing};
+
+    /// 照 `pushes` 记的在做什么。
+    fn doing(pushes: &[Push]) -> Doing {
+        let human = Human::default();
+        let mut activity = Activity::default();
+        for push in pushes {
+            activity.push(push, &human);
+        }
+        activity.doing
+    }
+
+    /// 带 `shell` 调用的那一步在掉队期间整个落了盘，一个流式的块都没收到：补上的照补发的读法读，状态行知道它在调 `shell`。原来
+    /// 这一截照平常读（第一个断言），回答只读出调用的编号，状态行不知道它在做什么。
+    #[test]
+    fn a_step_that_landed_while_behind_still_says_what_the_child_is_doing() {
+        let plain: Vec<Push> = first_step().iter().flat_map(push::read).collect();
+        assert_eq!(doing(&plain), Doing::Nothing, "原来的读法");
+        assert_eq!(
+            doing(&super::rejoined(first_step(), 0)),
+            Doing::Tool {
+                name: "shell".into(),
+                subject: Some("Wait for go".into()),
+            }
+        );
+    }
+
+    /// 那一步的流式的块掉队以前已经收到过（听到过它那一次请求，`seen` 是 7）：补上的只配调用的编号，不再开一遍块，正文不画重。
+    #[test]
+    fn a_step_already_heard_is_not_drawn_again() {
+        let pushes = super::rejoined(first_step(), 7);
+        let plain: Vec<Push> = first_step().iter().flat_map(push::read).collect();
+        assert_eq!(pushes, plain);
+        assert!(
+            !pushes
+                .iter()
+                .any(|push| matches!(push, Push::BlockStart { .. } | Push::Said { .. })),
+            "{pushes:?}"
         );
     }
 }
@@ -286,6 +366,7 @@ mod audit {
             subscription,
             rejoin: Rejoin::gone(),
             seen: 0,
+            heard: 0,
         };
         drop(
             tokio::time::timeout(

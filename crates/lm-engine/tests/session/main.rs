@@ -74,6 +74,7 @@ mod stop;
 mod subagent;
 mod tools;
 mod turn_config;
+mod vision;
 mod windows;
 mod workplace;
 mod write;

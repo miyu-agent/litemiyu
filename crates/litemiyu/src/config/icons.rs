@@ -134,7 +134,25 @@ mod tests {
             }
             assert_eq!(set.stash.width(), 2, "{} 的暂存提示符连空格两格", set.name);
             assert_eq!(set.fork.width(), 2, "{} 的分叉记号连空格两格", set.name);
+            assert_eq!(
+                set.loop_mark.width(),
+                2,
+                "{} 的循环记号连空格两格",
+                set.name
+            );
         }
+    }
+
+    #[test]
+    fn the_nerd_set_draws_its_own_clock_for_loops_lm38() {
+        // LM-38（同 Miyu 终端 11-20 项目主人：「那个图标好丑。为什么那么小」）：Nerd Font 那一套里循环的记号、定时触发那一步都是
+        // Nerd Font 的钟（nf-fa-clock_o），不是普通字符那一套的小钟 `◷`。
+        let sets = builtin().unwrap();
+        let (nerd, plain) = (&sets[0], &sets[1]);
+        assert_eq!(nerd.loop_mark, "\u{f017} ");
+        assert_eq!(nerd.tool_in("schedule_wakeup"), "\u{f017}");
+        assert_eq!(plain.loop_mark, "◷ ");
+        assert_eq!(plain.tool_in("schedule_wakeup"), "◷");
     }
 
     #[test]

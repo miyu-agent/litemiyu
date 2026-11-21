@@ -17,6 +17,7 @@ mod flood;
 mod foreground;
 mod forged;
 mod isolate;
+mod loop_typed;
 mod manual;
 mod messages;
 mod model_fact;

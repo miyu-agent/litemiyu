@@ -15,7 +15,7 @@ pub enum Panel {
     Sessions,
     /// `/model`（`models.rs`）：列表在 [`Boxes::model_list`]。
     Models,
-    /// `/effort`（`effort.rs`）：选中第几行（第 0 行跟随设置），几级在 [`Boxes::efforts`]。
+    /// `/effort`（`effort.rs`）：选中第几行（第 0 行「继承默认设置」），几级在 [`Boxes::efforts`]。
     Effort {
         /// 选中第几行。
         selected: usize,

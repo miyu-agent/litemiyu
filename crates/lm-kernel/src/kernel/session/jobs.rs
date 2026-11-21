@@ -173,6 +173,20 @@ impl Session {
         body: Body,
         wake: Option<Waker>,
     ) -> Result<Vec<Event>, LedgerError> {
+        self.land_as(at, by, cause, body, wake, false)
+    }
+
+    /// 同 [`Session::land`]；`typed` 是人亲手敲 `/loop` 交进来的那一句（LM-34，`messages.rs`）：还能恢复撤销也开得了。
+    /// 开没开只看追加的 `turn.started`，这一格不进日志，载入时照日志算的一样。
+    pub(super) fn land_as(
+        &mut self,
+        at: Timestamp,
+        by: By,
+        cause: Option<CommandId>,
+        body: Body,
+        wake: Option<Waker>,
+        typed: bool,
+    ) -> Result<Vec<Event>, LedgerError> {
         let event = Event {
             seq: self.ledger.next_seq(),
             at,
@@ -196,7 +210,7 @@ impl Session {
             if !hidden {
                 turn.reports.push(arrived);
             }
-        } else if !hidden && self.can_wake() && !self.held_back(&arrived.waker) {
+        } else if !hidden && self.can_wake_for(typed) && !self.held_back(&arrived.waker) {
             events.extend(self.open_turn(at, arrived.seq, arrived.cause));
         } else {
             self.deferred.push(arrived);
@@ -262,7 +276,12 @@ impl Session {
     /// 正在改回文件的时候不开；没人看着的一次性会话不开；要重启了的不开（施工 7-3）。读回日志的时候回报到不了这里：后台
     /// 命令结束先放着，子会话的回报照别的命令拒绝。
     fn can_wake(&self) -> bool {
-        !self.unwatched() && !self.restarting && self.ledger.last_reverted().is_none()
+        self.can_wake_for(false)
+    }
+
+    /// 同 [`Session::can_wake`]；`typed` 是人亲手敲 `/loop` 交进来的那一句（LM-34）：它是人的操作，不看能不能恢复撤销。
+    fn can_wake_for(&self, typed: bool) -> bool {
+        !self.unwatched() && !self.restarting && (typed || !self.undo_pending())
     }
 
     /// 派它的那一轮撤掉了：回报不渲染，也不叫醒她（`agents.md` 第七条第 2 条）。没派过的一样。别的 harness、别的会话发来的

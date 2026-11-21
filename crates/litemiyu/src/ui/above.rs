@@ -34,12 +34,12 @@ mod tests {
     #[test]
     fn the_status_line_keeps_only_the_head_of_a_reason() {
         assert_eq!(
-            head("连不上核心：/tmp/x 是旧版 Miyu 的数据根"),
-            "连不上核心"
+            head("无法继续运行：/tmp/x 是旧版 Miyu 的数据根"),
+            "无法继续运行"
         );
         assert_eq!(
-            head("Can't connect to the core: old root"),
-            "Can't connect to the core"
+            head("LiteMiyu can't continue: old root"),
+            "LiteMiyu can't continue"
         );
         assert_eq!(head("没有冒号的一句"), "没有冒号的一句");
     }

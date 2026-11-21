@@ -199,18 +199,18 @@ impl Settings {
             Outcome::Request { model, why } if chosen => {
                 (&texts.other, why.clone(), model.as_str())
             }
-            Outcome::Request { model, why } => (&texts.request, why.clone(), model.as_str()),
+            Outcome::Request { model, why } => (&texts.request, self.why(why), model.as_str()),
             Outcome::Auth(status) => (&texts.auth, status.to_string(), ""),
             Outcome::Status(status) => (&texts.status, status.to_string(), ""),
             Outcome::Timeout(secs) => (&texts.timeout, secs.to_string(), ""),
-            Outcome::Connect(why) => (&texts.connect, why.clone(), ""),
+            Outcome::Connect(why) => (&texts.connect, self.why(why), ""),
             Outcome::Garbled => (&texts.garbled, String::new(), ""),
             Outcome::Cut => (&texts.cut, String::new(), ""),
             Outcome::BadUrl => (&texts.bad_url, String::new(), ""),
             Outcome::BadKey => (&texts.bad_key, String::new(), ""),
-            Outcome::Config(why) => (&texts.config, why.clone(), ""),
+            Outcome::Config(why) => (&texts.config, self.why(why), ""),
             Outcome::NotFound => (&texts.not_found, String::new(), ""),
-            Outcome::Other(why) | Outcome::Spoke(why) => (&texts.other, why.clone(), ""),
+            Outcome::Other(why) | Outcome::Spoke(why) => (&texts.other, self.why(why), ""),
             Outcome::Listed(_) | Outcome::Works { .. } => (&texts.other, String::new(), ""),
         };
         fill(template, &[("n", &field), ("model", model)])

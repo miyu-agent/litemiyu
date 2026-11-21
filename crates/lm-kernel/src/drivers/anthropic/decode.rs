@@ -27,6 +27,10 @@ pub struct Decoder {
     sse: Sse,
     /// 线上的 `index` → 这一块：认得的有编号，不认的没有。
     blocks: BTreeMap<u64, Option<Opened>>,
+    /// 线上的 `index` → 那一块工具调用的 `id`（LM-36）：同一个 `index` 又开了一块、`id` 不一样的是新的一次。
+    ids: BTreeMap<u64, String>,
+    /// 被同一个 `index` 上新开的一块顶掉的块的编号（LM-36）：收尾时照样收。
+    retired: Vec<usize>,
     /// 下一块的编号。
     next: usize,
     /// 记下的用量。
@@ -94,6 +98,7 @@ impl Decoder {
                 .values()
                 .flatten()
                 .map(|block| block.index)
+                .chain(self.retired.iter().copied())
                 .collect();
             open.sort_unstable();
             deltas.extend(open.into_iter().map(|index| Delta::End { index }));
@@ -201,11 +206,22 @@ impl Decoder {
         let Some(wire) = value.get("index").and_then(Value::as_u64) else {
             return;
         };
-        if self.blocks.contains_key(&wire) {
-            return;
-        }
         let block = &value["content_block"];
         let field = |name: &str| block.get(name).and_then(Value::as_str).unwrap_or_default();
+        // 同一个 `index` 又开一块（LM-36，同 Miyu AU-020）：照协议不会有；有的兼容层并行的几次调用都写 0，`id` 不一样的是
+        // 新的一次，之后这个 `index` 的增量归新的那一块。没有 `id`、`id` 一样的照旧只认第一次。
+        if self.blocks.contains_key(&wire) {
+            let id = field("id");
+            if id.is_empty() || self.ids.get(&wire).is_none_or(|known| known == id) {
+                return;
+            }
+            if let Some(Some(old)) = self.blocks.remove(&wire) {
+                self.retired.push(old.index);
+            }
+        }
+        if field("type") == "tool_use" && !field("id").is_empty() {
+            self.ids.insert(wire, field("id").to_string());
+        }
         let kind = match field("type") {
             "text" => Kind::Text,
             "thinking" | "redacted_thinking" => Kind::Reasoning,

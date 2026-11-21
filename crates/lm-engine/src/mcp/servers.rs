@@ -95,10 +95,16 @@ impl Servers {
         }
     }
 
-    /// 目录 `shipped` 加上各服务这时的工具：每个服务一组；目录查不过的那一件不登记。
-    pub(crate) fn catalog(&self, shipped: &Catalog) -> Catalog {
+    /// 目录 `shipped` 加上各服务这时的工具：每个服务一组；目录查不过的那一件不登记。这一轮的开关 `switches` 关着的服务不加
+    /// （LM-36，同 Miyu FX-8「开了的照现在的开关」）：读服务时开着、会话中途在 MCP 页关掉的，从下一个回合起工具面上没有它的
+    /// 工具，system 尾部也没有它的说明（`appended` 只拼工具面上有工具的服务）；再打开的接着用。读服务时就关着的本来就不在
+    /// 这一份里，会话中途打开也没有（同 Miyu：开会话时没开的照旧不开），新开的会话才有。
+    pub(crate) fn catalog(&self, shipped: &Catalog, switches: &BTreeMap<String, bool>) -> Catalog {
         let mut catalog = shipped.clone();
         for server in &self.servers {
+            if !crate::skills::switches::on(switches, &server.feature_id()) {
+                continue;
+            }
             let tools = spec::tools(server, &server.listing().tools, &self.texts);
             catalog = catalog.replacing_service(PACKAGE, server.name(), tools).0;
         }

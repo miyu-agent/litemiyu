@@ -512,21 +512,23 @@ impl Engine {
             });
             return;
         }
+        let typed = format!("/loop {}", words.trim());
         let ran = Kernel::Ran {
-            text: format!("/loop {}", words.trim()),
+            text: typed.clone(),
             command: "loop".to_string(),
         };
         let outcome = self.ask_main(ran).await;
         self.refused(outcome);
+        // 开的那一刻交的第一句带着人敲的这一行（LM-34）：算人的一次操作，正文里照原文画。
         let done = match &asked {
             lm_engine::schedule::Asked::Off => session.stop_loop().await,
             lm_engine::schedule::Asked::Fixed { every, prompt } => {
                 session
-                    .start_loop(Some(*every), (*prompt).to_string())
+                    .start_loop(Some(*every), (*prompt).to_string(), typed)
                     .await
             }
             lm_engine::schedule::Asked::Dynamic { prompt } => {
-                session.start_loop(None, (*prompt).to_string()).await
+                session.start_loop(None, (*prompt).to_string(), typed).await
             }
         };
         // 会话停了的：没处可开，也没处可报。

@@ -46,6 +46,7 @@ pub fn start(config: &Config, args: Args) -> Result<Option<Started>, ExitCode> {
             let missing = names.join(&words.missing_sep);
             eprintln!("{}", words.missing.replace("{missing}", &missing));
             if let Some(why) = unreadable {
+                let why = crate::human::why::table(config.language.code()).say(&why);
                 eprintln!("{}", words.missing_config.replace("{why}", &why));
             }
             eprintln!("\n{}", words.help.join("\n"));

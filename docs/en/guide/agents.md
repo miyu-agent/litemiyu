@@ -131,9 +131,16 @@ The AI runs it once right away and then sends the same prompt every 5 minutes. W
 
 Without an interval, the AI decides after each run when to come back (at least 1 minute later). If it considers the job done and schedules no further run, the loop simply ends.
 
+The `/loop` line you typed is shown in the conversation exactly as you typed it, the same way as your other messages, and the AI runs it right away.
+
 ### Viewing and stopping
 
 While a loop is running, the time of the next run is shown above the input box on the right.
+
+### Loops and undo
+
+- If you run `/loop` right after an `/undo` that could still be brought back with `/restore`, it counts as you saying something new: the loop runs its first time right away, and the undone turn can no longer be restored. `/restore` then says `Nothing to restore`.
+- If a loop is already running and you `/undo` a turn before its next run is due, that run is held back: nothing is sent and nothing is written to the conversation, and the right side above the input box says `Loop waiting on undo`. Once you say something and that turn finishes, or once you run `/restore`, the loop makes up that run, only once however many times it came due meanwhile, and then carries on at its usual pace. A scheduled continuation behaves the same way.
 
 Run `/loop off` to stop it; you see `Stopped this session's loops and scheduled continuations.`.
 

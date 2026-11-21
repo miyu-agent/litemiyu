@@ -224,7 +224,7 @@ fn a_session_without_changes_has_no_files_section_and_files_says_so() {
     press(&mut ui, KeyCode::Enter);
     assert!(ui.app.boxes.files_page.is_none(), "不开那一页");
     let notice = ui.app.typing.notice.as_ref().map(|n| n.text.clone());
-    assert_eq!(notice.as_deref(), Some("这个会话还没改过文件"));
+    assert_eq!(notice.as_deref(), Some("这个会话还没有修改过文件"));
 }
 
 #[test]

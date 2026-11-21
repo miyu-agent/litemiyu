@@ -22,4 +22,14 @@ impl Actor {
     pub(crate) fn set_kit(&mut self, kit: PolicyKit) {
         self.kit = Some(kit);
     }
+
+    /// 会话的工具面上有读文本文件的那一件（同技能列表的门槛，`crate::skills::listing::reads_files`）：没有的读不了记忆和技能，
+    /// 回合开始不交记忆的目录、不再找技能（`memory.rs`、`skills.rs`）。照快照的工具面看，不照执行器的目录：目录是整张出厂的表，
+    /// 预设关了 `read` 的会话（LM-29）目录里照样有它，原来照目录看，这种会话每轮照样交记忆的目录、技能变了照样交新的技能列表
+    /// （LM-36，同 Miyu FX-8「关了的从下一轮起不再注入」）。
+    pub(super) fn reads_files(&self) -> bool {
+        self.kit
+            .as_ref()
+            .is_some_and(|kit| crate::skills::listing::reads_files(&kit.snapshot.tools))
+    }
 }

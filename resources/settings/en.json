@@ -15,11 +15,11 @@
     },
     "compaction.prepare": {
       "name": "Pre-compaction",
-      "description": "When the context is nearly full, the older part is summarized in the background, so the switch happens without a wait when compaction is due. Off means compacting only once the limit is reached, as before."
+      "description": "Summarize the older context in the background before it fills up, so compaction never makes you wait."
     },
     "compaction.line": {
       "name": "Compaction line",
-      "description": "Compact automatically once the context fills this percent of the window. Small windows keep room for the reply, so compaction may start earlier. With a 200K window, values above 85 have no effect. A 1M window can reach 95."
+      "description": "Compact automatically once the context fills this percent of the window."
     },
     "providers.<id>.name": {
       "name": "Display name",
@@ -55,8 +55,8 @@
       "description": "The model new sessions use, written as provider/model, for example deepseek/deepseek-flash."
     },
     "models.vision": {
-      "name": "Vision model",
-      "description": "Looks at images for the chat model when it cannot. Written like the chat model."
+      "name": "Multimodal model",
+      "description": "Provides multimodal input when the chat model does not support it."
     },
     "tui.keys": {
       "name": "Key mode",

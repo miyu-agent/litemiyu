@@ -1,5 +1,5 @@
-//! 状态行照 Miyu（`ui/settings/mod.rs` 的 `status`）：别的页没话时写「供应商和模型」那一页的那一句（「已获取 N 个模型」，黄字），
-//! 主菜单不写；正在办的（测试连接）暗色。
+//! 状态行（Miyu `ui/settings/mod.rs` 的 `status`）：有话写话（正在办的暗色）；没话的只有「供应商和模型」的供应商分页写那一家
+//! 有几个模型（黄字），别的页、主菜单不写（LM-38）。
 
 use crossterm::event::KeyCode;
 
@@ -19,22 +19,24 @@ fn status_line(text: &str) -> String {
     lines[rule - 1].trim().to_string()
 }
 
+/// LM-38（同 Miyu 终端 11-20 项目主人报的「设置页底下一直写『暂无模型 · 保存后按 r 获取』」）：原来别的页没话时照「供应商和
+/// 模型」那一页的选中写「已获取 N 个模型」「暂无模型 · 保存后按 r 获取」，那几页按 r 什么都不做；改成别的页没话就不写，
+/// 那一句只在供应商分页写。
 #[test]
-fn other_pages_say_what_the_models_page_says_when_nothing_else_is_said() {
+fn other_pages_stay_quiet_when_nothing_is_said() {
     let scratch = Scratch::new("status-note");
     std::fs::write(scratch.paths().config_file(), ONE).unwrap();
     let mut settings = Settings::at(scratch.paths(), "zh", Outcome::Back).unwrap();
     assert_eq!(status_line(&screen(&settings).0), "", "主菜单不写");
-    // 进通用页（还没进过「供应商和模型」）：照停在第一家算。
+    // 进通用页：没话不写。
     press(&mut settings, KeyCode::Enter);
     assert!(matches!(settings.view, View::Page { .. }));
-    assert_eq!(status_line(&screen(&settings).0), "已获取 2 个模型");
+    assert_eq!(status_line(&screen(&settings).0), "", "通用页没话不写");
     // 有话的写话。
     settings.status = Some(("正在测试 fake…".to_string(), Tone::Busy));
     assert_eq!(status_line(&screen(&settings).0), "正在测试 fake…");
     settings.status = None;
-    // 去「供应商和模型」换到默认模型分页再出来：别的页照走的时候那一句写（默认模型分页没话可写；LM-8 以前换的是模型池分页，
-    // 写「N 个池」）。
+    // 「供应商和模型」的供应商分页照旧写这一家有几个模型；出来再进别的页还是不写。
     press(&mut settings, KeyCode::Esc);
     let models = settings
         .layout()
@@ -43,11 +45,13 @@ fn other_pages_say_what_the_models_page_says_when_nothing_else_is_said() {
         .unwrap();
     settings.view = View::Menu(models);
     press(&mut settings, KeyCode::Enter);
-    press(&mut settings, KeyCode::Char('.'));
-    press(&mut settings, KeyCode::Char('.'));
+    assert_eq!(status_line(&screen(&settings).0), "已获取 2 个模型");
     press(&mut settings, KeyCode::Esc);
     settings.view = View::Menu(0);
     press(&mut settings, KeyCode::Enter);
-    let said = status_line(&screen(&settings).0);
-    assert_eq!(said, "", "默认模型分页没话可写");
+    assert_eq!(
+        status_line(&screen(&settings).0),
+        "",
+        "别的页不带供应商那一页的话"
+    );
 }

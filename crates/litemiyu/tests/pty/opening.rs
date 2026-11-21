@@ -38,7 +38,7 @@ fn to_model(session: &Session, shots: bool) {
 
 /// 配色方案「下一步」、完成那一屏回车，进到对话。
 fn through_theme_and_done(session: &Session, shots: bool) {
-    session.wait_for("整个界面铺配色方案的底色", "配色方案那一步");
+    session.wait_for("整个界面使用配色方案的底色", "配色方案那一步");
     if shots {
         session.shot("opening-theme");
     }

@@ -138,7 +138,7 @@ Once MCP servers are configured, the main menu of `/config` gains an `MCP` page:
 ┃ echo  On  command python3 /home/user/mcp/echo.py · 1 tools last listed
 ```
 
-There is one row per server, with its command or URL and how many tools it last listed (`not started yet` if it never ran). Press `Enter` on one to switch it on or off. The switch is stored under `[features]` as well, for example `mcp-echo = false`. As with skills, these switches apply to every session, and a [preset](presets.md) can filter further per session.
+There is one row per server, with its command or URL and how many tools it last listed (`not started yet` if it never ran). Press `Enter` on one to switch it on or off. The switch is stored under `[features]` as well, for example `mcp-echo = false`. As with skills, these switches apply to every session, and a [preset](presets.md) can filter further per session. Switching a server off in an open session removes its tools and instructions from the next turn on, and switching it back on brings them back; a server that was off when the session started needs a new session.
 
 When a server fails to start or a call goes wrong, look at what it printed to standard error, in `~/.local/state/litemiyu/logs/mcp-<server>.stderr`.
 

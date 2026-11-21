@@ -147,7 +147,7 @@ fn a_long_session_kept_to_a_few_screens_draws_like_keeping_it_all() {
     });
     same(&full, &kept, "打了 /jump");
     both(&full, &kept, b"\r", "开 /jump");
-    let listed = format!("跳到  {TURNS} 条");
+    let listed = format!("跳转  {TURNS} 条");
     both_show(&full, &kept, "/jump 的列表列全了", |s| {
         s.contains(&listed)
     });

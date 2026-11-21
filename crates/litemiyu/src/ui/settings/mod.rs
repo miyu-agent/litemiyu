@@ -65,13 +65,14 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
             theme::accent().add_modifier(Modifier::BOLD)
         },
     ));
-    // 内容、要露出来的那一行、右下角的第几个和一共几个、按键提示。
-    let (lines, focus, (index, count), hints) = match settings.view {
+    // 内容、要露出来的那一行、右下角的第几个和一共几个、按键提示、光标那一项的说明（LM-38）。
+    let (lines, focus, (index, count), hints, about) = match settings.view {
         View::Menu(at) => (
             menu_lines(settings, at, area.width),
             at * 2 + 1,
             (at, settings.entries()),
             &texts.key_hints.menu,
+            None,
         ),
         View::Page { page, at } => {
             let name = match (settings.page_of(page), settings.extra(page)) {
@@ -89,11 +90,17 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
             }
             if settings.extra(page) == Some(Extra::Presets) {
                 let drawn = presets::lines(settings, at, area.width);
-                (drawn.lines, drawn.focus, drawn.place, &texts.presets.hints)
+                (
+                    drawn.lines,
+                    drawn.focus,
+                    drawn.place,
+                    &texts.presets.hints,
+                    None,
+                )
             } else if let Some(extra) = settings.extra(page) {
                 let count = settings.extra_list.entries.len();
-                let lines = extras::lines(settings, extra, at, area.width);
-                (lines, at, (at, count), &texts.extras.hints)
+                let (lines, cut) = extras::lines(settings, extra, at, area.width);
+                (lines, at, (at, count), &texts.extras.hints, cut)
             } else {
                 let rows = settings.rows(page);
                 let items = |rows: &[Row]| {
@@ -110,7 +117,20 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
                     .filter(|(i, row)| *i > 0 && matches!(row, Row::Group(_)))
                     .count()
                     + at;
-                (lines, focus, (index, items(&rows)), &texts.key_hints.page)
+                let about = match rows.get(at) {
+                    Some(Row::Item(item)) => {
+                        Some(settings.schema.items[*item].words.description.clone())
+                    }
+                    Some(Row::Prompt) => Some(texts.prompt.description.clone()),
+                    _ => None,
+                };
+                (
+                    lines,
+                    focus,
+                    (index, items(&rows)),
+                    &texts.key_hints.page,
+                    about,
+                )
             }
         }
     };
@@ -123,6 +143,25 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
         width: area.width,
         height: area.height.saturating_sub(6),
     };
+    // 光标那一项的说明（LM-38，同 Miyu 终端 11-20 推荐的改法）：列表下面空一行，暗色折行写全；列表连说明放不下（窗口矮）的
+    // 不写说明，列表照旧占满。窗开着时（选择窗、编辑窗、预设的窗）不写：窗自己有标题，页在后面调暗。
+    let windowed = settings.popup.is_some() || settings.preset_window_open();
+    let about = about
+        .filter(|text| !text.is_empty() && !windowed)
+        .map(|text| about_rows(&text, area.width))
+        .filter(|rows| lines.len() + 1 + rows.len() <= usize::from(body.height));
+    if let Some(rows) = &about {
+        let top = body.y + u16::try_from(lines.len() + 1).unwrap_or(u16::MAX);
+        for (i, row) in rows.iter().enumerate() {
+            let y = top + u16::try_from(i).unwrap_or(u16::MAX);
+            buffer.set_line(
+                body.x,
+                y,
+                &Line::styled(row.clone(), theme::dim()),
+                body.width,
+            );
+        }
+    }
     // 主菜单照光标滚（矮窗口能滚，有意不同，B5）；一页里照上一帧的顶接着露、选中的碰到上下边才挪（Miyu `pages.rs` 的 `paint`
     // 用 `menu::edge`）。
     let skip = match settings.view {
@@ -153,13 +192,10 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
         }
     }
     let bottom = area.y + area.height;
-    // 状态行：有话写话；进了页没话的照 Miyu 写「供应商和模型」那一页的那一句（黄字），主菜单不写。
-    let said = match (&settings.status, &settings.models_note) {
-        (Some((said, tone)), _) => Some((said.as_str(), models::tone(*tone))),
-        (None, Some(note)) if inside => Some((note.as_str(), theme::warn())),
-        _ => None,
-    };
-    if let Some((said, style)) = said {
+    // 状态行：有话写话，没话的不写（LM-38：原来照 Miyu 在别的页也写「供应商和模型」那一页选中那一家的「暂无模型 · 保存后
+    // 按 r 获取」「已获取 N 个模型」，那几页按 r 什么都不做，同 Miyu 终端 11-20 项目主人报的「设置页底下一直写」）。
+    if let Some((said, tone)) = &settings.status {
+        let (said, style) = (said.as_str(), models::tone(*tone));
         buffer.set_line(
             area.x,
             bottom - 4,
@@ -393,6 +429,14 @@ fn page_lines(settings: &Settings, rows: &[Row], at: usize, width: u16) -> Vec<L
         });
     }
     lines
+}
+
+/// 说明照 `width` 列折成几行，行首空两格（同组名、一项的名字）。
+fn about_rows(text: &str, width: u16) -> Vec<String> {
+    crate::input::pieces(text, width.saturating_sub(2).max(1))
+        .into_iter()
+        .map(|(piece, _)| format!("  {}", piece.trim_end()))
+        .collect()
 }
 
 /// 按键模式是不是 Vim（照配置界面这一刻的值：开头里刚选的也算）。

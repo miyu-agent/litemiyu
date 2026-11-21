@@ -14,7 +14,7 @@ use lm_kernel::kernel::event::{Body, ToolStatus};
 use lm_kernel::kernel::request::{Message, Request};
 use lm_kernel::kernel::session::Command;
 
-use super::{catalog, fired, results, script, skip, stopped_lines, turn};
+use super::{catalog, fired, results, script, skip, stopped_lines, turn, typed};
 use crate::support::jobs::full;
 use crate::support::*;
 
@@ -372,9 +372,12 @@ async fn a_fixed_loop_the_person_started_is_left_alone() {
     ]);
     let handle = home.create_with(&models, &catalog()).await;
     let mut subscription = watch(&handle).await;
-    within("开循环", handle.start_loop(Some(300), "ping".to_string()))
-        .await
-        .expect("会话在跑");
+    within(
+        "开循环",
+        handle.start_loop(Some(300), "ping".to_string(), typed("5m ping")),
+    )
+    .await
+    .expect("会话在跑");
     let results = results(&turn(&mut subscription).await);
     assert_eq!(results, [(false, NO_LOOP.to_string())], "照旧拒");
     assert_eq!(

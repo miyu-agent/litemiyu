@@ -170,6 +170,11 @@ impl Server {
         &self.config.name
     }
 
+    /// 它的开关的编号：`mcp-<服务名>`（回合开始照这一轮的开关拼目录，`servers.rs`）。
+    pub(crate) fn feature_id(&self) -> String {
+        self.config.feature_id()
+    }
+
     /// 一次调用等多久，毫秒。
     pub(crate) fn timeout_ms(&self) -> u64 {
         self.config.timeout_ms

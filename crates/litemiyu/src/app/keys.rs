@@ -11,13 +11,14 @@ use crate::input::{Action, Draft};
 use crate::transcript::Starting;
 
 impl App {
-    /// 按了要按两下的 `Esc`：在回答时打断（排着队的接着发）。上一下还在时限里就做，不然只提示再按一次。
-    pub(super) fn esc(&mut self) {
+    /// 按了要按两下的 `Esc`：在回答时打断（排着队的接着发）。上一下（`armed`，紧挨着的上一个按键是数进去的 `Esc` 才有）
+    /// 还在时限里就做，不然只提示再按一次。
+    pub(super) fn esc(&mut self, armed: Option<Instant>) {
         let window = Duration::from_millis(self.config.layout.esc_window_ms);
         // 发出去了、核心还没开轮的也算在回答：记下，轮一开就打断（`takeback.rs`）。
         let starting = self.talk.transcript.starting != Starting::No;
         let running = self.talk.transcript.running.is_some() || starting;
-        match self.typing.esc_at.take() {
+        match armed {
             Some(at) if at.elapsed() <= window => {
                 self.typing.notice = None;
                 if starting {

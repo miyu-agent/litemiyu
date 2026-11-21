@@ -81,7 +81,7 @@ The following cannot be undone once they run, so LiteMiyu refuses them outright.
 - Deleting the root directory, for example `rm -rf /`.
 - Deleting your home directory or a directory above it.
 - Deleting system directories under the root, such as `/usr`, `/etc` and `/home`.
-- Deleting LiteMiyu's own data directories.
+- Deleting LiteMiyu's own data directories, moving them away, or moving them to the trash.
 - Formatting disks: `mkfs`, `wipefs`.
 - Writing straight to disk devices: `dd of=/dev/…`.
 - Handing the whole host to a container: `docker run --privileged`, mounting `/` into a container, and the like.

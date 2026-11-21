@@ -311,7 +311,7 @@ impl Sink for Text<'_> {
                 self.progress.set(true);
             }
             Out::CompactionFailed(why) => {
-                let why = self.shown(why);
+                let why = self.shown(&self.words.why(why));
                 let line = self.words.say("compact.failed", &[("reason", &why)]);
                 self.before_aside(false);
                 self.err(&format!("{}\n", self.paint(RED, &line)));

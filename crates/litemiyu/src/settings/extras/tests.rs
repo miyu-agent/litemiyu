@@ -113,7 +113,7 @@ fn mcp_servers_show_how_they_start_and_switch() {
     assert_eq!(listed.broken.len(), 1, "{listed:?}");
     assert_eq!(
         listed.broken,
-        ["config.toml 第 7 行的 MCP 服务配置无效（bad_mcp）"]
+        ["config.toml 第 7 行的 MCP 服务配置无效（写法不正确）"]
     );
     press(&mut settings, KeyCode::Enter);
     let config = std::fs::read_to_string(paths.config_file()).unwrap();

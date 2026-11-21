@@ -338,18 +338,24 @@ pub fn read(event: &Event) -> Vec<Push> {
             out.push(Push::UserMessage(seq));
             out.push(Push::ShellAsked(seq));
         }
-        // 循环到点交进来的（`by: schedule`）：照你说的话画（同 Miyu 终端 `push/jobs.rs`：「正常和用户消息类似」）。
+        // 循环到点交进来的（`by: schedule`）：照你说的话画（同 Miyu 终端 `push/jobs.rs`：「正常和用户消息类似」）。人亲手敲
+        // `/loop` 的那一刻交的第一句带着人敲的那一行（LM-34）：照原文画，「敲什么显示什么」（2026-11-22 项目主人）。
         Body::MessageUser(message) if matches!(event.by, By::Schedule(_)) => out.push(Push::Said {
             seq,
-            text: message
-                .blocks
-                .iter()
-                .filter_map(|block| match block {
-                    Content::Text(text) => Some(text.text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            text: message.typed().map_or_else(
+                || {
+                    message
+                        .blocks
+                        .iter()
+                        .filter_map(|block| match block {
+                            Content::Text(text) => Some(text.text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                },
+                str::to_string,
+            ),
         }),
         // 别的会话发来的（收件目录里读到的、派它的父会话留的言）：照别处来的话画。
         Body::MessageUser(message) if let By::Session(from) = &event.by => {
@@ -526,6 +532,22 @@ mod tests {
             r#"{"seq":10,"at":"2026-11-12T08:00:00.000Z","kind":"command.ran","by":{"kind":"person"},"cause":"c3","body":{"text":"/loop off","command":"loop"}}"#,
         );
         assert_eq!(read(&typed), [Push::CommandRan], "人敲的照旧不画");
+    }
+
+    /// LM-34：人敲 `/loop` 的那一刻交的第一句带着人敲的那一行，照原文画成你说的一句（「敲什么显示什么」）；之后到点交的照旧
+    /// 画那句话。载入旧会话补发的走同一条路（`replay.rs` 只另办人说的，别的交给 [`read`]）。
+    #[test]
+    fn the_first_words_of_a_loop_read_as_what_the_person_typed() {
+        let first = event(
+            r#"{"seq":8,"at":"2026-11-12T08:00:00.000Z","kind":"message.user","by":{"kind":"schedule","schedule":"t1","loop":"fixed"},"cause":"schedule/t1/1/say","body":{"blocks":[{"type":"text","text":"看一眼时间"}],"command":{"name":"loop","text":"/loop 10m 看一眼时间"}}}"#,
+        );
+        assert_eq!(
+            read(&first),
+            [Push::Said {
+                seq: 8,
+                text: "/loop 10m 看一眼时间".into()
+            }]
+        );
     }
 
     /// 你说的话带着图片（LM-28）：那一句后面紧跟一条 [`Push::Images`]，带每一张的路径；补发的一样。

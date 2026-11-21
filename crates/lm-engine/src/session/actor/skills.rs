@@ -28,7 +28,7 @@ impl Actor {
         let asking = self
             .mcp
             .as_ref()
-            .filter(|_| !self.bare && self.tools.reads_files())
+            .filter(|_| !self.bare && self.reads_files())
             .map(|kit| (kit.paths.clone(), self.switches(), self.skills.clone()));
         async move {
             let (paths, switches, last) = asking?;

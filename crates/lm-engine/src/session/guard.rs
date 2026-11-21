@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::fs::{ResolveError, real_path, resolve, resolve_itself};
 use crate::store::paths::Paths;
-use crate::tool::{Call, Catalog, Stop, Target};
+use crate::tool::{Call, Catalog, Own, Stop, Target};
 use lm_kernel::kernel::id::ModuleId;
 use lm_kernel::kernel::raw::RawJson;
 use lm_kernel::kernel::session::Verdict;
@@ -36,8 +36,10 @@ pub(crate) struct Guard {
     open: Vec<PathBuf>,
     /// 只许读的：自带技能写出来的那一处（`crate::skills::shipped`）。
     shelves: Vec<PathBuf>,
-    /// 数据目录（`paths.data`）：交给工具认高危，删它的命令是灭顶的（`shell` 的 `delete_data_root`）。
+    /// 数据目录（`paths.data`）：交给工具，`write`、`edit` 照它认记忆的文件夹。
     data: PathBuf,
+    /// 自己的几处和里面让碰的（LM-37）：交给工具认高危，删掉、挪走整个一处的命令是灭顶的（`shell` 的 `delete_data_root`）。
+    places: Arc<Own>,
     home: Option<PathBuf>,
     lettering: Arc<Lettering>,
 }
@@ -54,6 +56,22 @@ impl Guard {
         // `canonicalize`，还没建的目录记的是原样的路径，上级里有链接时（macOS 的临时目录在 `/var` 下，`/var` 是到
         // `/private/var` 的链接）目标换出来的真实位置落不进去，自己的数据目录拦不住（LM-7，macOS 的 CI 上 guard 的三条测试红）。
         let real = |path: &Path| real_path(path).unwrap_or_else(|_| path.to_path_buf());
+        // 认高危照命令的字面比：原样的、换成真实位置的都给（`~/.cache` 被链到别处时两种写法都认）。
+        let both = |dirs: &[&PathBuf]| {
+            let mut all: Vec<PathBuf> = Vec::new();
+            for dir in dirs {
+                for path in [dir.to_path_buf(), real(dir)] {
+                    if !all.contains(&path) {
+                        all.push(path);
+                    }
+                }
+            }
+            all
+        };
+        let places = Arc::new(Own {
+            dirs: both(&[&paths.config, &paths.data, &paths.cache, &paths.state]),
+            open: both(&[&paths.memory(), &paths.skills()]),
+        });
         Guard {
             catalog,
             own: [&paths.config, &paths.data, &paths.cache, &paths.state]
@@ -63,6 +81,7 @@ impl Guard {
             open: vec![real(&paths.memory()), real(&paths.skills())],
             shelves: vec![real(&paths.shipped_skills())],
             data: paths.data.clone(),
+            places,
             home,
             lettering,
         }
@@ -91,6 +110,7 @@ impl Guard {
             cwd,
             home: self.home.clone(),
             data_root: Some(self.data.clone()),
+            own: Some(Arc::clone(&self.places)),
             seen: Arc::default(),
             stop: Stop::default(),
             log: None,

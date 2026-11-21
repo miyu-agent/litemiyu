@@ -76,12 +76,13 @@ impl Models {
         }
     }
 
-    /// 状态行没话时写的（Miyu `ui/settings/mod.rs` 的 `status` 末段）：供应商分页写选中的那一家有几个模型，默认模型分页不写。别的页没话时也写这一句（Miyu 的状态行照「供应商和模型」那一页的选中算），见 [`super::Settings::models_note`]。
+    /// 这一页的状态行没话时写的（Miyu `ui/settings/mod.rs` 的 `status` 末段）：供应商分页写选中的那一家有几个模型，一个都没有
+    /// 的照模型那一栏写怎么办（[`no_models`]）；默认模型分页不写。别的页不写（LM-38）。
     pub fn quiet(&self, texts: &texts::ModelTexts) -> String {
         match self.nav.page {
-            nav::Page::Providers => match self.nav.provider(&self.data).map(|p| p.models.len()) {
-                Some(0) => texts.status("no_models"),
-                Some(n) => texts.counted("fetched", n),
+            nav::Page::Providers => match self.nav.provider(&self.data) {
+                Some(p) if p.models.is_empty() => no_models(p, texts),
+                Some(p) => texts.counted("fetched", p.models.len()),
                 None => String::new(),
             },
             nav::Page::Defaults => String::new(),
@@ -97,6 +98,17 @@ impl Models {
         if let Some(id) = provider {
             self.nav.keep_model(&self.data, &id, model.as_deref());
         }
+    }
+}
+
+/// 一家一个模型都没有时说什么（模型那一栏和状态行同一句，LM-38）：推不出这一家的照原因说成人话、告诉怎么办（没地址的填地址，
+/// 认不出接口的选接口）；没毛病的才说按 `r` 获取（原来状态行一律写「暂无模型 · 保存后按 r 获取」，没地址的按了也取不到）。
+pub fn no_models(p: &data::Provider, texts: &texts::ModelTexts) -> String {
+    match &p.problem {
+        Some(_) if p.base_url.is_none() => texts.status("no_base_url"),
+        Some(_) if p.driver.is_none() => texts.status("no_driver"),
+        Some(problem) => problem.clone(),
+        None => texts.status("no_models"),
     }
 }
 

@@ -110,7 +110,7 @@ fn a_model_without_a_key_is_listed_dim_and_cannot_be_picked() {
     session.type_text("x1");
     session.wait_until("筛成一个", |s| s.screen().contains("1 个"));
     session.press_enter();
-    session.wait_for("该模型未设置密钥", "不换，提示为什么");
+    session.wait_for("这个模型未设置密钥", "不换，提示为什么");
     assert!(session.screen().contains("─ 模型"), "窗还开着");
     session.press(b"\x1b");
     session.wait_until("Esc 关窗", |s| !s.screen().contains("─ 模型"));
@@ -130,8 +130,8 @@ fn effort_switches_this_session_and_the_next_request_carries_it() {
     session.wait_for("─ 思考程度 · m1", "窗开了，标题写模型");
     let screen = session.wait_for("high", "列出几档");
     assert!(
-        screen.contains("● 跟随设置"),
-        "第一行跟随设置，现在跟着：\n{screen}"
+        screen.contains("● 继承默认设置"),
+        "第一行继承默认设置，现在跟着：\n{screen}"
     );
     for _ in 0..3 {
         session.press(b"\x1b[B");
@@ -162,7 +162,7 @@ fn effort_lists_the_levels_of_the_model_in_use_and_follows_settings_first() {
     session.type_text("/effort");
     session.press_enter();
     session.wait_for("─ 思考程度 · m1", "窗开了，标题写模型");
-    session.wait_for("该模型没有可选的思考程度", "没有档位的照实说");
+    session.wait_for("这个模型没有可选的思考程度", "没有档位的照实说");
     session.press(b"\x1b");
     session.wait_until("Esc 关窗", |s| !s.screen().contains("─ 思考程度"));
 }

@@ -168,6 +168,12 @@ impl App {
         {
             self.typing.notice = None;
         }
+        // 两下 `Esc` 只认挨着的两下（LM-38，同 Miyu 终端 11-20）：上一下记的时刻先拿出来，只有这一下也数进去（打断、停子会话）
+        // 才交回去；按了别的键，或者这一下 `Esc` 被列表、框、选区、编辑上一句用掉了，上一下就不算了。
+        let armed = match &event {
+            Event::Key(key) if key.kind != KeyEventKind::Release => self.typing.esc_at.take(),
+            _ => None,
+        };
         if self.settings.is_some() {
             self.settings_event(&event);
             return;
@@ -187,7 +193,7 @@ impl App {
                 if key.code == KeyCode::Esc
                     && self.esc_for_input(menu_open)
                     && self.typing.input.editor.is_empty()
-                    && self.child_esc() =>
+                    && self.child_esc(armed) =>
             {
                 Action::None
             }
@@ -209,7 +215,7 @@ impl App {
                     && (self.talk.transcript.running.is_some()
                         || self.talk.transcript.starting != crate::transcript::Starting::No) =>
             {
-                self.esc();
+                self.esc(armed);
                 Action::None
             }
             Event::Key(key) => {

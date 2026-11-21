@@ -50,21 +50,21 @@ pub fn write(id: &str, target: &Path) -> Result<(), String> {
             .trim()
             .to_string()
     };
-    let listed =
-        sessions::list().map_err(|why| said(words.say("list_failed", &[("reason", &why)])))?;
+    let listed = sessions::list()
+        .map_err(|why| said(words.say("list_failed", &[("reason", &words.why(&why))])))?;
     let found = listed
         .into_iter()
         .find(|one| one.id.as_str() == id)
         .ok_or_else(|| said(words.say("no_such_session", &[("id", id)])))?;
     let replayed = replay(found.id.as_str(), found.title, words.code())
-        .map_err(|why| said(words.say("open_failed", &[("reason", &why)])))?;
+        .map_err(|why| said(words.say("open_failed", &[("reason", &words.why(&why))])))?;
     let body = markdown(&words, &replayed);
     // 界面给的是终端所在目录下的绝对路径（`app/export.rs`），不用再照当前目录补全。
     std::fs::write(target, body).map_err(|error| {
         let file = target.display().to_string();
         said(words.say(
             "write_failed",
-            &[("file", &file), ("reason", &error.to_string())],
+            &[("file", &file), ("reason", &words.why(&error.to_string()))],
         ))
     })
 }

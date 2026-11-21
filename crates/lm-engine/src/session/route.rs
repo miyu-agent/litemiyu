@@ -3,7 +3,7 @@
 //!
 //! 施工 8-20 起它是模型调用口的会话入口（「怎么走」第十二条）：造候选、备好、发都调底子（`route/base.rs`、
 //! `route/choice.rs`、`route/exchange.rs`）。Miyu 还有一次性入口（`route/once.rs`）、旁路请求（`side.rs`）、替它看图（`sight.rs`）：
-//! LiteMiyu 在 L3 三只搬了会话入口，看图不搬。扩展驱动（`extension.rs`、`driver_port.rs`）、下架的模型（`retire.rs`，要拉列表）
+//! LiteMiyu 在 L3 三只搬了会话入口；替它看图 LM-36 补上（`route/sight.rs`，不经一次性入口）。扩展驱动（`extension.rs`、`driver_port.rs`）、下架的模型（`retire.rs`，要拉列表）
 //! 不搬。LM-8 砍了模型池：池里挑成员、轮换、钉住、出错换人（`failover`）、冷却表、池的指针（`route/pool.rs`、`route/ended.rs`
 //! 的那一半）都没了，一个会话一次只有一个候选；出错照内核的重试再来（`lm_kernel::kernel::session::retry`），不换端点。
 //!
@@ -37,6 +37,7 @@ mod identity;
 mod placeholder;
 mod send;
 pub(crate) mod shared;
+mod sight;
 mod turn;
 
 pub use shared::{
@@ -234,6 +235,11 @@ impl ModelPort for Route {
 
     fn effort(&self) -> Option<EffortInUse> {
         self.shown_effort()
+    }
+
+    /// 替看不了图的模型看图：发给这一轮的 `models.vision`（`route/sight.rs`）。
+    fn describe(&self, request: Request, config: &TurnConfig, sight: crate::session::port::Sight) {
+        self.look(request, config, sight);
     }
 
     fn call(

@@ -2,7 +2,7 @@
 //! 照最近的上级目录算；最后一段不跟链接的（施工 4-9 再补二）。
 
 use crate::support::Site;
-use lm_engine::fs::{ResolveError, Zone, resolve, resolve_itself};
+use lm_engine::fs::{ResolveError, Zone, resolve, resolve_itself, tilde};
 
 #[test]
 fn a_relative_path_follows_the_working_directory() {
@@ -36,6 +36,27 @@ fn a_tilde_means_home() {
     assert_eq!(
         resolve(&work, Some(&home), "~alice").expect("换得了"),
         work.join("~alice")
+    );
+}
+
+/// 修以前：`~//etc/passwd` 只去掉一个 `/`，剩下的 `/etc/passwd` 是绝对路径，接到家目录上把家目录整个丢了，落在根目录（同 Miyu
+/// AU-009）。shell 里它是家目录下的 `etc/passwd`，这里照 shell：`~` 后面连着几个分隔符都去掉。
+#[test]
+fn several_separators_after_the_tilde_still_mean_home() {
+    let site = Site::new();
+    let (work, home) = (site.real("work"), site.real("home"));
+    for written in ["~//notes.txt", "~///notes.txt"] {
+        assert_eq!(
+            resolve(&work, Some(&home), written).expect("换得了"),
+            home.join("notes.txt"),
+            "{written}"
+        );
+        assert_eq!(tilde(written), Some("notes.txt"), "{written}");
+    }
+    assert_eq!(resolve(&work, Some(&home), "~//").expect("换得了"), home);
+    assert_eq!(
+        resolve_itself(&work, Some(&home), "~//notes.txt").expect("换得了"),
+        Some(home.join("notes.txt"))
     );
 }
 

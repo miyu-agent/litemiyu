@@ -187,6 +187,7 @@ pub fn call(args: &str) -> Call {
         cwd: "/".to_string(),
         home: None,
         data_root: None,
+        own: None,
         seen: Arc::default(),
         stop: Stop::default(),
         log: None,

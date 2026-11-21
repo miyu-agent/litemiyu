@@ -26,13 +26,14 @@ impl App {
         let Update::Exported(done) = update else {
             return false;
         };
+        let why = |raw: &str| self.config.text().why(raw);
         let texts = &self.config.text().export;
         let note = match done {
             Ok((path, size)) => texts
                 .saved
                 .replace("{path}", &path.display().to_string())
                 .replace("{size}", &crate::meter::bytes(*size)),
-            Err(reason) => texts.failed.replace("{reason}", reason),
+            Err(reason) => texts.failed.replace("{reason}", &why(reason)),
         };
         self.hint(note, false);
         true

@@ -109,7 +109,9 @@ fn failed(words: &Words, failure: &Failure) -> String {
         same if same == key => words.get("class.other"),
         class => class,
     };
-    let message = failure.message.trim();
+    // 发请求那一层、系统的原话换成句子（LM-39）；供应商的原话认不出，照原样。
+    let message = words.why(failure.message.trim());
+    let message = message.as_str();
     let text = match message.is_empty() {
         true => class.to_string(),
         false => format!("{class}{}{message}", words.get("colon")),

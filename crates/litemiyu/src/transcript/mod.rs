@@ -323,12 +323,15 @@ impl Transcript {
             // 回答被拒归抽屉（`app/asking.rs`）。
             Update::AnswerRefused { .. } => {}
             Update::Failed(reason) => {
-                self.link = Link::Down(texts.core_failed.replace("{reason}", &reason));
+                self.link = Link::Down(texts.core_failed.replace("{reason}", &texts.why(&reason)));
             }
             // 认得的原因码界面只弹提示框，到不了这里；认不得的照原话写进正文（Miyu 蓝图「正文」第 6 条）。
             // 没发出去的，先画上的那句界面已经撤掉了（`app/updates.rs`）。
             Update::Refused { message, .. } | Update::Unsent { message, .. } => {
-                self.note(Kind::Error, texts.refused.replace("{reason}", &message));
+                self.note(
+                    Kind::Error,
+                    texts.refused.replace("{reason}", &texts.why(&message)),
+                );
             }
             Update::Push(push) => self.apply(push, texts),
             // 循环、改名、子会话、后台命令的输出、会话的账归界面别处（`app/looping.rs`、`app/rename.rs`、`app/jobs.rs`、`app/meter.rs`），

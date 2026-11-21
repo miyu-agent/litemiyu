@@ -15,12 +15,11 @@ impl App {
         let file = match crate::scratch::write("prompt", &before.text) {
             Ok(file) => file,
             Err(error) => {
-                let note = self
-                    .config
-                    .text()
+                let texts = self.config.text();
+                let note = texts
                     .open
                     .failed
-                    .replace("{reason}", &error.to_string());
+                    .replace("{reason}", &texts.why(&error.to_string()));
                 self.hint(note, false);
                 return;
             }
@@ -36,12 +35,11 @@ impl App {
     /// 起不来的弹一句原因。
     pub fn edited(&mut self, edit: Edit, ran: io::Result<io::Result<()>>) {
         if let Err(error) = ran.and_then(|ran| ran) {
-            let note = self
-                .config
-                .text()
+            let texts = self.config.text();
+            let note = texts
                 .open
                 .failed
-                .replace("{reason}", &error.to_string());
+                .replace("{reason}", &texts.why(&error.to_string()));
             self.hint(note, false);
         }
         let Then::Compose(before) = edit.then else {

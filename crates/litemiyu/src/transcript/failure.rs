@@ -69,9 +69,11 @@ pub(super) fn retry_line(
     said: &str,
     texts: &Texts,
 ) -> String {
+    // 发请求那一层、系统的原话换成句子（LM-39，`human/why.rs`）；供应商的原话认不出，照原样。
+    let said = texts.why.say(said);
     let message = match class {
         STALLED => with(&class_name(class, texts), said.trim(), texts),
-        _ => said.to_string(),
+        _ => said,
     };
     texts
         .retry
@@ -85,7 +87,9 @@ const RATE_LIMITED: (&str, u16) = ("rate_limited", 429);
 
 /// 出错的原因。
 pub(super) fn reason(error: &CallError, texts: &Texts) -> String {
-    let said = error.message.trim();
+    // 发请求那一层、系统的原话换成句子（LM-39，`human/why.rs`）；供应商的原话认不出，照原样。
+    let said = texts.why.say(error.message.trim());
+    let said = said.as_str();
     let class = error.class.as_str();
     // 模型连上了却一直不出字（核心 YC-3）：不是内核查出来的那几类，人话后面照规矩接原话（空闲超时多久）。
     if class == STALLED {

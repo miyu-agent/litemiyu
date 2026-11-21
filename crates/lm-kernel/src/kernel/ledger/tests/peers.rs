@@ -1,7 +1,9 @@
 //! 跨会话的几条规矩（施工 C-1，`kernel/history.md`「账本查的规矩」，`cross-session.md`「效果 peer.watch」「事件
 //! peer.idle」）：订的是自己的拒；`peer.idle` 只认在等的、`by` 对得上；撤掉订它的那一轮就不算在等；再订从新的时刻算。
+//! 起算时刻是带着那次调用的回复的时刻，不是结果的（LM-36，同 Miyu FX-6）。
 //!
-//! 底子是这个会话（`OWN`）的一段：第 3 轮一次调用订了会话 B（第 5 条，07:00:05），回合结束。
+//! 底子是这个会话（`OWN`）的一段：第 3 轮的回复（第 4 条，07:00:04）里一次调用订了会话 B（结果是第 5 条，07:00:05），
+//! 回合结束。
 
 use super::*;
 use crate::kernel::id::SessionId;
@@ -67,7 +69,14 @@ fn opening() -> Vec<Event> {
         event(1, None, "session.created", CREATED),
         event(2, None, "message.user", SAID),
         event(3, Some(3), "turn.started", r#"{"trigger":2}"#),
-        event(4, Some(3), "message.assistant", &reply(4, 3, 1, false)),
+        line(
+            4,
+            4,
+            Some(3),
+            "message.assistant",
+            KERNEL,
+            &reply(4, 3, 1, false),
+        ),
         line(
             5,
             5,
@@ -76,7 +85,14 @@ fn opening() -> Vec<Event> {
             KERNEL,
             &watched("call_4_1", &[watch(B)]),
         ),
-        event(6, Some(3), "message.assistant", &reply(6, 5, 0, false)),
+        line(
+            6,
+            6,
+            Some(3),
+            "message.assistant",
+            KERNEL,
+            &reply(6, 5, 0, false),
+        ),
         event(7, Some(3), "turn.ended", r#"{"reason":"completed"}"#),
     ]
 }
@@ -98,8 +114,14 @@ fn waited(ledger: &Ledger) -> Vec<(SessionId, Timestamp)> {
         .collect()
 }
 
-/// 从第 `first` 条起开一轮，里面一次调用又订了 B，回合结束：六条，订的那一条在 `first + 3`，时刻是 07:00 过那么多秒。
+/// 从第 `first` 条起开一轮，里面一次调用又订了 B，回合结束：六条，带调用的回复在 `first + 2`、订的那条结果在 `first + 3`，
+/// 时刻各是 07:00 过那么多秒。
 fn watch_again(ledger: &mut Ledger, first: u64) {
+    watch_again_at(ledger, first, (first + 2, first + 3));
+}
+
+/// 同 [`watch_again`]，带调用的回复、订的那条结果的时刻是 07:00 过 `replied`、`resulted` 秒。
+fn watch_again_at(ledger: &mut Ledger, first: u64, (replied, resulted): (u64, u64)) {
     let turn = first + 1;
     let call = format!("call_{}_1", first + 2);
     for event in [
@@ -110,15 +132,17 @@ fn watch_again(ledger: &mut Ledger, first: u64) {
             "turn.started",
             &format!(r#"{{"trigger":{first}}}"#),
         ),
-        event(
+        line(
             first + 2,
+            replied,
             Some(turn),
             "message.assistant",
+            KERNEL,
             &reply(first + 2, turn, 1, false),
         ),
         line(
             first + 3,
-            first + 3,
+            resulted,
             Some(turn),
             "tool.result",
             KERNEL,
@@ -144,7 +168,11 @@ fn watch_again(ledger: &mut Ledger, first: u64) {
 #[test]
 fn a_session_watching_another_appends() {
     let mut ledger = watching_after(7);
-    assert_eq!(waited(&ledger), [(id(B), at(5))], "从订的那一条的时刻算起");
+    assert_eq!(
+        waited(&ledger),
+        [(id(B), at(4))],
+        "从带着那次调用的回复的时刻算起，不是结果的时刻"
+    );
     ledger.append(&notice(8, &session(B), B, "idle")).unwrap();
     assert!(waited(&ledger).is_empty(), "等到了，不再等");
     assert_eq!(ledger.next_seq().get(), 9);
@@ -175,7 +203,7 @@ fn a_session_cannot_watch_itself() {
         "a session cannot watch itself",
     );
     ledger.append(&result(&[watch(C), watch(B)])).unwrap();
-    assert_eq!(waited(&ledger), [(id(B), at(5)), (id(C), at(5))], "照编号");
+    assert_eq!(waited(&ledger), [(id(B), at(4)), (id(C), at(4))], "照编号");
     let mut blind = Ledger::default();
     for event in &opening()[..4] {
         blind.append(event).unwrap();
@@ -248,7 +276,7 @@ fn undoing_the_watching_turn_stops_the_watch() {
     restored
         .append(&event(9, None, "turn.unreverted", r#"{"turns":[3]}"#))
         .unwrap();
-    assert_eq!(waited(&restored), [(id(B), at(5))]);
+    assert_eq!(waited(&restored), [(id(B), at(4))]);
     restored
         .append(&notice(10, &session(B), B, "idle"))
         .unwrap();
@@ -267,16 +295,26 @@ fn undoing_the_watching_turn_stops_the_watch() {
 fn watching_again_counts_from_the_new_moment() {
     let mut ledger = watching_after(7);
     watch_again(&mut ledger, 8);
-    assert_eq!(waited(&ledger), [(id(B), at(11))]);
+    assert_eq!(waited(&ledger), [(id(B), at(10))]);
     ledger
         .append(&event(14, None, "turn.reverted", r#"{"turns":[9]}"#))
         .unwrap();
-    assert_eq!(waited(&ledger), [(id(B), at(5))], "回到第 3 轮订的");
+    assert_eq!(waited(&ledger), [(id(B), at(4))], "回到第 3 轮订的");
     ledger.append(&notice(15, &session(B), B, "idle")).unwrap();
     watch_again(&mut ledger, 16);
-    assert_eq!(waited(&ledger), [(id(B), at(19))]);
+    assert_eq!(waited(&ledger), [(id(B), at(18))]);
     ledger
         .append(&event(22, None, "turn.reverted", r#"{"turns":[17]}"#))
         .unwrap();
     assert!(waited(&ledger).is_empty(), "第 3 轮订的已经等到过了");
+}
+
+/// LM-36（同 Miyu FX-6）：工具跑了很久（带话又订的，话在这期间就送到了，对方可能已经忙完一轮）。起算时刻是带着那次调用的
+/// 回复的时刻，早于工具开始执行；不是结果记下的时刻。
+#[test]
+fn a_watch_counts_from_the_reply_that_called_it_not_from_the_late_result() {
+    let mut ledger = watching_after(7);
+    ledger.append(&notice(8, &session(B), B, "idle")).unwrap();
+    watch_again_at(&mut ledger, 9, (10, 40));
+    assert_eq!(waited(&ledger), [(id(B), at(10))]);
 }

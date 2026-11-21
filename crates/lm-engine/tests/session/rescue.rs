@@ -286,7 +286,11 @@ async fn a_loop_in_a_rescue_session_fires_on_time_and_writes_nothing() {
     let mut pushes = watch(&handle).await;
     within(
         "开循环",
-        handle.start_loop(Some(60), "看一下磁盘".to_string()),
+        handle.start_loop(
+            Some(60),
+            "看一下磁盘".to_string(),
+            "/loop 1m 看一下磁盘".to_string(),
+        ),
     )
     .await
     .expect("会话在跑");

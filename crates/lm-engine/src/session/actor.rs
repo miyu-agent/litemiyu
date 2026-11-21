@@ -320,6 +320,8 @@ impl Actor {
         self.settle_busy();
         self.push_now(!fragments);
         self.after_batch();
+        // 循环欠着一次、撤回处理了的补交（LM-34，`actor/looping.rs`）：只在送完一批时看。
+        self.loop_settled();
         self.rest();
         Ok(())
     }

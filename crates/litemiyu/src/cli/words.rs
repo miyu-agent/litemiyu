@@ -65,6 +65,11 @@ impl Words {
         self.code
     }
 
+    /// 原因 `raw`（原因码、引擎和系统的原话）给人看的句子（LM-39，`human/why.rs`）；认不出的照原话。
+    pub fn why(&self, raw: &str) -> String {
+        crate::human::why::table(self.code).say(raw)
+    }
+
     /// 那一句；表里没有的照编号原样（测试查每个编号两种语言都有）。
     pub fn get<'a>(&'a self, key: &'a str) -> &'a str {
         self.map.get(key).map_or(key, String::as_str)

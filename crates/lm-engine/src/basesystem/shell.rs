@@ -260,8 +260,8 @@ impl Tool for Shell {
         vec![crate::tool::RUN_IN_BACKGROUND, WATCH]
     }
 
-    /// 照命令的字面认高危（施工 5-17，`lm_kernel::policy::hazard`）：家目录、数据目录照这次调用带的，工作目录照家目录换成
-    /// 绝对路径。LiteMiyu 没有放在数据目录里的工作区，`workspaces` 是空的。
+    /// 照命令的字面认高危（施工 5-17，`lm_kernel::policy::hazard`）：家目录、自己的几处照这次调用带的（LM-37：权限策略交
+    /// [`Call::own`]，没交的照数据目录一处），工作目录照家目录换成绝对路径。
     fn hazard(&self, call: &Call) -> Option<Hazard> {
         let args = lm_kernel::kernel::json::from_str::<Args>(&call.args).ok()?;
         let home = call
@@ -272,16 +272,22 @@ impl Tool for Shell {
             |_| call.cwd.clone(),
             |cwd| cwd.to_string_lossy().into_owned(),
         );
-        let data_root = call
-            .data_root
-            .as_deref()
-            .map(|root| root.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let text = |dirs: &[PathBuf]| -> Vec<String> {
+            dirs.iter()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .collect()
+        };
+        let (own, open) = match &call.own {
+            Some(own) => (text(&own.dirs), text(&own.open)),
+            None => (text(call.data_root.as_slice()), Vec::new()),
+        };
+        let own: Vec<&str> = own.iter().map(String::as_str).collect();
+        let open: Vec<&str> = open.iter().map(String::as_str).collect();
         let places = Places {
             cwd: &cwd,
             home: home.as_deref(),
-            data_root: &data_root,
-            workspaces: "",
+            own: &own,
+            open: &open,
         };
         let kind = assess(&args.command, &places)?;
         let refused = self

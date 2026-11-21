@@ -9,11 +9,17 @@ use crate::settings::{Extra, Settings};
 use crate::theme;
 use crate::ui::rows::clip;
 
-/// 那一页的几行；光标在第 `at` 行。
-pub fn lines(settings: &Settings, extra: Extra, at: usize, width: u16) -> Vec<Line<'static>> {
+/// 那一页的几行；光标在第 `at` 行。另外交回光标那一行被截掉的状态（说明）的全文：列表下面写全（LM-38），放得下的是 `None`。
+pub fn lines(
+    settings: &Settings,
+    extra: Extra,
+    at: usize,
+    width: u16,
+) -> (Vec<Line<'static>>, Option<String>) {
     let texts = &settings.texts.extras;
     let listed = &settings.extra_list;
     let mut lines = Vec::new();
+    let mut cut = None;
     if listed.entries.is_empty() {
         let empty = match extra {
             Extra::Skills => &texts.empty[0],
@@ -43,6 +49,9 @@ pub fn lines(settings: &Settings, extra: Extra, at: usize, width: u16) -> Vec<Li
         let used: usize = spans.iter().map(|span| span.content.width()).sum();
         let room = usize::from(width).saturating_sub(used);
         let state = clip(&entry.state, u16::try_from(room).unwrap_or(u16::MAX));
+        if chosen && state != entry.state {
+            cut = Some(entry.state.clone());
+        }
         let rest = room.saturating_sub(state.width());
         spans.push(Span::styled(state, theme::dim()));
         spans.push(Span::raw(" ".repeat(rest)));
@@ -59,5 +68,5 @@ pub fn lines(settings: &Settings, extra: Extra, at: usize, width: u16) -> Vec<Li
             theme::error(),
         ));
     }
-    lines
+    (lines, cut)
 }

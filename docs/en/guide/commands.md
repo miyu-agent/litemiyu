@@ -13,7 +13,7 @@ LiteMiyu has 24 commands:
 | [`/new`](#new) | Start a new session, optionally with a preset |
 | [`/preset`](#preset) | Choose, create and edit presets |
 | [`/sessions`](#sessions) (`/resume`) | List sessions and switch to one |
-| [`/jump`](#jump) | List what you said in this session and jump to it |
+| [`/jump`](#jump) | List your messages in this session and jump to one |
 | [`/files`](#files) | See the files this session changed and their diffs |
 | [`/rename`](#rename) | Rename the session |
 | [`/delete`](#delete) | Delete this session |
@@ -22,7 +22,7 @@ LiteMiyu has 24 commands:
 | [`/restore`](#undo-and-restore) | Bring back the turn you just undid |
 | [`/redo`](#redo-and-edit) | Run the last turn again as it was |
 | [`/edit`](#redo-and-edit) | Edit your last message and run the turn again |
-| [`/stop`](#stop) | Stop everything running in the session |
+| [`/stop`](#stop) | Stop everything running in this session |
 | [`/clear`](#clear) (`/reset`) | Clear the context |
 | [`/compact`](#compact) | Compact the context now |
 | [`/loop`](#loop) | Run on a loop |
@@ -89,7 +89,7 @@ Deletes the current session and returns to the new-session screen. The sessions 
 
 > `/delete` does not ask for confirmation. The session is removed from disk right away and cannot be recovered.
 
-A session cannot be deleted while a reply is running; you get `A turn is running: interrupt it before deleting this session`.
+A session cannot be deleted while a reply is running; you get `A reply is running. Interrupt it before deleting this session`.
 
 ### /export
 
@@ -107,7 +107,7 @@ The file contains your messages and the AI's replies, with one line for each com
 
 `/undo` undoes the last turn: your message and the AI's reply are removed from the context, and your message goes back into the input box so you can change it and send it again. Run it repeatedly to go back turn by turn.
 
-`/restore` brings back the turn you just undid. When there is nothing to bring back it says `Nothing to restore`.
+`/restore` brings back the turn you just undid. When there is nothing to bring back it says `Nothing to restore`. Once you say something new after the undo, or run `/loop`, the undone turn can no longer be restored. For what a loop does around an undo, see [Loops and undo](agents.md#loops-and-undo).
 
 `/undo` also undoes `/clear` and compaction, showing `Undid a clear: the context is back to before it`.
 
@@ -136,7 +136,7 @@ Compacts the context into a summary now instead of waiting for it to happen auto
 /compact keep only what concerns the database migration
 ```
 
-When the conversation is still short and there is nothing to compact, it says `Not enough context`. For what compaction is, see [Sessions](sessions.md#long-sessions-and-compaction).
+When the conversation is still short and there is nothing to compact, it says `Nothing to compact`. For what compaction is, see [Sessions](sessions.md#long-sessions-and-compaction).
 
 ## Loops
 
@@ -164,7 +164,7 @@ Opens the model list: every model you have set up, followed by its provider and 
 
 ### /effort
 
-Opens the thinking effort levels of the current model; pick one and press `Enter`. The first entry, `Follow settings`, uses the default set for this model in settings. If the model has no adjustable effort, you see `This model has no effort levels to choose`.
+Opens the thinking effort levels of the current model; pick one and press `Enter`. The first entry, `Inherit default`, uses the default set for this model in settings. If the model has no adjustable effort, you see `This model has no effort levels to choose`.
 
 ## Looking things up
 

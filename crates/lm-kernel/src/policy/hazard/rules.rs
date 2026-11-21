@@ -3,7 +3,7 @@
 
 use super::fresh::Fresh;
 use super::lex::{Simple, Word, parse};
-use super::paths::{absolute, target};
+use super::paths::{absolute, moved_away, target};
 use super::vars::{Vars, after_keywords};
 use super::{Kind, Places};
 
@@ -35,6 +35,10 @@ fn look(text: &str, places: &Places<'_>, depth: usize, found: &mut Vec<Kind>) {
     for (at, pipeline) in parsed.pipelines.iter().enumerate() {
         if fetch_into_shell(pipeline) {
             found.push(Kind::PipeToShell);
+        }
+        // `echo 'rm -rf ~' | sh`、`cat <<'EOF' | bash`：管道前面印的字是后面 shell 跑的脚本（LM-37）。
+        for script in piped_scripts(pipeline) {
+            look(&script, places, depth + 1, found);
         }
         for simple in pipeline {
             one(
@@ -101,11 +105,16 @@ fn one(
     let fed = simple.words[..simple.words.len() - words.len()]
         .iter()
         .any(|word| base(&word.text) == "xargs");
+    // `env -S '…'`（`--split-string`）：值拆开就是要跑的命令（LM-37）。剥外壳时它整个当成了 `-S` 的值，后面可能一个词都不剩。
+    if let Some(script) = split_string(&simple.words[..simple.words.len() - words.len()]) {
+        look(script, places, depth + 1, found);
+    }
     let Some((first, rest)) = words.split_first() else {
         return;
     };
     let name = base(&first.text);
     // `sh -c '…'`、`bash -lc '…'`：里面的另认（施工 AS-9：`-c` 和别的选项连写的也算，脚本是它后面第一个不是选项的词）。
+    // 没有 `-c`、也没写脚本文件的从标准输入读脚本（LM-37）：`bash <<'EOF'`、`sh <<< '…'` 喂进去的另认。
     if is_shell(name) {
         if let Some(script) = rest
             .iter()
@@ -117,7 +126,18 @@ fn one(
             })
         {
             look(&script.text, places, depth + 1, found);
+        } else if reads_stdin(rest) {
+            for script in &simple.stdin {
+                look(script, places, depth + 1, found);
+            }
         }
+        return;
+    }
+    // `su -c '…'`（`--command`）：里面的另认（LM-37）。
+    if name == "su"
+        && let Some(script) = su_command(rest)
+    {
+        look(script, places, depth + 1, found);
         return;
     }
     if name == "eval" {
@@ -174,13 +194,27 @@ fn one(
         {
             found.push(Kind::Power);
         }
-        // 容器把宿主交出去（施工 5-17 三补）。
-        name => found.extend(super::container::container(name, rest)),
+        name => {
+            // `rsync --delete`：去处里来源没有的都删掉，照删去处里的全部判（LM-37）。去处说不清的不报。
+            if let Some(cleared) = super::moves::cleared(name, rest) {
+                found.extend(target(&here.0.expand(&cleared), places, here.2, false));
+            }
+            match super::moves::sources(name, rest) {
+                // 挪走、扔进回收站的只管自己的几处（LM-37，同 Miyu RO-4、RO-4补）：来源是整个一处或者装着它的拒，别的照不报。
+                Some(sources) => {
+                    for word in sources.iter().filter(|word| !here.1.covers(word)) {
+                        found.extend(moved_away(&here.0.expand(word), places, here.2));
+                    }
+                }
+                // 容器把宿主交出去（施工 5-17 三补）。
+                None => found.extend(super::container::container(name, rest)),
+            }
+        }
     }
 }
 
-/// 剥掉外壳：`sudo`、`doas`、`env`、`nice`、`nohup`、`timeout`、`time`、`stdbuf`、`command`、`exec`、`xargs`，连同它们的选项、
-/// `env` 的 `名字=值`、`timeout` 的时长。
+/// 剥掉外壳：`sudo`、`doas`、`env`、`nice`、`nohup`、`timeout`、`time`、`stdbuf`、`command`、`exec`、`xargs`，LM-37 加上
+/// `setsid`、`pkexec`、`run0`、`busybox`、`ionice`，连同它们的选项、`env` 的 `名字=值`、`timeout` 的时长。
 pub(super) fn unwrap(words: &[Word]) -> &[Word] {
     let words = after_keywords(words);
     let mut at = 0;
@@ -207,6 +241,11 @@ pub(super) fn unwrap(words: &[Word]) -> &[Word] {
                 | "command"
                 | "exec"
                 | "xargs"
+                | "setsid"
+                | "pkexec"
+                | "run0"
+                | "busybox"
+                | "ionice"
         ) {
             return &words[at..];
         }
@@ -217,11 +256,30 @@ pub(super) fn unwrap(words: &[Word]) -> &[Word] {
                 "-u" | "-g" | "-C" | "-D" | "-h" | "-p" | "-r" | "-t" | "-U"
             ),
             "doas" => matches!(flag, "-u" | "-C"),
-            "env" => matches!(flag, "-u" | "-C" | "-S"),
+            "env" => matches!(
+                flag,
+                "-u" | "-C" | "-S" | "--unset" | "--chdir" | "--split-string"
+            ),
             "nice" => matches!(flag, "-n"),
             "timeout" => matches!(flag, "-s" | "-k"),
             "stdbuf" => matches!(flag, "-i" | "-o" | "-e"),
             "xargs" => matches!(flag, "-I" | "-L" | "-n" | "-P" | "-s" | "-d" | "-E" | "-a"),
+            "pkexec" => matches!(flag, "--user"),
+            "run0" => matches!(
+                flag,
+                "-u" | "-g"
+                    | "-D"
+                    | "--user"
+                    | "--group"
+                    | "--chdir"
+                    | "--setenv"
+                    | "--unit"
+                    | "--property"
+                    | "--slice"
+                    | "--description"
+                    | "--nice"
+            ),
+            "ionice" => matches!(flag, "-c" | "-n"),
             _ => false,
         };
         while let Some(word) = words.get(at) {
@@ -253,6 +311,93 @@ pub(super) fn base(text: &str) -> &str {
 /// 短选项（`-` 打头、不是 `--`）里有 `letter`：`-c`、`-lc`、`-ec`。
 fn short_option(text: &str, letter: char) -> bool {
     text.starts_with('-') && !text.starts_with("--") && text.contains(letter)
+}
+
+/// shell 没写脚本文件，从标准输入读脚本（LM-37）：后面的词都是选项（`-s` 以后的是给脚本的参数，也算）。
+fn reads_stdin(rest: &[Word]) -> bool {
+    rest.iter()
+        .take_while(|word| word.text != "-s" && word.text != "--")
+        .all(|word| word.text.starts_with('-') || word.text.starts_with('+'))
+}
+
+/// 外壳里 `env` 的 `-S`、`--split-string` 的值（LM-37）：连写的（`-S'…'`、`--split-string=…`）也认。
+fn split_string(wrappers: &[Word]) -> Option<&str> {
+    let at = wrappers.iter().position(|word| base(&word.text) == "env")?;
+    let mut words = wrappers[at + 1..].iter();
+    while let Some(word) = words.next() {
+        let text = word.text.as_str();
+        if matches!(text, "-S" | "--split-string") {
+            return words.next().map(|word| word.text.as_str());
+        }
+        if let Some(value) = text.strip_prefix("--split-string=") {
+            return Some(value);
+        }
+        if !text.starts_with("--")
+            && let Some(value) = text.strip_prefix("-S")
+        {
+            return Some(value);
+        }
+        if !text.starts_with('-') {
+            return None;
+        }
+    }
+    None
+}
+
+/// `su` 的 `-c`、`--command` 的值（LM-37）：连写的 `--command=…` 也认。
+fn su_command(rest: &[Word]) -> Option<&str> {
+    let mut words = rest.iter();
+    while let Some(word) = words.next() {
+        let text = word.text.as_str();
+        if matches!(text, "-c" | "--command") {
+            return words.next().map(|word| word.text.as_str());
+        }
+        if let Some(value) = text.strip_prefix("--command=") {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// 一条管道里后面的 shell 从标准输入读的脚本（LM-37）：前面紧挨着的是 `echo`、`printf` 印的字（`\n` 照换行），或者不带文件
+/// 的 `cat` 读进来的 heredoc、here-string。别的程序印的说不清，不认。
+fn piped_scripts(pipeline: &[Simple]) -> Vec<String> {
+    let mut scripts = Vec::new();
+    let mut feeding: Vec<String> = Vec::new();
+    for simple in pipeline {
+        let words = unwrap(&simple.words);
+        let Some((first, rest)) = words.split_first() else {
+            feeding.clear();
+            continue;
+        };
+        let name = base(&first.text);
+        if is_shell(name) && reads_stdin(rest) {
+            scripts.append(&mut feeding);
+        }
+        let printed = |rest: &[Word]| {
+            rest.iter()
+                .map(|word| word.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace("\\n", "\n")
+        };
+        feeding = match name {
+            "echo" => vec![printed(
+                &rest[rest
+                    .iter()
+                    .take_while(|word| {
+                        word.text.len() > 1
+                            && word.text.starts_with('-')
+                            && word.text[1..].chars().all(|c| matches!(c, 'n' | 'e' | 'E'))
+                    })
+                    .count()..],
+            )],
+            "printf" => vec![printed(rest)],
+            "cat" if rest.iter().all(|word| word.text.starts_with('-')) => simple.stdin.clone(),
+            _ => Vec::new(),
+        };
+    }
+    scripts
 }
 
 fn is_shell(name: &str) -> bool {
@@ -301,13 +446,27 @@ fn finding(
 ) {
     let deletes = rest.iter().any(|word| word.text == "-delete")
         || rest.windows(2).any(|pair| {
-            matches!(pair[0].text.as_str(), "-exec" | "-execdir")
-                && matches!(base(&pair[1].text), "rm" | "shred")
+            matches!(
+                pair[0].text.as_str(),
+                "-exec" | "-execdir" | "-ok" | "-okdir"
+            ) && matches!(base(&pair[1].text), "rm" | "shred")
         });
     if !deletes {
         return;
     }
+    // 起点前面的 `-H`、`-L`、`-P`、`-D 调试项`、`-O级别`（LM-37）：原来见了 `-` 就当起点读完，`find -L ~ -delete` 一个起点都没有。
+    let mut at = 0;
+    while let Some(word) = rest.get(at) {
+        match word.text.as_str() {
+            "-H" | "-L" | "-P" => at += 1,
+            "-D" => at += 2,
+            text if text.starts_with("-O") => at += 1,
+            _ => break,
+        }
+    }
     for word in rest
+        .get(at..)
+        .unwrap_or_default()
         .iter()
         .take_while(|word| !word.text.starts_with(['-', '(', '!']))
     {

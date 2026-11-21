@@ -140,14 +140,14 @@ impl Settings {
     /// 说「无法连接（…）」，`probe.rs`），别的只说是哪一种。
     fn catalog_why(&self, why: &Unfetched) -> String {
         let (key, n) = match why {
-            Unfetched::Connect(cause) => ("connect", cause.clone()),
+            Unfetched::Connect(cause) => ("connect", self.why(cause)),
             Unfetched::Timeout => ("timeout", String::new()),
             Unfetched::Status(status) => ("status", status.to_string()),
             Unfetched::TooLarge => ("too_large", (LIMIT / (1024 * 1024)).to_string()),
             Unfetched::Cut => ("cut", String::new()),
             Unfetched::NotCatalog(_) => ("not_catalog", String::new()),
-            Unfetched::Write(cause) => ("write", cause.clone()),
-            Unfetched::Other(cause) => ("other", cause.clone()),
+            Unfetched::Write(cause) => ("write", self.why(cause)),
+            Unfetched::Other(cause) => ("other", self.why(cause)),
         };
         self.texts
             .models

@@ -20,8 +20,8 @@ The configuration file is not valid TOML. Typical causes when editing by hand ar
 
 While this problem exists:
 
-- The full-screen interface starts, but sending a message shows `The core refused: config.toml: not valid TOML at line 23, column 2`.
-- `litemiyu ask` prints `litemiyu: cannot read the config: config.toml: not valid TOML at line 23, column 2` and exits.
+- The full-screen interface starts, but sending a message shows `Couldn't do that: config.toml has a TOML syntax error at line 23, column 2`.
+- `litemiyu ask` prints `litemiyu: cannot read the config: config.toml has a TOML syntax error at line 23, column 2` and exits.
 - If you are in a hurry, use [rescue mode](rescue.md) for now; it does not depend on the configuration file.
 
 ### `These entries are invalid and were ignored: …`
@@ -48,9 +48,17 @@ The provider has a temporary problem and LiteMiyu is retrying on its own; you ne
 
 Too many requests, or not enough quota. LiteMiyu waits a while and retries on its own. If it keeps happening, check your quota and rate limits in the provider's console.
 
-### `litemiyu: error: temporary error: error sending request: … Connection refused`
+### `litemiyu: error: temporary error: Connection refused`
 
 The provider's address cannot be reached. Check your network and proxy; for a local model service, make sure it is running and the port is right.
+
+### `Couldn't resolve the host name. Check the network and the address`
+
+LiteMiyu cannot look up the domain in the provider's address. This usually means the network is down, DNS is unavailable, or the domain in the address is wrong. Check your network and proxy settings, then check the provider's address in `/config`.
+
+### `The TLS certificate couldn't be verified`
+
+The provider's server presented a certificate that cannot be verified. If you use a proxy or a company network that intercepts TLS, add its root certificate to the system certificate store; for a local model service, the address can use `http://` instead.
 
 ## Sessions
 
@@ -62,11 +70,11 @@ A session can be open in only one window at a time. Find the window that has it 
 
 `-s` needs the full session ID; a short ID such as the `#f991af35` shown in the sidebar and the session list does not work. You can see the full ID in `/status`, or copy it by clicking the short ID in the sidebar.
 
-### `Still replying: interrupt first, or wait for it to finish`
+### `A reply is running: interrupt it first, or wait for it to finish`
 
 Commands such as `/compact` cannot run while the AI is replying. Wait for the turn to end, or press `Esc` twice to interrupt and then run the command.
 
-### `Not enough context`
+### `Nothing to compact`
 
 The conversation is still short and does not need compacting.
 

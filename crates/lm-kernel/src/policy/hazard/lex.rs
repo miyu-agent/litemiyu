@@ -1,4 +1,4 @@
-//! 把一条命令拆成一个个简单命令（施工 5-17）：认得 `&&`、`||`、`;`、`|`、`|&`、`&`、换行、括号，单双引号、反斜杠，
+//! 把一条命令拆成一个个简单命令（施工 5-17）：认得 `&&`、`||`、`;`、`|`、`|&`、`&`、换行、括号，单双引号、`$'…'`、反斜杠，
 //! `$( )`、反引号、`<( )`、`>( )` 里面的另拆一遍，heredoc 的正文不拆（施工 AS-9，`heredoc.rs`）。不求和 shell 一模一样：只求
 //! 认得出边界、拿到每个词的原样。
 //!
@@ -29,11 +29,13 @@ pub(crate) struct Substitution {
     pub(crate) inner: String,
 }
 
-/// 一个简单命令：几个词，加上它往哪里写（`>`、`>>` 后面的那个）。
+/// 一个简单命令：几个词，加上它往哪里写（`>`、`>>` 后面的那个）、从标准输入读进什么。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Simple {
     pub(crate) words: Vec<Word>,
     pub(crate) writes: Vec<Word>,
+    /// 喂进它标准输入的字（LM-37）：here-string（`<<<`）的词、heredoc 的正文。`bash <<'EOF'` 这类 shell 把它当脚本跑。
+    pub(crate) stdin: Vec<String>,
 }
 
 /// 拆出来的：几条管道（一条管道是几个接在一起的简单命令），加上替换里面的那几段原文。
@@ -80,6 +82,8 @@ enum Redirect {
     Write,
     /// 从那里读（`<`、`<<`）：那个词不是参数，丢掉。
     Read,
+    /// here-string（`<<<`，LM-37）：那个词是喂进标准输入的字，记在 [`Simple::stdin`]。
+    Input,
 }
 
 impl Lexer {
@@ -112,7 +116,17 @@ impl Lexer {
                     }
                 }
                 '\'' => self.single(),
+                // `$'…'`（同 Miyu AU-007）：里面 `\'` 是一个撇号、不收尾，照普通单引号读会在这里失步，后面整段吞进字里。
+                '$' if self.peek(1) == Some('\'') => {
+                    self.at += 1;
+                    self.ansi_c();
+                }
                 '"' => self.double(),
+                // `$"…"`（照语言环境翻译的字，LM-37）：读法同双引号。原来 `$` 记成说不清，`rm -rf $"/"` 只问不拒。
+                '$' if self.peek(1) == Some('"') => {
+                    self.at += 1;
+                    self.double();
+                }
                 '`' => {
                     let inner = self.until_backtick();
                     self.substitution(inner, true);
@@ -143,7 +157,12 @@ impl Lexer {
                 '<' if self.peek(1) == Some('<') && self.peek(2) != Some('<') => {
                     self.descriptor();
                     self.at += 2;
-                    self.heredoc_start();
+                    self.heredoc_start(true);
+                }
+                '<' if self.peek(1) == Some('<') && self.peek(2) == Some('<') => {
+                    self.descriptor();
+                    self.at += 3;
+                    self.redirect = Some(Redirect::Input);
                 }
                 '<' => {
                     self.descriptor();
@@ -237,6 +256,35 @@ impl Lexer {
         }
     }
 
+    /// `$'…'`（同 Miyu AU-007）：反斜杠转义下一个字（`\'` 不收尾）。带转义的词说不清（`$'\x2f'` 到运行时才是 `/`），
+    /// 转义的地方同变量一样留一个 `$`，后面照字面留下转义后面那个字。
+    fn ansi_c(&mut self) {
+        self.at += 1;
+        self.word.get_or_insert_with(Word::default);
+        loop {
+            match self.peek(0) {
+                None => return,
+                Some('\'') => {
+                    self.at += 1;
+                    return;
+                }
+                Some('\\') => {
+                    self.at += 1;
+                    if let Some(next) = self.peek(0) {
+                        self.at += 1;
+                        // 同变量一样记一个 `$`：照字面换变量的那一步（`vars.rs`）认得出它说不清。
+                        self.mark('$');
+                        self.push(next);
+                    }
+                }
+                Some(c) => {
+                    self.at += 1;
+                    self.push(c);
+                }
+            }
+        }
+    }
+
     fn double(&mut self) {
         self.at += 1;
         self.word.get_or_insert_with(Word::default);
@@ -281,28 +329,44 @@ impl Lexer {
         let start = self.at;
         while let Some(c) = self.peek(0) {
             self.at += 1;
-            if c == '`' {
-                return self.chars[start..self.at - 1].iter().collect();
+            match c {
+                // `\`` 不收尾（同 Miyu AU-007）。
+                '\\' if self.peek(0).is_some() => self.at += 1,
+                '`' => return self.chars[start..self.at - 1].iter().collect(),
+                _ => {}
             }
         }
         self.chars[start..].iter().collect()
     }
 
-    /// `(` 已经吃掉了，到配上的 `)`：交回里面的原文。里面的引号照样认，免得引号里的括号算数；heredoc 的正文跳过，正文里的
-    /// 撇号不当引号（施工 AS-9）。
+    /// `(` 已经吃掉了，到配上的 `)`：交回里面的原文。里面的引号、反斜杠照样认，免得引号里的括号算数；heredoc 的正文跳过，
+    /// 正文里的撇号不当引号（施工 AS-9）。
     fn until_close(&mut self) -> String {
         let start = self.at;
         let mut depth = 1;
         let mut quote: Option<char> = None;
         while let Some(c) = self.peek(0) {
             self.at += 1;
+            // 反斜杠转义下一个字：不在引号里、双引号里、`$'…'` 里都是（同 Miyu AU-007：`"a\"b"` 的 `\"` 原来当成收尾，
+            // `)` 被吞，后面整段进了外层的字）。`$'…'` 记成 `$`。
             match (quote, c) {
+                (None | Some('"' | '$'), '\\') => {
+                    if self.peek(0).is_some() {
+                        self.at += 1;
+                    }
+                }
+                (Some('$'), '\'') => quote = None,
+                (Some('$'), _) => {}
                 (Some(q), c) if c == q => quote = None,
                 (Some(_), _) => {}
+                (None, '$') if self.peek(0) == Some('\'') => {
+                    self.at += 1;
+                    quote = Some('$');
+                }
                 (None, '\'' | '"') => quote = Some(c),
                 (None, '<') if self.peek(0) == Some('<') && self.peek(1) != Some('<') => {
                     self.at += 1;
-                    self.heredoc_start();
+                    self.heredoc_start(false);
                 }
                 (None, '\n') if !self.heredocs.is_empty() => self.heredoc_bodies(),
                 (None, '(') => depth += 1,
@@ -353,6 +417,7 @@ impl Lexer {
             match self.redirect.take() {
                 Some(Redirect::Write) => self.simple.writes.push(word),
                 Some(Redirect::Read) => {}
+                Some(Redirect::Input) => self.simple.stdin.push(word.text),
                 None => self.simple.words.push(word),
             }
         }
@@ -361,7 +426,7 @@ impl Lexer {
     fn end_simple(&mut self) {
         self.end_word();
         let simple = std::mem::take(&mut self.simple);
-        if !simple.words.is_empty() || !simple.writes.is_empty() {
+        if !simple.words.is_empty() || !simple.writes.is_empty() || !simple.stdin.is_empty() {
             self.pipeline.push(simple);
         }
     }

@@ -196,9 +196,9 @@ async fn created(
                         Arc::new(crate::mcp::Servers::read(&paths, switches, configs))
                     }))
                 });
-            let catalog = match &servers {
-                Some(servers) => {
-                    let catalog = servers.catalog(&shipped);
+            let catalog = match servers.as_ref().zip(switches.as_ref()) {
+                Some((servers, switches)) => {
+                    let catalog = servers.catalog(&shipped, switches);
                     parts.face.extend(
                         catalog
                             .specs()

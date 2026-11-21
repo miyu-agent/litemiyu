@@ -7,6 +7,7 @@
 //!
 //! - 固定间隔的：开的那一刻先交一次，之后每隔 `every` 秒交一次（Miyu 照上一次往后数整数个间隔、错过的跳过；这里定时器照交的那一刻
 //!   往后数，不会错过）。
+//! - 撤回还能恢复时到点（LM-34，`actor/looping.rs`）：三种都一样，这一次不交，搁着欠一次（[`Looping::held`]），撤回处理了补交。
 //! - 她自己定节奏的：开的那一刻先交一次，交过以后停着等，她调 `schedule_wakeup` 定下一次；不调就一直停着（同 Miyu「停着等」）。
 //! - 到点继续（LM-20，Miyu 没有）：没开着循环时她调 `schedule_wakeup` 并写了那句话，挂一个只交一次的（[`LoopRun::once`]）。
 //!   用的是同一个定时器、同一格 [`Looping`]（界面照循环的样子画下一次几点，`/loop off` 停得掉）；到点交过就没了，交进来的话
@@ -60,13 +61,21 @@ pub struct Looping {
     pub prompt: String,
     /// 下一次的时刻；她自己定节奏的交过以后、她还没定下一次的没有。
     pub next: Option<Timestamp>,
+    /// 搁着（LM-34）：到点时有一次撤回还能恢复（`/restore`），这一次没交、欠着；等撤回处理了（恢复了，或者人说了一句、
+    /// 那一轮结束了）补交一次。界面照它写「循环在等撤回处理」。
+    pub held: bool,
 }
 
 /// 人要对循环做的（[`crate::session::Handle::start_loop`]、`stop_loop`）。
 #[derive(Debug)]
 pub(crate) enum Order {
-    /// 开一个，换掉原来的：`every` 是固定间隔的秒数（界面照 [`crate::schedule::parse`] 收过下限），没有的是她自己定节奏。
-    Start { every: Option<u64>, prompt: String },
+    /// 开一个，换掉原来的：`every` 是固定间隔的秒数（界面照 [`crate::schedule::parse`] 收过下限），没有的是她自己定节奏；
+    /// `typed` 是人敲的那一整行（`/loop 10m …`），开的那一刻交的第一句带着它（LM-34）。
+    Start {
+        every: Option<u64>,
+        prompt: String,
+        typed: String,
+    },
     /// 停掉。
     Stop,
 }
@@ -96,6 +105,7 @@ impl LoopRun {
             pace,
             prompt,
             next: Some(at),
+            held: false,
         })
     }
 
@@ -108,6 +118,25 @@ impl LoopRun {
     /// 现在的那一个是到点继续。
     pub(crate) fn once(&self) -> bool {
         self.once && self.now.is_some()
+    }
+
+    /// 搁着、欠一次（LM-34）：到点时有一次撤回还能恢复。中间到点几次都只欠这一次。
+    pub(crate) fn hold(&mut self) {
+        if let Some(looping) = self.now.as_mut() {
+            looping.held = true;
+        }
+    }
+
+    /// 欠着一次。
+    pub(crate) fn held(&self) -> bool {
+        self.now.as_ref().is_some_and(|looping| looping.held)
+    }
+
+    /// 不再欠着：要补交了，或者她在那一轮里自己定了下一次（她定的盖过欠着的那一次）。
+    pub(crate) fn release(&mut self) {
+        if let Some(looping) = self.now.as_mut() {
+            looping.held = false;
+        }
     }
 
     /// 停掉：有的交回真。

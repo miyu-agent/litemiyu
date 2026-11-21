@@ -129,14 +129,7 @@ fn items(col: Col, models: &Models, texts: &ModelTexts) -> (String, Vec<Item>, S
             let rows = rows.map(|m| item(shown_name(m, org.as_ref()).to_string(), String::new()));
             // 用不了的一家说成人话、告诉怎么办：没地址的填地址。
             let empty = match nav.provider(view).filter(|p| p.models.is_empty()) {
-                Some(p) if p.problem.is_some() && p.base_url.is_none() => {
-                    texts.status("no_base_url")
-                }
-                Some(p) if p.problem.is_some() && p.driver.is_none() => texts.status("no_driver"),
-                Some(p) => p
-                    .problem
-                    .clone()
-                    .unwrap_or_else(|| texts.status("no_models")),
+                Some(p) => crate::settings::models::no_models(p, texts),
                 None => empty,
             };
             (title(2), rows.collect(), empty)

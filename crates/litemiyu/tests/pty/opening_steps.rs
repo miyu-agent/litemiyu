@@ -120,7 +120,7 @@ fn the_theme_step_previews_a_pick_and_writes_it_on_next() {
     }
     again.wait_for("已配置：fake/m1", "接模型那一步停在已配置");
     again.press_enter();
-    again.wait_for("整个界面铺配色方案的底色", "配色方案");
+    again.wait_for("整个界面使用配色方案的底色", "配色方案");
     let ground = |s: &Session| s.cell(1, 150).map(|(_, bg)| bg).expect("在屏幕里");
     let dark = ground(&again);
     let before = std::fs::read(paths.config_file()).expect("有配置");

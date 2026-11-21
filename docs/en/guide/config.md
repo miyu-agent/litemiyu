@@ -130,7 +130,7 @@ The default models are in the `[models]` table:
 | Key | Meaning |
 |---|---|
 | `chat` | The model new sessions use, written as `provider/model` |
-| `vision` | Reads images for the chat model when it cannot. May be left out |
+| `vision` | The multimodal model: it provides multimodal input when the chat model lacks it. May be left out |
 
 #### Model prices
 

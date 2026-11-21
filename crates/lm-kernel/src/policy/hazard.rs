@@ -8,6 +8,7 @@
 mod container;
 mod fresh;
 mod lex;
+mod moves;
 mod paths;
 mod prefix;
 mod rules;
@@ -25,7 +26,8 @@ pub enum Kind {
     DeleteHome,
     /// 删根下的系统目录（`/usr`、`/etc`、`/home` 这一层）。
     DeleteSystem,
-    /// 删 Miyu 的数据根，或者装着它的目录。
+    /// 删掉、挪走、扔进回收站 LiteMiyu 自己的一处（配置、数据、缓存、状态，[`Places::own`]）整个，或者装着它的目录；删它
+    /// 里面不让工具碰的（[`Places::open`] 以外的）也算（LM-37）。
     DeleteDataRoot,
     /// 删工作目录或者它的上级。
     DeleteWorkingDir,
@@ -123,11 +125,12 @@ pub struct Places<'a> {
     pub cwd: &'a str,
     /// 系统的家目录：`~`、`$HOME` 照它接。
     pub home: Option<&'a str>,
-    /// Miyu 的数据根。
-    pub data_root: &'a str,
-    /// 数据根里放各会话默认工作区的目录：它下面的不算删数据根（施工 5-14 起会话的默认工作区都在数据根里；施工 FH-2：调的一方
-    /// 照 `DataRoot::workspace` 给，这一层不认数据根的布局）。
-    pub workspaces: &'a str,
+    /// LiteMiyu 自己的几处（LM-37：配置、数据、缓存、状态四处，原来只有数据那一处）：删掉、挪走、扔进回收站其中一处整个，或者
+    /// 装着它的，是删数据根（[`Kind::DeleteDataRoot`]）。原样的和换成真实位置的都可以给。
+    pub own: &'a [&'a str],
+    /// 几处里面让工具碰的（`docs/00-设计.md` 第五节第 6 条：记忆的文件夹、人放技能的文件夹）：里面的删了不算删数据根（设计
+    /// 第 7 条，过时的记忆用 `shell` 删）。几处里面别的照旧算。
+    pub open: &'a [&'a str],
 }
 
 #[cfg(test)]

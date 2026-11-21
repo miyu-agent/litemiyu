@@ -10,6 +10,7 @@ mod anthropic_marks;
 mod anthropic_media;
 mod anthropic_streams;
 mod anthropic_thinking;
+mod bom_and_shared_index;
 mod memo;
 mod openai_chat;
 mod openai_chat_continuation;

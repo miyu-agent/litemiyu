@@ -48,7 +48,7 @@ fn audit_deleting_everything_after_cd_follows_the_cd() {
 #[test]
 fn audit_globs_over_the_protected_places_are_seen() {
     for (command, expected) in [
-        ("rm -rf ~/.miyu*", "delete_data_root"),
+        ("rm -rf ~/.local/share/litemi*", "delete_data_root"),
         ("rm -rf ~/?*", "delete_home"),
         ("rm -rf ~/{*,.*}", "delete_home"),
     ] {
@@ -109,5 +109,66 @@ fn audit_recursive_deletes_fed_by_xargs_are_not_safe() {
         "find ~ -maxdepth 1 -print0 | xargs -0 rm -rf",
     ] {
         assert!(kind(command).is_some(), "{command}");
+    }
+}
+
+/// 外部审计（2026-11-18，同 Miyu AU-007）：引号状态失步，后面的删除、关机整段被当成字。修以前几种都判成安全。
+#[test]
+fn audit_quotes_that_used_to_swallow_the_rest_of_the_line() {
+    for (command, expected) in [
+        // `$'…'` 里 `\'` 是一个撇号，不收尾：原来当普通单引号，在 `\'` 处收、在下一个 `'` 处又开，`; rm -rf /` 进了字里。
+        ("echo $'\\'' 'benign'; rm -rf /", "delete_root"),
+        // `$( )` 里双引号中的 `\"` 不收尾：原来当收尾，`)` 被吞，后面整段进了外层的字。
+        (
+            "echo \"$(printf \"%s\" \"a\\\"b\")\"; shutdown -h now",
+            "power",
+        ),
+        // 不在引号里的 `\)` 不是收尾的括号。
+        ("echo $(echo \\)); rm -rf ~", "delete_home"),
+        // 反引号里 `\`` 不收尾。
+        ("echo `echo \\`x`; rm -rf ~", "delete_home"),
+    ] {
+        assert_eq!(kind(command), Some(expected), "{command}");
+    }
+}
+
+/// `$'…'` 里的转义到运行时才知道是什么（`$'\x2f'` 就是 `/`）：带转义的词说不清，删它照说不清的判，不当成安全的字。
+#[test]
+fn audit_ansi_c_escapes_are_not_taken_as_plain_text() {
+    assert_ne!(kind("rm -rf $'\\x2f'"), None);
+    assert_eq!(kind("echo $'plain'"), None);
+}
+
+/// LM-37 顺着 AU-007 查出的几种读错（修以前都判成安全，或者只问不拒）：`$"…"` 当双引号；`~名字` 说不清；`find` 起点前面的
+/// `-L` 这类选项、`-ok rm`；`rsync --delete` 清空的去处；`setsid`、`pkexec`、`run0`、`busybox`、`ionice` 这几层外壳。
+#[test]
+fn audit_reads_that_lm37_fixed() {
+    for (command, expected) in [
+        ("rm -rf $\"/\"", Some("delete_root")),
+        ("rm -rf ~me", Some("delete_unresolved")),
+        ("rm ~me/notes.txt", None),
+        ("find -L ~ -delete", Some("delete_home")),
+        ("find -H -O2 / -exec rm {} +", Some("delete_root")),
+        ("find ~ -ok rm {} +", Some("delete_home")),
+        ("find -L build -delete", None),
+        ("rsync -a --delete empty/ ~/", Some("delete_home")),
+        ("rsync -a --delete-after empty/ /", Some("delete_root")),
+        (
+            "rsync -a --del empty/ ~/.config/litemiyu/",
+            Some("delete_data_root"),
+        ),
+        ("rsync -a --delete src/ ./", Some("delete_working_dir")),
+        ("rsync -a --delete src/ backup/", None),
+        ("rsync -a --delay-updates src/ ~/", None),
+        ("rsync -a --delete src/ host:/", None),
+        ("setsid rm -rf ~", Some("delete_home")),
+        ("pkexec --user root rm -rf /", Some("delete_root")),
+        ("run0 -u root rm -rf /usr", Some("delete_system")),
+        ("busybox rm -rf ~", Some("delete_home")),
+        ("nice -n 19 ionice -c3 rm -rf /", Some("delete_root")),
+        ("ionice -c 3 rm -rf ~", Some("delete_home")),
+        ("setsid -f sleep 1", None),
+    ] {
+        assert_eq!(kind(command), expected, "{command}");
     }
 }

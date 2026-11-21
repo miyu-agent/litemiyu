@@ -85,8 +85,9 @@ impl App {
                     }
                     Err(reason) => {
                         if self.boxes.sessions.is_some() {
+                            let reason = self.config.text().why(reason);
                             let texts = &self.config.text().sessions;
-                            let note = texts.list_failed.replace("{reason}", reason);
+                            let note = texts.list_failed.replace("{reason}", &reason);
                             self.hint(note, false);
                         }
                     }
@@ -96,8 +97,9 @@ impl App {
             Update::Deleted(done) => {
                 self.talk.recent.stale = true;
                 if let Err(reason) = done {
+                    let reason = self.config.text().why(reason);
                     let texts = &self.config.text().sessions;
-                    let note = texts.delete_failed.replace("{reason}", reason);
+                    let note = texts.delete_failed.replace("{reason}", &reason);
                     self.hint(note, false);
                 }
                 return true;
@@ -128,7 +130,9 @@ impl App {
                     // 不知道是在开哪个的（没在开）：不再试，照试满了说。
                     text.sessions.unavailable_gave_up.clone()
                 } else {
-                    text.sessions.open_failed.replace("{reason}", message)
+                    text.sessions
+                        .open_failed
+                        .replace("{reason}", &text.why(message))
                 };
                 self.opening_done();
                 self.hint(note, false);

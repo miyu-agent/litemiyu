@@ -155,7 +155,7 @@ fn plan(parsed: &Parsed, words: &Words) -> Result<drive::Plan, Early> {
             words,
             1,
             "failed",
-            &words.say("stdin_unreadable", &[("reason", &why)]),
+            &words.say("stdin_unreadable", &[("reason", &words.why(&why))]),
         ),
     })?;
     let mut message = message;
@@ -239,10 +239,11 @@ fn rescued(parsed: &Parsed, words: &Words) -> Result<crate::rescue::Prepared, Ea
 fn ready(words: &Words, model: Option<&str>) -> Result<Option<String>, Early> {
     use lm_engine::store::paths::{Env, Paths};
     let paths = Paths::locate(&Env::current())
-        .map_err(|error| early(words, 1, "failed", &error.to_string()))?;
+        .map_err(|error| early(words, 1, "failed", &words.why(&error.to_string())))?;
     let loaded =
         lm_engine::configured::load(&paths, |name| std::env::var(name).ok()).map_err(|error| {
-            let message = words.say("config_unreadable", &[("reason", &error.to_string())]);
+            let reason = words.why(&error.to_string());
+            let message = words.say("config_unreadable", &[("reason", &reason)]);
             early(words, 1, "failed", &message)
         })?;
     let values = loaded.resolved.values();

@@ -54,7 +54,7 @@ fn a_too_long_title_is_not_sent_and_a_bare_rename_asks_for_a_new_one() {
     // 只打 `/rename`：让模型照最近的对话重起一个。
     session.type_text("/rename");
     session.press_enter();
-    session.wait_for("正在重新起标题…", "收下了");
+    session.wait_for("正在重新生成标题…", "收下了");
     // 等列表真开了、那一行写着重起的标题：侧边栏「最近会话」也写着它，只等字会在列表还在读的时候就往下走，`Esc` 落空、列表
     // 随后才开，接着打的 `/rename` 成了列表里的搜索（第十六趟偶发等不到「更改标题失败」就是这个）。列表那一行标题后面跟 `  #编号`。
     session.type_text("/sessions");

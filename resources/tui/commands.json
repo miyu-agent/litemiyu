@@ -14,7 +14,7 @@
     {
       "name": "restore",
       "summary": {
-        "zh": "恢复刚才撤销的那一轮",
+        "zh": "恢复刚才撤销的一轮",
         "en": "Bring back the turn you just undid"
       },
       "run": "unrevert"
@@ -22,15 +22,15 @@
     {
       "name": "redo",
       "summary": {
-        "zh": "这一轮原样重来一遍",
-        "en": "Run this turn again as it was"
+        "zh": "重新运行这一轮",
+        "en": "Run this turn again"
       },
       "run": "redo"
     },
     {
       "name": "edit",
       "summary": {
-        "zh": "编辑上一句，改完回车重来",
+        "zh": "编辑上一条消息并重新发送",
         "en": "Edit your last message and send it again"
       },
       "run": "edit"
@@ -38,8 +38,8 @@
     {
       "name": "stop",
       "summary": {
-        "zh": "停止此会话所有处理中的东西",
-        "en": "Stop everything running in the session"
+        "zh": "停止这个会话中所有正在运行的任务",
+        "en": "Stop everything running in this session"
       },
       "run": "stop"
     },
@@ -57,7 +57,7 @@
     {
       "name": "compact",
       "summary": {
-        "zh": "现在就压缩上下文，后面可以写给摘要的要求",
+        "zh": "立即压缩上下文，后面可以写摘要的要求",
         "en": "Compact the context now; anything after it guides the summary"
       },
       "run": "compact",
@@ -66,7 +66,7 @@
     {
       "name": "rename",
       "summary": {
-        "zh": "给会话改名；只打 /rename 让 AI 重新起一个，/rename - 去掉标题",
+        "zh": "重命名会话；只输入 /rename 时由 AI 重新生成标题，/rename - 清除标题",
         "en": "Rename the session; /rename alone asks the AI for a new title, /rename - removes it"
       },
       "run": "rename",
@@ -115,7 +115,7 @@
         "resume"
       ],
       "summary": {
-        "zh": "列出会话，切过去",
+        "zh": "列出会话并切换",
         "en": "List sessions and switch to one"
       },
       "run": "sessions"
@@ -123,15 +123,15 @@
     {
       "name": "jump",
       "summary": {
-        "zh": "列出这个会话里说过的话，跳过去",
-        "en": "List what you said in this session and jump to it"
+        "zh": "列出你在这个会话里发过的消息并跳转",
+        "en": "List your messages in this session and jump to one"
       },
       "run": "jump"
     },
     {
       "name": "files",
       "summary": {
-        "zh": "看这个会话改过的文件和差异",
+        "zh": "查看这个会话修改过的文件和差异",
         "en": "See the files this session changed and their diffs"
       },
       "run": "files"
@@ -139,7 +139,7 @@
     {
       "name": "model",
       "summary": {
-        "zh": "换这个会话的模型",
+        "zh": "更换这个会话的模型",
         "en": "Change this session's model"
       },
       "run": "model"
@@ -147,8 +147,8 @@
     {
       "name": "effort",
       "summary": {
-        "zh": "换正在用的模型的思考程度",
-        "en": "Change the thinking effort of the model in use"
+        "zh": "更改当前模型的思考程度",
+        "en": "Change the current model's thinking effort"
       },
       "run": "effort"
     },
@@ -166,8 +166,8 @@
     {
       "name": "status",
       "summary": {
-        "zh": "这个会话的状态：模型、上下文、用量",
-        "en": "This session's status: model, context, usage"
+        "zh": "查看这个会话的状态：模型、上下文、用量",
+        "en": "Show this session's status: model, context, usage"
       },
       "run": "status"
     },
@@ -182,7 +182,7 @@
     {
       "name": "help",
       "summary": {
-        "zh": "看看按键和命令",
+        "zh": "查看按键和命令",
         "en": "See keys and commands"
       },
       "run": "help"

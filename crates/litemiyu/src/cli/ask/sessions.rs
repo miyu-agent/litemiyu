@@ -37,7 +37,7 @@ pub fn list() -> Result<Vec<Listed>, String> {
 pub fn pick(words: &Words, id: Option<&str>) -> Result<String, NotFound> {
     let failed = |why: String| NotFound {
         reason: "failed",
-        message: words.say("list_failed", &[("reason", &why)]),
+        message: words.say("list_failed", &[("reason", &words.why(&why))]),
     };
     let paths = Paths::locate(&Env::current()).map_err(|error| failed(error.to_string()))?;
     let listed = lm_engine::session::list_sessions(&paths).map_err(|e| failed(e.to_string()))?;

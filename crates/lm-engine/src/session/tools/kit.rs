@@ -47,13 +47,6 @@ impl super::Tools {
         self.home.as_deref()
     }
 
-    /// 目录里有读文本文件的那一件（职能 `ReadFile`，同技能列表的门槛）：没有的读不了记忆，不交目录（L6）。
-    pub(crate) fn reads_files(&self) -> bool {
-        self.catalog
-            .specs()
-            .any(|spec| spec.role == Some(lm_kernel::kernel::tool::Role::ReadFile))
-    }
-
     /// 数据那一处：文件记忆的文件夹在它下面（L6，`crate::store::paths::Paths::memory`）。
     pub(crate) fn data_root(&self) -> &std::path::Path {
         &self.data_root

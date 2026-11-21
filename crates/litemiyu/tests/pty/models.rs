@@ -63,7 +63,7 @@ fn the_models_page_walks_like_miyu_and_changes_nothing() {
     session.press(ESC);
     session.wait_until("编辑窗关上", |s| !s.screen().contains("小写字母开头"));
     session.type_text(".");
-    session.wait_for("默认视觉模型", "默认模型分页");
+    session.wait_for("默认多模态模型", "默认模型分页");
     session.wait_for("当前  relay/cline/v4", "右边写现在用的");
     session.shot("settings-models-defaults");
     session.press_enter();

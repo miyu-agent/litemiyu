@@ -189,7 +189,7 @@ fn vim_keys_in_history_jump_and_the_command_list() {
     open(
         &session,
         "/jump",
-        "/ 搜索 · j/k 选择 · Enter 跳过去 · Esc 关闭",
+        "/ 搜索 · j/k 选择 · Enter 跳转 · Esc 关闭",
     );
     session.wait_until("列两句", |s| s.screen().contains("2 条"));
     session.type_text("/");
@@ -201,7 +201,7 @@ fn vim_keys_in_history_jump_and_the_command_list() {
         s.screen().contains("2 条")
     });
     session.press(ESC);
-    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳到"));
+    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳转"));
     // 命令列表：打的 j 是字（跟着输入框筛），Ctrl+J 往下挪：Tab 填进来的是第二个。
     session.type_text("/c");
     session.wait_for("─ 命令", "命令列表");
@@ -250,9 +250,9 @@ fn arrow_keys_type_to_search_right_away() {
     session.wait_until("打字就搜", |s| s.screen().contains("1 条"));
     session.press(ESC);
     session.wait_until("Esc 关", |s| !s.screen().contains("─ 历史"));
-    open(&session, "/jump", "↑/↓ 选择 · Enter 跳过去 · Esc 关闭");
+    open(&session, "/jump", "↑/↓ 选择 · Enter 跳转 · Esc 关闭");
     session.press(ESC);
-    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳到"));
+    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳转"));
     open(&session, "/effort", "↑/↓ 选择 · Enter 切换 · Esc 关闭");
     session.press(ESC);
     session.wait_until("Esc 关", |s| !s.screen().contains("─ 思考程度"));
@@ -290,9 +290,9 @@ fn switching_to_vim_in_settings_reaches_the_lists_at_once() {
     let session = Session::launch(Some(&config), &[], &[]);
     session.wait_for("❯", "输入框");
     say(&session, "说过的一句", "回答");
-    open(&session, "/jump", "↑/↓ 选择 · Enter 跳过去 · Esc 关闭");
+    open(&session, "/jump", "↑/↓ 选择 · Enter 跳转 · Esc 关闭");
     session.press(ESC);
-    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳到"));
+    session.wait_until("Esc 关", |s| !s.screen().contains("─ 跳转"));
     switch_to_vim(&session);
     let written = std::fs::read_to_string(
         lm_engine::store::paths::Paths::under(session.data()).config_file(),

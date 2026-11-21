@@ -10,7 +10,7 @@
 //! 碰磁盘的都在阻塞线程里调。
 
 mod links;
-mod listing;
+pub(crate) mod listing;
 pub mod shipped;
 pub mod switches;
 pub(crate) mod watch;

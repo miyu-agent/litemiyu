@@ -46,12 +46,10 @@ impl Engine {
     pub(super) async fn delete(&self, id: String) {
         let done = tokio::task::spawn_blocking(move || {
             let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
-            match lm_engine::session::remove_session(&paths, &id) {
-                Ok(_) => Ok(()),
-                Err(lm_engine::session::NotRemoved::Missing) => Err("missing".to_string()),
-                Err(lm_engine::session::NotRemoved::Open) => Err("open elsewhere".to_string()),
-                Err(lm_engine::session::NotRemoved::Failed(why)) => Err(why),
-            }
+            // 原因照引擎的原话（`no such session`、`the session is open in another window`），界面照 `why` 换成句子（LM-39）。
+            lm_engine::session::remove_session(&paths, &id)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
         })
         .await
         .unwrap_or_else(|error| Err(error.to_string()));

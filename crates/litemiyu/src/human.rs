@@ -73,13 +73,18 @@ pub struct Human {
     tools: BTreeMap<String, Face>,
     /// 说法的模板原文。
     said: Phrases,
+    /// 字段里引擎、系统的原话（`error`、`why`，路径说不清的 `reason`）换成句子用的一份（LM-39，`why.rs`）；没有的照原话。
+    why: Option<&'static why::Table>,
 }
 
 impl Human {
     /// 读 `language` 那一种的表；没有这种语言的照英文。
     pub fn load(language: &str) -> Human {
         let (tools, said) = tables(language);
-        Human::from_reply(&serde_json::json!({"tools": tools, "said": said}))
+        Human {
+            why: Some(why::table(language)),
+            ..Human::from_reply(&serde_json::json!({"tools": tools, "said": said}))
+        }
     }
 
     /// 照 `{"tools": …, "said": …}` 造：读不懂的那一件、那一句不要。
@@ -94,6 +99,7 @@ impl Human {
         Human {
             tools,
             said: Phrases::from_said(&reply["said"]),
+            why: None,
         }
     }
 
@@ -129,9 +135,26 @@ impl Human {
     pub fn say(&self, said: &Said) -> Option<String> {
         let template = Template::parse(self.said.get(&said.key)?).ok()?;
         // 一格格放进去，不 `collect`（同 `from_reply`）。
+        // 引擎、系统的原话（读不了的为什么、执行不了的为什么）换成句子（LM-39）：中文界面不露英文原话。
+        let said_why: Vec<(&str, String)> = match self.why {
+            Some(table) => said
+                .fields
+                .iter()
+                .filter(|(field, _)| {
+                    matches!(field.as_str(), "error" | "why")
+                        || (field.as_str() == "reason"
+                            && said.key.ends_with("permissions/unresolvable"))
+                })
+                .map(|(field, value)| (field.as_str(), table.say(value)))
+                .collect(),
+            None => Vec::new(),
+        };
         let mut fields: BTreeMap<&str, &str> = BTreeMap::new();
         for (field, value) in &said.fields {
             fields.insert(field.as_str(), value.as_str());
+        }
+        for (field, value) in &said_why {
+            fields.insert(field, value.as_str());
         }
         template.fill(&fields, clean).ok()
     }
@@ -186,3 +209,4 @@ fn clean(value: &str) -> String {
 mod phrases;
 #[cfg(test)]
 mod tests;
+pub mod why;

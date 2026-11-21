@@ -52,6 +52,28 @@ impl Stage {
         )
     }
 
+    /// 人敲 `typed` 开了循环 `schedule`，开的那一刻交进来的第一句 `words`（LM-34）：`by` 是定时任务（固定间隔的循环），
+    /// 带着人敲的那一行。返回这个命令的编号。
+    pub fn loop_typed(&mut self, schedule: &str, typed: &str, words: &str) -> CommandId {
+        let by = By::Schedule(Schedule {
+            schedule: schedule.to_string(),
+            looping: Some(crate::kernel::origin::ScheduleLoop::Fixed),
+        });
+        let blocks = vec![Block::Text(Text {
+            text: words.to_string(),
+        })];
+        let command = crate::kernel::event::TypedCommand {
+            name: "loop".to_string(),
+            text: typed.to_string(),
+        };
+        self.command_as(by, Command::Typed { blocks, command })
+    }
+
+    /// 内核这时有一次撤销还能恢复（[`crate::kernel::session::Session::undo_pending`]）。
+    pub fn undo_pending(&self) -> bool {
+        self.session.undo_pending()
+    }
+
     /// 会话 `session` 交来「空了」，带着 `status` 那一行（施工 C-6）。返回这个命令的编号。
     ///
     /// # Panics

@@ -371,7 +371,7 @@ fn with_unreadable_secrets_the_other_provider_is_listed_without_a_key_and_not_pi
             .any(|l| l.contains("b1") && l.contains("two"))
     });
     session.press_enter();
-    session.wait_for("该模型未设置密钥", "不换，说为什么");
+    session.wait_for("这个模型未设置密钥", "不换，说为什么");
     // 两下 `Esc`：先去掉留着的筛，再关窗（连着发会被终端认成一个键）。
     session.press(b"\x1b");
     session.wait_until("筛的去掉了", |s| s.screen().contains("3 个"));
@@ -428,7 +428,7 @@ fn effort_switches_for_this_run_and_writes_nothing() {
     session.wait_until("窗关了", |s| !s.screen().contains("─ 模型"));
     session.type_text("/effort");
     session.press_enter();
-    session.wait_for("该模型没有可选的思考程度", "没有档位的照实说");
+    session.wait_for("这个模型没有可选的思考程度", "没有档位的照实说");
     session.press(b"\x1b");
     // 等窗真关了再按下一个键：`Esc` 和紧跟着的 `Ctrl+D` 要是被程序一次读到，会被认成一个带 `Esc` 前缀的键，窗不关、也不退出。
     session.wait_until("窗关了", |s| !s.screen().contains("─ 思考程度"));

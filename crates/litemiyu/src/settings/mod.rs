@@ -25,7 +25,6 @@ pub mod writer;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use lm_engine::providers::miyu;
-use lm_engine::settings::catalog::Catalog;
 use lm_engine::settings::schema::{Schema, schema};
 use lm_engine::settings::{Edit, Settings as Service, Snapshot};
 use lm_engine::store::paths::{Env, Paths};
@@ -150,9 +149,6 @@ pub struct Settings {
     /// 正在预览的几项和那一档（`preview.rs`）：「明暗」的挑选窗开着时光标停的那一档、开头配色方案那一步选好还没存的，界面照它换
     /// 样子；都没有的是空的。
     pub looked: Vec<(String, Value)>,
-    /// 别的页状态行没话时写的那一句（Miyu 照「供应商和模型」那一页的选中算：「已获取 N 个模型」这类）：离开那一页时记下，
-    /// 还没进过的进别的页时算一次（[`Settings::note_models`]）。
-    pub models_note: Option<String>,
     /// 开头里换过界面语言：写进 `ui.language` 的值（回对话时对话界面照它换字，`app/settings.rs`）。
     pub switched: Option<String>,
     /// 一页里从第几行露起：哪一页、第几行（Miyu `page_top`，画的时候照上一帧接着算）。
@@ -233,7 +229,6 @@ impl Settings {
             opening: None,
             saved: false,
             looked: Vec::new(),
-            models_note: None,
             switched: None,
             page_top: std::cell::Cell::new((usize::MAX, 0)),
             hits: Hits::default(),
@@ -256,7 +251,10 @@ impl Settings {
         match written {
             Ok(()) => self.editing = Some(self.prompt.clone()),
             Err(error) => {
-                let why = self.texts.failed.replace("{why}", &error.to_string());
+                let why = self
+                    .texts
+                    .failed
+                    .replace("{why}", &self.why(&error.to_string()));
                 self.status = Some((why, Tone::Bad));
             }
         }
@@ -481,7 +479,6 @@ impl Settings {
                     self.status = None;
                     return Outcome::Stay;
                 }
-                self.note_models();
                 if let Some(extra) = self.extra(at) {
                     match extra {
                         Extra::Presets => self.enter_presets(),
@@ -742,6 +739,11 @@ impl Settings {
         }
     }
 
+    /// 引擎、系统的原话（存不成、读不了的为什么）换成句子（LM-39，`human/why.rs`）；认不出的照原话。
+    pub(crate) fn why(&self, raw: &str) -> String {
+        crate::human::why::table(&self.language).say(raw)
+    }
+
     /// 改几项（毛病二，配置 四）：先在内存里算出改完的样子换上（界面当场照它画，下一项照它接着改），写盘排给写线程（先排的先写），
     /// 写完照读回的换上（[`Settings::poll_writes`]）。`secret` 是这一下要新存的 key：编号（密钥的名字照它起）、预计存成的名字、
     /// 明文；写线程先存它，存成的名字和预计的不一样（这一瞬间别人改了密钥文件）时配置里照存成的写。不收的交回原因（原话）。
@@ -755,7 +757,7 @@ impl Settings {
         let preview = self
             .service
             .preview(&self.snapshot, &edits, &names)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| self.why(&error.to_string()))?;
         if !self.writer.busy() {
             self.confirmed = self.snapshot.clone();
         }
@@ -808,7 +810,7 @@ impl Settings {
             any = true;
             let idle = !self.writer.busy();
             if let Err(why) = &done.result {
-                let said = fill(&self.texts.failed, &[("why", why)]);
+                let said = fill(&self.texts.failed, &[("why", &self.why(why))]);
                 self.status = Some((said.clone(), Tone::Bad));
                 self.write_failed = Some(said);
             }
@@ -893,17 +895,6 @@ impl Settings {
             View::Page { page, .. } => page,
             View::Menu(at) => at,
         }
-    }
-
-    /// 进别的页时还没记过「供应商和模型」那一句的，照刚打开那一页的样子（停在供应商分页的第一家）算一次：读一次目录，算完
-    /// 就放掉（同 Miyu：它进配置页就读 `model.list`）。读不了目录的照配置里写了的算，不说原因（原因进「供应商和模型」时说）。
-    fn note_models(&mut self) {
-        if self.models_note.is_some() {
-            return;
-        }
-        let catalog = Catalog::load(self.service.paths()).ok();
-        let models = models::Models::open(&self.snapshot, catalog, self.lists.clone());
-        self.models_note = Some(models.quiet(&self.texts.models));
     }
 
     /// 正在打字：编辑窗开着，或者「供应商和模型」的编辑窗里正在改一格（Miyu `settings/input.rs` 的 `writing`）。

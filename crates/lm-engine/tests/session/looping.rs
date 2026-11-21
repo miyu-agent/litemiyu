@@ -18,12 +18,18 @@ use lm_kernel::kernel::origin::{By, ScheduleLoop};
 
 use crate::support::*;
 
+mod held;
 mod once;
 
 /// 有真的 `schedule_wakeup` 的目录。
 fn catalog() -> Catalog {
     let tools: Vec<Arc<dyn Tool>> = lm_engine::schedule::tools().expect("读得出");
     Catalog::new(tools).expect("合写法")
+}
+
+/// 人敲的那一整行：`/loop` 和后面的字（LM-34：开的那一刻交的第一句带着它）。
+fn typed(words: &str) -> String {
+    format!("/loop {words}")
 }
 
 /// 照 `plays` 回。
@@ -116,9 +122,12 @@ async fn a_self_paced_loop_wakes_when_she_says_and_stops_when_she_does_not() {
     let handle = home.create_with(&models, &catalog()).await;
     assert!(handle.loops(), "工具面上有 schedule_wakeup 的认 /loop");
     let mut subscription = watch(&handle).await;
-    let replaced = within("开循环", handle.start_loop(None, "盯 CI".to_string()))
-        .await
-        .expect("会话在跑");
+    let replaced = within(
+        "开循环",
+        handle.start_loop(None, "盯 CI".to_string(), typed("盯 CI")),
+    )
+    .await
+    .expect("会话在跑");
     assert!(!replaced, "原来没有循环");
     let first = results(&turn(&mut subscription).await);
     assert!(
@@ -162,9 +171,12 @@ async fn a_fixed_loop_fires_every_interval_until_stopped() {
     ]);
     let handle = home.create_with(&models, &catalog()).await;
     let mut subscription = watch(&handle).await;
-    within("开循环", handle.start_loop(Some(60), "ping".to_string()))
-        .await
-        .expect("会话在跑");
+    within(
+        "开循环",
+        handle.start_loop(Some(60), "ping".to_string(), typed("1m ping")),
+    )
+    .await
+    .expect("会话在跑");
     turn(&mut subscription).await;
     assert_eq!(
         handle.looping().map(|looping| looping.pace),
@@ -211,9 +223,12 @@ async fn a_fixed_loop_keeps_firing_while_the_clock_stands_still() {
         .await;
     let handle = home.load_with(&session, &models, &catalog()).await;
     let mut subscription = watch(&handle).await;
-    within("开循环", handle.start_loop(Some(60), "ping".to_string()))
-        .await
-        .expect("会话在跑");
+    within(
+        "开循环",
+        handle.start_loop(Some(60), "ping".to_string(), typed("1m ping")),
+    )
+    .await
+    .expect("会话在跑");
     turn(&mut subscription).await;
     skip(61).await;
     turn(&mut subscription).await;
@@ -241,7 +256,7 @@ async fn reopening_tells_each_time_while_the_clock_stands_still() {
         let mut subscription = watch(&handle).await;
         within(
             "开循环",
-            handle.start_loop(Some(300), format!("第 {round} 次")),
+            handle.start_loop(Some(300), format!("第 {round} 次"), typed("5m 第几次")),
         )
         .await
         .expect("会话在跑");
@@ -259,7 +274,7 @@ async fn left_running(home: &Home, models: &Script) -> SessionId {
     let mut subscription = watch(&handle).await;
     within(
         "开循环",
-        handle.start_loop(Some(300), "看看邮件".to_string()),
+        handle.start_loop(Some(300), "看看邮件".to_string(), typed("5m 看看邮件")),
     )
     .await
     .expect("会话在跑");

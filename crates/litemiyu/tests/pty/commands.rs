@@ -10,7 +10,7 @@ fn a_bang_runs_the_command_and_shows_its_output_under_it() {
     let session = Session::start(&server.base_url, &[]);
     session.wait_for("❯", "输入框");
     session.type_text("!");
-    session.wait_for("输入要跑的命令", "跑命令的模式");
+    session.wait_for("输入要运行的命令", "跑命令的模式");
     session.type_text("echo purple-cat");
     session.press_enter();
     let screen = session.wait_for("退出码 0", "跑完了那一行");

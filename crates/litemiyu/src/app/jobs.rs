@@ -72,7 +72,13 @@ impl App {
             Update::StopRefused { reason, .. } => {
                 let text = match reason.as_str() {
                     "job_ended" | "unknown_job" => self.config.text().jobs.already_ended.clone(),
-                    other => self.config.text().refused.replace("{reason}", other),
+                    other => {
+                        let texts = self.config.text();
+                        match texts.refusal_hints.get(other) {
+                            Some(hint) => hint.clone(),
+                            None => texts.refused.replace("{reason}", &texts.why(other)),
+                        }
+                    }
                 };
                 self.hint(text, false);
             }

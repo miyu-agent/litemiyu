@@ -149,7 +149,7 @@ fn settings_tour(variant: &Variant) {
     session.press(ESC);
     session.wait_until("目录窗关上", |s| !s.screen().contains("自定义…"));
     session.type_text(".");
-    session.wait_for("默认文本模型", "默认模型分页");
+    session.wait_for("默认对话模型", "默认模型分页");
     look(&session, variant, "models-defaults");
     session.press_enter();
     session.wait_for("relay/zhipu/glm", "选默认模型的窗");
@@ -234,7 +234,7 @@ fn opening_tour(variant: &Variant) {
     // 光标回到密钥：往下是模型名、测试连接、仍然保存。
     session.type_text("jjj");
     session.press_enter();
-    session.wait_for("整个界面铺配色方案的底色", "配色方案");
+    session.wait_for("整个界面使用配色方案的底色", "配色方案");
     look(&session, variant, "opening-theme");
     session.press_enter();
     session.wait_for("Enter 确定", "明暗的选择窗");

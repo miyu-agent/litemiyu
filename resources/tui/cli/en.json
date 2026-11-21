@@ -94,7 +94,7 @@
     "stdin_not_utf8": "standard input is not UTF-8 text",
     "stdin_unreadable": "cannot read standard input: {reason}",
     "step.cancelled": "interrupted",
-    "step.denied": "not done",
+    "step.denied": "not run",
     "step.failed": "failed",
     "step.skipped": "skipped",
     "taken": "session {id} is open in another window",

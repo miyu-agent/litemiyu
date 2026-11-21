@@ -207,7 +207,7 @@ fn tour(variant: &Variant) {
         &session,
         variant,
         ("effort", "/effort"),
-        ("─ 思考程度", "high", Some("● 跟随设置")),
+        ("─ 思考程度", "high", Some("● 继承默认设置")),
     );
     // 等确认：抽屉写倒计时。
     session.type_text("推一下");

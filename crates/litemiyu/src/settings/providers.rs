@@ -33,7 +33,7 @@ impl Settings {
                     .texts
                     .models
                     .status("catalog_failed")
-                    .replace("{why}", &why);
+                    .replace("{why}", &self.why(&why));
                 self.status = Some((said, Tone::Bad));
                 None
             }

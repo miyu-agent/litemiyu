@@ -21,7 +21,8 @@ pub fn home_short(value: &str) -> String {
 pub fn path(url: &str, home: Option<&Path>, cwd: &Path) -> PathBuf {
     let url = url.strip_prefix("file://").unwrap_or(url);
     if let (Some(rest), Some(home)) = (url.strip_prefix("~/"), home) {
-        return home.join(rest);
+        // `~//a` 照 shell 是家目录下的 `a`：剩下的斜杠都去掉，不然接上去是绝对路径，家目录丢了（同 Miyu AU-009）。
+        return home.join(rest.trim_start_matches('/'));
     }
     let path = Path::new(url);
     if path.is_absolute() {
@@ -82,6 +83,11 @@ mod tests {
             PathBuf::from("/tmp/b.png")
         );
         assert_eq!(path("/x/c.png", Some(home), cwd), PathBuf::from("/x/c.png"));
+        // `~//` 照 shell 还是家目录（LM-37，同 Miyu AU-009）：原来剩下的 `/x/e.png` 接上去成了绝对路径。
+        assert_eq!(
+            path("~//x/e.png", Some(home), cwd),
+            PathBuf::from("/home/me/x/e.png")
+        );
         assert_eq!(
             path("img/d.png", Some(home), cwd),
             PathBuf::from("/work/img/d.png")

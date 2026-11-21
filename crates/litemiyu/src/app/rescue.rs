@@ -30,7 +30,11 @@ impl App {
     pub fn enter_rescue(&mut self, words: RescueWords, unreadable: Option<&str>, keyless: bool) {
         let mut notes = Vec::new();
         if let Some(why) = unreadable {
-            notes.push(words.config_unreadable.replace("{why}", why));
+            notes.push(
+                words
+                    .config_unreadable
+                    .replace("{why}", &self.config.text().why(why)),
+            );
         }
         if keyless {
             notes.push(words.no_key.replace("{name}", crate::rescue::API_KEY));

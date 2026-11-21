@@ -55,7 +55,7 @@ pub use log::{Log, ReadLog};
 pub use messages::{Delivered, MessagePort, NotSent, Recipient, SEND_MESSAGE, Sending};
 pub use person::{Halt, PersonCommand, PersonEnd, PersonRun, PersonRunning};
 pub use questions::{ASK_USER, Answering, QuestionPort};
-pub use run::{Call, Done, Effect, Hazard, Picture, Progress, Running, Seen, Target};
+pub use run::{Call, Done, Effect, Hazard, Own, Picture, Progress, Running, Seen, Target};
 pub use schedules::{
     SCHEDULE_WAKEUP, ScheduleAnswer, ScheduleAnswering, ScheduleAsk, SchedulePort, ScheduleRefused,
     WAKEUP_MIN,

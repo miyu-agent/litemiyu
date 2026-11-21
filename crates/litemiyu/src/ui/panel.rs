@@ -8,7 +8,7 @@ use crate::ui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -122,7 +122,8 @@ pub fn draw(frame: &mut Frame, outer: Rect, text: Rect, chrome: Chrome, lines: V
     if lines.is_empty() || outer.height == 0 {
         return;
     }
-    frame.render_widget(Clear, outer);
+    // 浮在正文上：同一处占住（压在框边上的宽字截掉，`theme::claim`）。
+    theme::claim(frame.buffer_mut(), outer);
     if outer.height >= FRAMED {
         frame.render_widget(block(chrome), outer);
     }
