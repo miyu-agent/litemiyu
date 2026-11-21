@@ -17,8 +17,8 @@ use crate::ui::frame::Frame;
 /// 窗多宽、最高占几成（Miyu `layout.json` 的 `popup_wide`、`popup_width`、`popup_height_percent`）：问一句的窗 66，选择窗、
 /// 编辑窗、勾选窗 78（Miyu `ui/settings/popup.rs` 的 `wide`）。
 const WIDTH: u16 = 66;
-const WIDE: u16 = 78;
-const HEIGHT_PERCENT: u16 = 86;
+pub(super) const WIDE: u16 = 78;
+pub(super) const HEIGHT_PERCENT: u16 = 86;
 
 /// 整屏调暗，在正中画 `popup`；编辑窗交回光标的位置。`_area` 是配置界面那一块（窗照整屏摆，同 Miyu）。`vim`：按键模式是
 /// Vim（[`lines`]）。

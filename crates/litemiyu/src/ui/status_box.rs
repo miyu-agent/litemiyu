@@ -1,8 +1,12 @@
 //! `/status` 会话状态框（Miyu 终端 `ui/status_box.rs`，蓝图 `tui.md`「会话状态 `/status`」）：左上角框线上写会话标题，一行一项，
-//! 左边一列名字对齐、右边写值，放不下的折到下一行、照值那一列对齐。两段之间空一行：会话 ID、当前工作目录；模型、上下文、
-//! 压缩、用量、缓存命中。还没开会话的标题写「新会话」，只写当前工作目录、模型。点框下面那一行用量那一格也开它。
+//! 左边一列名字对齐、右边写值，放不下的折到下一行、照值那一列对齐。两段之间空一行：会话 ID、当前工作目录、预设；模型、
+//! 上下文、压缩、用量、缓存命中。还没开会话的标题写「新会话」，只写当前工作目录、预设（下一个新会话会用的）、模型。点框
+//! 下面那一行用量那一格也开它。
 //!
-//! 和 Miyu 不一样的：LiteMiyu 没有的行不写——人格、预设、权限模式（没有这几样）、各模型（引擎不分模型记用量）、记忆（没有
+//! 预设（LM-33，2026-11-21 项目主人：「预设信息应该出现在/status面板中」）：名字同侧边栏，后来改了、删了的带「（已修改）」
+//! 「（已删除）」；应急模式不写这一行。
+//!
+//! 和 Miyu 不一样的：LiteMiyu 没有的行不写——人格、权限模式（没有这几样）、各模型（引擎不分模型记用量）、记忆（没有
 //! 记忆库）、会话钉的压缩线和会话上限（界面不接，2026-11-14 项目主人定）。花费照底栏那一格（连同子代理，`Talk::spent`），
 //! 没有数的（模型没价格）不写。
 //!
@@ -57,6 +61,7 @@ texts! {
     pub struct Keys {
         pub id: String,
         pub cwd: String,
+        pub preset: String,
         pub model: String,
         pub context: String,
         pub compaction: String,
@@ -75,6 +80,8 @@ pub struct Facts {
     pub session: Option<String>,
     /// 当前工作目录，家目录写成 `~`。
     pub cwd: String,
+    /// 预设给人看的名字（会话钉着的，还没开会话的是下一个新会话会用的）；应急模式、还不知道的是 `None`。
+    pub preset: Option<String>,
     /// 模型、端点。
     pub model: Option<(String, String)>,
     pub effort: Option<String>,
@@ -108,10 +115,19 @@ pub fn facts(seen: &Seen) -> Facts {
             .unwrap_or_else(|| text.sessions.untitled.clone()),
     };
     let cwd = seen.talk.workdir();
+    let ahead = crate::app::presets::ahead(seen.talk, seen.link);
+    let preset = seen
+        .talk
+        .preset
+        .as_ref()
+        .or(ahead.as_ref())
+        .filter(|_| seen.rescue.is_none())
+        .map(|pinned| crate::app::presets::named(pinned, text));
     Facts {
         title,
         session: t.session.clone(),
         cwd: crate::local::home_short(&cwd.to_string_lossy()),
+        preset,
         model: t.shown_model(),
         effort: t.effort().map(str::to_string),
         window: t.limits.window,
@@ -134,12 +150,15 @@ pub fn items(f: &Facts, words: &Texts, bar: &Bar, room: usize) -> Vec<Item> {
     let plain = |s: String| vec![Span::raw(s)];
     let mut groups: [Vec<(String, Vec<Span<'static>>)>; 2] = Default::default();
 
-    // 第一段：会话 ID、当前工作目录。
+    // 第一段：会话 ID、当前工作目录、预设。
     let first = &mut groups[0];
     if let Some(id) = &f.session {
         first.push((keys.id.clone(), plain(id.clone())));
     }
     first.push((keys.cwd.clone(), plain(f.cwd.clone())));
+    if let Some(preset) = &f.preset {
+        first.push((keys.preset.clone(), plain(preset.clone())));
+    }
 
     // 第二段：模型、上下文、压缩、用量、缓存命中。
     let second = &mut groups[1];

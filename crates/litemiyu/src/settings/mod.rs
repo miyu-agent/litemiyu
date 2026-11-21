@@ -34,8 +34,10 @@ use lm_kernel::config::{Control, Kind, Value};
 pub use extras::{EXTRAS, Extra};
 pub use mouse::{Hit, Hits};
 pub use page::Row;
-pub use popup::{Choose, Popup, Target, Window};
-pub use presets::{FormRow, PresetTarget, Presets};
+pub use popup::{Choose, Edit as EditWindow, Popup, Target, Window};
+pub use presets::{
+    Grid as PresetGrid, PresetTarget, Presets, Slot as PresetSlot, Tree as PresetTree,
+};
 use texts::{Texts, fill};
 
 /// 按了一个键以后界面要做的。
@@ -407,6 +409,12 @@ impl Settings {
             match key.code {
                 KeyCode::Char('c' | 'd') if self.opening.is_some() => return Outcome::Quit,
                 KeyCode::Char('c' | 'd') => return self.leave,
+                // 预设的窗里 `Ctrl+A` 全开、全关（`presets.rs`，同 Miyu `preset_key`）。
+                KeyCode::Char('a' | 'A') if self.popup.is_none() && self.preset_window_open() => {
+                    self.status = self.status.take().filter(|(_, tone)| *tone == Tone::Busy);
+                    self.preset_toggle_all();
+                    return Outcome::Stay;
+                }
                 _ if self.writing() => {}
                 KeyCode::Char('j' | 'J') => {
                     return self.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));

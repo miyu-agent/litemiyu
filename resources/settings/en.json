@@ -11,7 +11,7 @@
     },
     "sessions.default": {
       "name": "Default preset",
-      "description": "The preset new sessions use unless you choose another. A preset decides which built-in tools, MCP servers and skills a session can use; create and edit presets on the Presets page. Open sessions stay as they are."
+      "description": "The preset new sessions use"
     },
     "compaction.prepare": {
       "name": "Pre-compaction",

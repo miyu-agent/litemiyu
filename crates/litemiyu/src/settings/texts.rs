@@ -97,23 +97,19 @@ texts! {
         pub built_in: [String; 2],
         /// 列表里名字后面的记号：自带、默认预设。
         pub marks: [String; 2],
-        /// 列表里自己定义的预设后面写的：其余项目开着、关着时各一句。
-        pub summary: [String; 2],
-        /// 接在后面的两截：单独打开了几项、单独关掉了几项（`{n}`）；一项都没有的那一截不写。
-        pub summary_parts: [String; 2],
         /// 列表的按键提示。
         pub hints: Vec<[String; 2]>,
-        /// 表单的按键提示。
-        pub form_hints: Vec<[String; 2]>,
-        /// 表单头两行的名字：名称、没写的项目。
-        pub rows: [String; 2],
-        /// 「没写的项目」那一行后面暗色的说明。
-        pub unlisted_note: String,
-        /// 表单里的几组：内置工具、MCP 服务、技能、已经没有的。
-        pub groups: [String; 4],
-        /// 一项后面暗色写的：跟着「没写的项目」、全局开关关着（MCP、技能各一句）、已经没有。
-        pub follows_mark: String,
-        /// 见上：MCP 页里关着。
+        /// 预设的窗的按键提示；`h` `l` 换列那一条排成两列时才插在第二条（`column_hint`）。
+        pub window_hints: Vec<[String; 2]>,
+        /// 见上：换列。
+        pub column_hint: [String; 2],
+        /// 预设的窗里名字那一行的名字；改名时编辑窗的标题也是它。
+        pub name_row: String,
+        /// 窗里的几组的名字：内置工具、MCP 服务、技能（已经没有的那一组不写组名，同 Miyu）。
+        pub groups: [String; 3],
+        /// 一组一项都没有时写的：MCP 服务、技能各一句（内置工具一直有，已经没有的那一组没有项目就不画）。
+        pub empty: [String; 2],
+        /// 一项后面写的：MCP 页里关着。
         pub mcp_off: String,
         /// 见上：技能页里关着。
         pub skill_off: String,
@@ -135,16 +131,12 @@ texts! {
         pub created: String,
         /// 改了一项、存成了。
         pub saved: String,
-        /// 设成了默认预设，`{name}`。
-        pub default_set: String,
         /// 自带的不能删。
         pub built_in_fixed: String,
         /// 删除先问的：标题（`{name}`）、一句、两个按钮。
         pub delete_ask: [String; 4],
         /// 删掉了，`{name}`。
         pub deleted: String,
-        /// `d`：这一项本来就跟着「没写的项目」。
-        pub follows: String,
     }
 }
 

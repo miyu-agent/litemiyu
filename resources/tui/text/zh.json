@@ -255,20 +255,20 @@
       "当前会话"
     ],
     "marks_join": " · ",
-    "fixed": "当前会话的预设已经固定：会话发出第一个请求以后不能更换预设。Enter 只修改以后新会话使用的默认预设，s 用选中的预设新建一个会话。",
+    "fixed": "当前会话的预设已固定",
     "side": "预设 {name}",
     "changed": "{name}（已修改）",
     "gone": "{name}（已删除）",
-    "default_set": "默认预设已设为「{name}」，当前会话不变",
-    "default_set_switched": "默认预设已设为「{name}」，当前会话也已切换",
-    "switched": "当前会话已切换到预设「{name}」，默认预设不变",
-    "new_with": "已用预设「{name}」新建会话，默认预设不变",
-    "running": "回答进行中：先打断，再用其他预设新建会话",
+    "default_set": "默认预设：{name}",
+    "default_set_switched": "已切换并设为默认：{name}",
+    "switched": "已切换：{name}",
+    "new_with": "已新建会话：{name}",
+    "running": "回答进行中，请先打断",
     "built_in_fixed": "自带的预设不能删除",
-    "delete_again": "再按一次 d 删除预设「{name}」",
-    "deleted": "已删除预设「{name}」",
-    "unknown": "没有名为「{name}」的预设，输入 /preset 查看全部预设",
-    "rescue": "应急模式不读取配置，/new 后面只能写 full（全部功能）或 bare（无功能）"
+    "delete_again": "再按一次 d 删除「{name}」",
+    "deleted": "已删除「{name}」",
+    "unknown": "没有预设「{name}」",
+    "rescue": "应急模式只能用 full 或 bare"
   },
   "menu": {
     "title": "命令",
@@ -328,6 +328,7 @@
     "keys": {
       "id": "会话 ID",
       "cwd": "当前工作目录",
+      "preset": "预设",
       "model": "模型",
       "context": "上下文",
       "compaction": "压缩",

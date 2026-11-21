@@ -189,28 +189,20 @@
   "presets": {
     "entry": [
       "Presets",
-      "Create, edit and delete presets, set the default preset"
+      "Create, edit, delete"
     ],
     "built_in": [
       "All features",
       "No features"
     ],
     "marks": [
-      "built-in, cannot be changed",
-      "default preset"
-    ],
-    "summary": [
-      "everything else on",
-      "everything else off"
-    ],
-    "summary_parts": [
-      "{n} turned on",
-      "{n} turned off"
+      "built-in",
+      "default"
     ],
     "hints": [
       [
         "Enter",
-        "edit"
+        "open"
       ],
       [
         "a",
@@ -221,61 +213,69 @@
         "delete"
       ],
       [
-        "Space",
-        "set as default"
-      ],
-      [
         "Esc",
         "back"
       ]
     ],
-    "form_hints": [
+    "window_hints": [
       [
-        "Enter/Space",
-        "change"
+        "↑/↓",
+        "move"
+      ],
+      [
+        "Space",
+        "toggle"
+      ],
+      [
+        "Ctrl+A",
+        "all"
+      ],
+      [
+        "Enter",
+        "edit"
       ],
       [
         "d",
-        "follow everything else"
+        "delete"
       ],
       [
         "Esc",
-        "back"
+        "close"
       ]
     ],
-    "rows": [
-      "Name",
-      "Everything else"
+    "column_hint": [
+      "←/→",
+      "column"
     ],
-    "unlisted_note": "Items you have not set one by one use this switch, and so do MCP servers and skills added later",
+    "name_row": "Name",
     "groups": [
       "Built-in tools",
       "MCP servers",
-      "Skills",
-      "Items that no longer exist"
+      "Skills"
     ],
-    "follows_mark": "follows everything else",
-    "mcp_off": "turned off on the MCP page, so it stays unavailable even when on here",
-    "skill_off": "turned off on the Skills page, so it stays unavailable even when on here",
-    "missing": "no longer exists, press Enter to remove it from the preset",
+    "empty": [
+      "No MCP servers yet",
+      "No skills yet"
+    ],
+    "mcp_off": "off on the MCP page",
+    "skill_off": "off on the Skills page",
+    "missing": "gone, Enter removes",
     "new": "New preset: name",
-    "new_from": "New preset based on {name}: name",
+    "new_from": "New from {name}: name",
     "name_empty": "Enter a name",
-    "name_built_in": "full and bare are the names of the built-in presets, choose another",
-    "name_bad": "A name has at most {max} characters, no spaces or periods, and does not start with -",
-    "name_taken": "There is already a preset with this name",
-    "created": "Created preset {name}",
-    "saved": "Saved, applies to new sessions",
-    "default_set": "Default preset set to {name}",
+    "name_built_in": "full and bare are built-in names",
+    "name_bad": "At most {max} characters, no spaces or periods, not starting with -",
+    "name_taken": "Name taken",
+    "created": "Created {name}",
+    "saved": "Saved",
     "built_in_fixed": "Built-in presets cannot be deleted",
     "delete_ask": [
-      "Delete preset {name}?",
-      "Sessions that have already started are not affected",
+      "Delete {name}?",
+      "Started sessions keep it",
       "Delete",
       "Cancel"
     ],
-    "deleted": "Deleted preset {name}",
-    "follows": "This item has no setting of its own"
+    "deleted": "Deleted {name}"
   },
   "opening": {
     "steps": [

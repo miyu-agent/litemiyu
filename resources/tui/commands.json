@@ -96,8 +96,8 @@
     {
       "name": "preset",
       "summary": {
-        "zh": "预设：选择、新建、编辑会话可以使用的工具、MCP 服务和技能",
-        "en": "Presets: choose, create and edit which tools, MCP servers and skills a session can use"
+        "zh": "选择、新建、编辑预设",
+        "en": "Choose, create and edit presets"
       },
       "run": "preset"
     },

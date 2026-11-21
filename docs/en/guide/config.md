@@ -25,7 +25,7 @@ The main menu has these pages:
 | `Appearance` | Color scheme, Icons |
 | `Providers & models` | Providers and default models; see [Models and providers](models.md) |
 | `Privacy & security` | Permissions |
-| `Presets` | Create, edit and delete presets and set the default preset; see [Presets](presets.md) |
+| `Presets` | Create, edit and delete presets; see [Presets](presets.md). The default preset is set on the `General` page |
 | `MCP` | MCP server status and switches. Present only when MCP servers are configured; see [Skills and MCP](skills-mcp.md) |
 | `Skills` | Skill descriptions and switches |
 | `Advanced` | Compaction |

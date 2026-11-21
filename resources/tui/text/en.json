@@ -255,20 +255,20 @@
       "this session"
     ],
     "marks_join": " · ",
-    "fixed": "This session's preset is fixed: it cannot change after the session has sent its first request. Enter only changes the default preset for later sessions; s starts a new session with the selected preset.",
+    "fixed": "This session's preset is fixed",
     "side": "Preset {name}",
     "changed": "{name} (changed)",
     "gone": "{name} (deleted)",
-    "default_set": "Default preset set to {name}; this session stays as it is",
-    "default_set_switched": "Default preset set to {name}; this session switched too",
-    "switched": "This session switched to preset {name}; the default stays",
-    "new_with": "Started a new session with preset {name}; the default stays",
-    "running": "Still answering: interrupt first, then start a session with another preset",
+    "default_set": "Default preset: {name}",
+    "default_set_switched": "Switched and set as default: {name}",
+    "switched": "Switched to {name}",
+    "new_with": "New session: {name}",
+    "running": "Still answering; interrupt first",
     "built_in_fixed": "Built-in presets cannot be deleted",
-    "delete_again": "Press d again to delete preset {name}",
-    "deleted": "Deleted preset {name}",
-    "unknown": "No preset named {name}; type /preset to see them all",
-    "rescue": "Rescue mode reads no config: /new only takes full (all features) or bare (no features)"
+    "delete_again": "Press d again to delete {name}",
+    "deleted": "Deleted {name}",
+    "unknown": "No preset {name}",
+    "rescue": "Rescue mode only takes full or bare"
   },
   "menu": {
     "title": "Commands",
@@ -328,6 +328,7 @@
     "keys": {
       "id": "Session ID",
       "cwd": "Working directory",
+      "preset": "Preset",
       "model": "Model",
       "context": "Context",
       "compaction": "Compaction",

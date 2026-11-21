@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use lm_engine::presets::Listed;
 use lm_kernel::policy::PresetPin;
 
-use super::{ahead, completed, new_argument, side, tag};
+use super::{ahead, completed, new_argument, side};
 use crate::app::{App, Panel};
 use crate::config::Config;
 use crate::core::{Core, PinState, Pinned, Update};
@@ -83,10 +83,7 @@ fn before_the_first_request_enter_sets_the_default_and_switches_and_s_only_switc
     press(&mut app, KeyCode::Char('s'));
     assert_eq!(app.boxes.panel, None, "选了就关框");
     assert_eq!(app.link.next_preset.as_deref(), Some("web"));
-    assert_eq!(
-        notice(&app).as_deref(),
-        Some("当前会话已切换到预设「web」，默认预设不变")
-    );
+    assert_eq!(notice(&app).as_deref(), Some("已切换：web"));
     // 再开：选中的是定好的下一个。回车设默认、同时切过去。
     app.open_presets();
     app.core(Update::Presets(listed("full", &["web"])));
@@ -95,10 +92,7 @@ fn before_the_first_request_enter_sets_the_default_and_switches_and_s_only_switc
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.link.next_preset.as_deref(), Some("bare"));
     assert_eq!(app.talk.loops, Some(false), "无功能的不列 /loop");
-    assert_eq!(
-        notice(&app).as_deref(),
-        Some("默认预设已设为「无功能」，当前会话也已切换")
-    );
+    assert_eq!(notice(&app).as_deref(), Some("已切换并设为默认：无功能"));
 }
 
 #[test]
@@ -116,10 +110,7 @@ fn once_the_session_has_started_the_preset_is_fixed() {
     press(&mut app, KeyCode::Down);
     // 回车只改默认预设：会话照旧。
     press(&mut app, KeyCode::Enter);
-    assert_eq!(
-        notice(&app).as_deref(),
-        Some("默认预设已设为「web」，当前会话不变")
-    );
+    assert_eq!(notice(&app).as_deref(), Some("默认预设：web"));
     assert!(app.talk.transcript.session.is_some(), "会话没换");
     assert_eq!(app.link.next_preset, None);
     // `s`：用它新建一个会话。
@@ -134,10 +125,7 @@ fn once_the_session_has_started_the_preset_is_fixed() {
     );
     assert_eq!(app.link.next_preset.as_deref(), Some("web"));
     assert_eq!(app.talk.preset, None);
-    assert_eq!(
-        notice(&app).as_deref(),
-        Some("已用预设「web」新建会话，默认预设不变")
-    );
+    assert_eq!(notice(&app).as_deref(), Some("已新建会话：web"));
 }
 
 #[test]
@@ -148,14 +136,14 @@ fn d_asks_once_more_and_built_in_presets_stay() {
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Char('d'));
-    assert_eq!(notice(&app).as_deref(), Some("再按一次 d 删除预设「web」"));
+    assert_eq!(notice(&app).as_deref(), Some("再按一次 d 删除「web」"));
     // 按了别的键：不删，再按 `d` 重新问。
     press(&mut app, KeyCode::Up);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Char('d'));
-    assert_eq!(notice(&app).as_deref(), Some("再按一次 d 删除预设「web」"));
+    assert_eq!(notice(&app).as_deref(), Some("再按一次 d 删除「web」"));
     press(&mut app, KeyCode::Char('d'));
-    assert_eq!(notice(&app).as_deref(), Some("已删除预设「web」"));
+    assert_eq!(notice(&app).as_deref(), Some("已删除「web」"));
     assert_eq!(app.boxes.panel, Some(Panel::Presets), "框还开着");
     // 引擎删完交回新的列表：光标不越过最后一行。
     app.core(Update::Presets(listed("full", &[])));
@@ -226,42 +214,29 @@ fn the_sidebar_names_the_preset_and_says_when_it_changed_since() {
 #[test]
 fn before_a_session_exists_the_preset_it_will_use_is_known() {
     let mut app = fresh();
-    // 没另定、默认预设是全部功能：侧边栏照全部功能写，输入框下面不写。
+    // `/status` 第一段「预设」那一行写的（LM-33：输入框下面那一行不再写预设名）。
+    let status = |app: &App| crate::ui::status_box::facts(&app.seen()).preset;
+    // 没另定、默认预设是全部功能：照全部功能写。
     assert_eq!(
         ahead(&app.talk, &app.link).map(|p| p.name).as_deref(),
         Some("full")
     );
-    assert_eq!(tag(&app.talk, &app.link, &app.config), None);
+    assert_eq!(status(&app).as_deref(), Some("全部功能"));
     // 默认预设是自己定义的：写它。
     app.link.default_preset = Some("web".to_string());
-    assert_eq!(
-        tag(&app.talk, &app.link, &app.config).as_deref(),
-        Some("web")
-    );
+    assert_eq!(status(&app).as_deref(), Some("web"));
     // 另定了下一个（`--preset`、`/new <名字>`、`/preset` 里的 `s`）：照它。
     app.link.next_preset = Some("bare".to_string());
-    assert_eq!(
-        tag(&app.talk, &app.link, &app.config).as_deref(),
-        Some("无功能")
-    );
-    app.link.next_preset = Some("full".to_string());
-    assert_eq!(
-        tag(&app.talk, &app.link, &app.config),
-        None,
-        "全部功能的不写"
-    );
+    assert_eq!(status(&app).as_deref(), Some("无功能"));
     // 会话开了：照引擎说的那一个，不再看默认预设。
     app.core(Update::Ready("s-1".to_string()));
     assert_eq!(ahead(&app.talk, &app.link), None);
-    assert_eq!(tag(&app.talk, &app.link, &app.config), None, "引擎还没说");
+    assert_eq!(status(&app), None, "引擎还没说");
     app.core(Update::Preset(Pinned {
         name: "cmd".to_string(),
         state: PinState::Changed,
     }));
-    assert_eq!(
-        tag(&app.talk, &app.link, &app.config).as_deref(),
-        Some("cmd")
-    );
+    assert_eq!(status(&app).as_deref(), Some("cmd（已修改）"));
     // 列表交回来、配置界面存了：默认预设跟着换。
     app.core(Update::Presets(listed("notes", &["notes"])));
     assert_eq!(app.link.default_preset.as_deref(), Some("notes"));

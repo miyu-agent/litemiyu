@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::frame::Frame;
 use super::rows::clip;
-use crate::settings::{Entry, Extra, Hit, Row, Settings, View};
+use crate::settings::{Entry, Extra, Hit, Popup, Row, Settings, Target, View, Window};
 use crate::theme;
 
 /// 画一帧；编辑窗开着时交回光标的位置。
@@ -89,11 +89,7 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
             }
             if settings.extra(page) == Some(Extra::Presets) {
                 let drawn = presets::lines(settings, at, area.width);
-                let hints = match drawn.form {
-                    true => &texts.presets.form_hints,
-                    false => &texts.presets.hints,
-                };
-                (drawn.lines, drawn.focus, drawn.place, hints)
+                (drawn.lines, drawn.focus, drawn.place, &texts.presets.hints)
             } else if let Some(extra) = settings.extra(page) {
                 let count = settings.extra_list.entries.len();
                 let lines = extras::lines(settings, extra, at, area.width);
@@ -194,10 +190,23 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
         let x = area.x + area.width.saturating_sub(width);
         buffer.set_line(x, bottom - 2, &Line::styled(place, theme::dim()), width);
     }
+    // 预设的窗浮在页上（`presets.rs`）；改名字的编辑窗不另画，字写在窗里名字那一行（同 Miyu）。别的窗（删除先问的）盖在它上面。
+    let renaming = settings.popup.as_ref().and_then(|open| match open {
+        Popup {
+            window: Window::Edit(edit),
+            target: Target::PresetRename(_),
+        } => Some(edit),
+        _ => None,
+    });
+    let caret = presets::window(frame, settings, renaming, vim(settings));
+    if renaming.is_some() && settings.preset_window_open() {
+        return caret;
+    }
     settings
         .popup
         .as_ref()
         .and_then(|open| popup::draw(frame, area, (open, &settings.hits), (texts, vim(settings))))
+        .or(caret)
 }
 
 /// 整块的位置（Miyu `stage`，`layout.json` 的 `settings`）：宽八成、高八成六居中；窄于 100 列的用满宽，四边各留一格。

@@ -48,7 +48,7 @@ Starts a new session. The current one stays on disk and you can return to it wit
 - `/new bare`: the new session uses the built-in `No features` preset. The AI has no tools and LiteMiyu adds nothing to the conversation, so it is a plain chat with the model.
 - `/new full`: the new session uses the built-in `All features` preset.
 
-A preset name that does not exist gets `No preset named …; type /preset to see them all`, and no session is started.
+A preset name that does not exist gets `No preset …`, and no session is started.
 
 ### /preset
 

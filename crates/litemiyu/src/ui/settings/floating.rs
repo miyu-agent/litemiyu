@@ -32,6 +32,8 @@ pub struct Lines {
     pub caret: Option<(usize, u16)>,
     /// 前几行钉在窗顶不滚（Miyu `Lines::fixed`，9c2f8691：池的窗到搜索框为止）；0 是整个一起滚。
     pub fixed: usize,
+    /// 照哪一行滚（Miyu `Lines::focus`）：光标画在一行里的一格上、整行不铺底的（预设的窗的两列）记在这里；没有的照选中的那一行。
+    pub focus: Option<usize>,
 }
 
 /// 一行：字、选中没有。
@@ -92,9 +94,20 @@ impl Lines {
 pub fn centered(
     frame: &mut Frame,
     area: Rect,
-    (width, max_height): (u16, u16),
+    size: (u16, u16),
     lines: &Lines,
     hits: &Hits,
+) -> Option<Position> {
+    centered_from(frame, area, size, lines, (hits, hits.top_cell()))
+}
+
+/// 同 [`centered`]，窗里从第几行露起照 `top` 接着（叠在别的窗下面、自己记着滚到哪的窗用：预设的窗）。
+pub fn centered_from(
+    frame: &mut Frame,
+    area: Rect,
+    (width, max_height): (u16, u16),
+    lines: &Lines,
+    (hits, top): (&Hits, &std::cell::Cell<usize>),
 ) -> Option<Position> {
     let height = lines.height(width, max_height);
     let rect = Rect::new(
@@ -103,11 +116,16 @@ pub fn centered(
         width,
         height,
     );
-    paint(frame, rect, lines, hits)
+    paint(frame, rect, lines, (hits, top))
 }
 
 /// 铺底色、写标题、滚着写一行行、出错的一句、按钮、按键提示。
-fn paint(frame: &mut Frame, rect: Rect, lines: &Lines, hits: &Hits) -> Option<Position> {
+fn paint(
+    frame: &mut Frame,
+    rect: Rect,
+    lines: &Lines,
+    (hits, top_cell): (&Hits, &std::cell::Cell<usize>),
+) -> Option<Position> {
     // 先把格子整个清掉（字色、修饰都不留，不然窗里的字带着后面那页的暗色），再铺窗自己的底（`theme::float`）：
     // 铺不铺整屏的底色都盖得住后面。
     let buf = frame.buffer_mut();
@@ -142,7 +160,10 @@ fn paint(frame: &mut Frame, rect: Rect, lines: &Lines, hits: &Hits) -> Option<Po
             .height
             .saturating_sub(6u16.saturating_add(error_count)),
     );
-    let focus = lines.body.iter().position(|b| b.focused).unwrap_or(0);
+    let focus = lines
+        .focus
+        .or_else(|| lines.body.iter().position(|b| b.focused))
+        .unwrap_or(0);
     // 钉在顶上的几行（`fixed`）：后面那一段至少露三行，窗太矮时钉住的先让出来、跟着滚（Miyu `paint`，9c2f8691）。后面那一段
     // 照上一帧露的接着露，选中的碰到上下边才挪（`menu::edge`，Miyu `popup_top`）。
     let fixed = lines
@@ -151,7 +172,7 @@ fn paint(frame: &mut Frame, rect: Rect, lines: &Lines, hits: &Hits) -> Option<Po
         .min(room.saturating_sub(3));
     let scroll = room - fixed;
     let rest = lines.body.len() - fixed;
-    let prev = hits.top();
+    let prev = top_cell.get();
     let top = if focus >= fixed {
         crate::menu::edge(focus - fixed, None, prev, rest, scroll)
     } else {
@@ -162,7 +183,7 @@ fn paint(frame: &mut Frame, rect: Rect, lines: &Lines, hits: &Hits) -> Option<Po
     } else {
         top
     };
-    hits.set_top(top);
+    top_cell.set(top);
     let shown = (0..fixed).chain(fixed + top..(fixed + top + scroll).min(lines.body.len()));
     let mut caret = None;
     for (offset, at) in shown.enumerate() {

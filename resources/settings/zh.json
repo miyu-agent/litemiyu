@@ -11,7 +11,7 @@
     },
     "sessions.default": {
       "name": "默认预设",
-      "description": "新会话没有另外指定时使用的预设。预设决定会话可以使用哪些内置工具、MCP 服务和技能，在「预设」页新建和编辑。已经打开的会话不受影响。"
+      "description": "新会话默认使用的预设"
     },
     "compaction.prepare": {
       "name": "预压缩",

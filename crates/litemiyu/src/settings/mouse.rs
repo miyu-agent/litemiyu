@@ -44,9 +44,9 @@ pub enum Hit {
 pub struct Hits(RefCell<Vec<(Rect, Hit)>>, std::cell::Cell<usize>);
 
 impl Hits {
-    /// 悬浮窗里上一帧从第几行露起。
-    pub fn top(&self) -> usize {
-        self.1.get()
+    /// 悬浮窗从第几行露起记在哪（`ui/settings/floating.rs` 照它接着露）。
+    pub fn top_cell(&self) -> &std::cell::Cell<usize> {
+        &self.1
     }
 
     /// 记下这一帧悬浮窗从第几行露起；没有窗开着时记 0（下一个窗从头露起）。

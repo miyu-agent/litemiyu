@@ -1,5 +1,5 @@
 //! 预设在对话界面这一头（LM-29，`docs/00-设计.md` 第六节第 14 条）：`/preset` 的框、`/new <预设名>` 和它的 `Tab` 补全、
-//! 侧边栏写的当前会话的预设。
+//! 侧边栏和 `/status` 写的当前会话的预设（LM-33 起输入框下面那一行不写预设名）。
 //!
 //! `/preset` 的框照 `/effort` 的样子（开着不能打字，`j`、`k` 同 `↓`、`↑`）：自带的两个在前，自己定义的照名字排，一行一个；
 //! 列表很短，不做打字筛选。按键：
@@ -342,39 +342,25 @@ pub fn ahead(talk: &super::talk::Talk, link: &super::link::Link) -> Option<Pinne
     })
 }
 
-/// 输入框下面那一行模型后面写的预设名（`ui/footer.rs`，位置照 `layout.json` 的 `preset_tag`）：看不到侧边栏时（首页、
-/// 窄窗口）这个会话用的、还没开的会话会用的预设不是全部功能，就写它的名字；是全部功能的不写。
-///
-/// 界面上的字用到才读（`Config::text` 要读整份）：全部功能的、自己定义的都不读，只有「无功能」要它的名字。
-pub fn tag(
-    talk: &super::talk::Talk,
-    link: &super::link::Link,
-    config: &crate::config::Config,
-) -> Option<String> {
-    let pending = ahead(talk, link);
-    let pinned = talk.preset.as_ref().or(pending.as_ref())?;
-    match pinned.name.as_str() {
-        FULL => None,
-        BARE => Some(config.text().presets.bare.clone()),
-        name => Some(crate::cli::clean(name)),
-    }
+/// 侧边栏会话那一段写的预设（`ui/sidebar.rs`）：「预设 名字」，名字照 [`named`]。引擎还没说的没有。
+pub fn side(pinned: Option<&Pinned>, text: &crate::config::Texts) -> Option<String> {
+    let shown = named(pinned?, text);
+    Some(text.presets.side.replace("{name}", &shown))
 }
 
-/// 侧边栏会话那一段写的预设（`ui/sidebar.rs`）：名字，后来改了、删了的带上说明。引擎还没说的没有。
-pub fn side(pinned: Option<&Pinned>, text: &crate::config::Texts) -> Option<String> {
-    let pinned = pinned?;
+/// 会话钉着的预设给人看的名字：自带的两个照界面语言，后来改了、删了的带上说明。侧边栏、`/status` 共用。
+pub fn named(pinned: &Pinned, text: &crate::config::Texts) -> String {
     let texts = &text.presets;
     let name = match pinned.name.as_str() {
         FULL => texts.full.clone(),
         BARE => texts.bare.clone(),
         name => crate::cli::clean(name),
     };
-    let shown = match pinned.state {
+    match pinned.state {
         PinState::Same => name,
         PinState::Changed => texts.changed.replace("{name}", &name),
         PinState::Gone => texts.gone.replace("{name}", &name),
-    };
-    Some(texts.side.replace("{name}", &shown))
+    }
 }
 
 /// 输入框里的字是 `/new <名字>`（名字可以还没打）时那个名字：命令是 `/new`（或它的别名），后面正好一个空格，名字里

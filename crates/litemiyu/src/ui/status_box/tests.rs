@@ -1,5 +1,5 @@
-//! `/status` 会话状态框（Miyu 终端 `ui/status_box/tests.rs`，去掉 LiteMiyu 没有的人格、预设、权限模式、各模型、记忆、会话上限、
-//! 会话压缩线）。
+//! `/status` 会话状态框（Miyu 终端 `ui/status_box/tests.rs`，去掉 LiteMiyu 没有的人格、权限模式、各模型、记忆、会话上限、
+//! 会话压缩线）。预设写在第一段（LM-33）。
 
 use super::{Facts, plain};
 use crate::config::Config;
@@ -11,6 +11,7 @@ fn opened() -> Facts {
         title: "修通知图标".into(),
         session: Some("01a157e1-e547-7511-b8c8-7e993d987fdd".into()),
         cwd: "~/src".into(),
+        preset: Some("web（已修改）".into()),
         model: Some(("deepseek-v4.1-flash".into(), "router".into())),
         effort: Some("high".into()),
         window: Some(1_000_000),
@@ -49,6 +50,7 @@ fn an_open_session_lists_two_groups_with_a_blank_line_between_them() {
         [
             "会话",
             "当前工作目录",
+            "预设",
             "",
             "模型",
             "上下文",
@@ -64,6 +66,8 @@ fn an_open_session_lists_two_groups_with_a_blank_line_between_them() {
         "{text}"
     );
     assert!(text.contains("41.2k / 1M（4.1%）"), "{text}");
+    let preset = lines.iter().find(|l| l.starts_with("预设")).unwrap();
+    assert!(preset.ends_with("web（已修改）"), "{text}");
     assert!(text.contains("2 次 · 到 967k 自动压缩"), "{text}");
     assert!(
         text.contains("共 110.7k token · 输入 100k · 输出 8.6k · 辅助请求 2.1k"),
@@ -92,9 +96,16 @@ fn a_new_session_lists_only_what_it_already_knows() {
     for gone in ["会话 ID", "上下文", "压缩", "用量", "缓存命中", "花费"] {
         assert!(!text.contains(gone), "没开会话不写{gone}：{text}");
     }
-    for kept in ["当前工作目录", "模型"] {
+    for kept in ["当前工作目录", "预设", "模型"] {
         assert!(text.contains(kept), "{text}");
     }
+    // 应急模式不写预设那一行（`facts` 交 `None`）。
+    let rescue = Facts {
+        preset: None,
+        ..new
+    };
+    let text = plain(&rescue, &config, 100);
+    assert!(!text.contains("预设"), "{text}");
 }
 
 #[test]

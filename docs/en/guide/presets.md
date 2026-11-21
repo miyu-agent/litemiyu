@@ -34,9 +34,7 @@ Besides these two you can define as many presets as you like. A preset of your o
 
 The preset name is the "Name" column above: `full` and `bare` for the built-in ones, and the name you chose for your own. When you write a name that does not exist, LiteMiyu says there is no such preset and does not start a session.
 
-The session part of the sidebar always shows the preset of the current session, for example `Preset All features`.
-
-The home page has no sidebar, and neither does a window narrower than 120 columns. In those cases, when the preset is not `All features`, the line below the input box shows the preset name after the model, for example `deepseek-chat demo · cmd`; nothing is shown for `All features`. On the home page this is the preset the next new session will use.
+Run `/status` to see the preset of the current session; before the session starts, it shows the preset the next new session will use. In a window at least 120 columns wide, the session part of the sidebar shows it too, for example `Preset All features`.
 
 ## /preset: choosing and managing presets
 
@@ -54,20 +52,20 @@ Type `/preset` in the input box to open the preset list. The two built-in preset
 
 Clicking a row with the mouse is the same as selecting it and pressing `Enter`.
 
-`e` and `a` open the form of the `Presets` page of the settings screen, see [Creating and editing presets](#creating-and-editing-presets) below. `Esc` in the form returns to this list.
+`e` and `a` open the `Presets` page of the settings screen with the preset's window on top of it, see [Creating and editing presets](#creating-and-editing-presets) below. `Esc` in the window returns to this list.
 
 ### The preset is fixed once the session has started
 
 After a session has sent its first request, its preset is fixed and cannot be changed. Changing the tools would invalidate the model's cache, and every later request would be charged in full again. A session you reopen is fixed too.
 
-Once the preset is fixed, a line below the `/preset` list says so, and two keys behave differently:
+Once the preset is fixed, the `/preset` list shows `This session's preset is fixed` below the presets, and two keys behave differently:
 
 - `Enter` only changes the default preset. That affects sessions you start later; the current session stays as it is;
 - `s` becomes "start a new session with the selected preset".
 
 To do the current job with another preset, start a new session with `s` or `/new <preset>`.
 
-A session uses the list it started with. If you later edit or delete that preset, sessions that have already started keep their original tools, also after you quit and reopen them with `litemiyu -c`, `litemiyu -s` or `/sessions`. The sidebar then adds `(changed)` or `(deleted)` after the preset name.
+A session uses the list it started with. If you later edit or delete that preset, sessions that have already started keep their original tools, also after you quit and reopen them with `litemiyu -c`, `litemiyu -s` or `/sessions`. `/status` and the sidebar then add `(changed)` or `(deleted)` after the preset name.
 
 Subagents the AI starts use the same preset as the main session.
 
@@ -75,60 +73,66 @@ Subagents the AI starts use the same preset as the main session.
 
 Run `/config` and open the `Presets` page, or press `a` or `e` in the `/preset` list.
 
-The `Presets` page first shows the list of presets:
+The `Presets` page is the list of presets:
 
 | Key | What it does |
 |---|---|
-| `Enter` | Edit the selected preset. On one of the two built-in presets it creates a new preset based on it |
-| `a` | Create a new preset; you enter a name first |
+| `Enter` | Open the selected preset's window. On one of the two built-in presets it creates a new preset based on it |
+| `a` | Create a new preset: enter a name first, then its window opens |
 | `d` | Delete the selected preset; it asks once before deleting |
-| `Space` | Set the selected preset as the default preset |
 | `Esc` | Back |
+
+The default preset is set with `Default preset` on the `General` page.
 
 A preset name has at most 32 characters, contains no spaces or periods, does not start with `-`, and is not `full` or `bare`.
 
-Opening a preset shows its form:
+The preset's window floats over the list. Its title is the preset name, and the top right corner shows the tool name of the item under the cursor. Below are the name and three groups of switches, in two columns when the window is wide enough:
 
 ```text
-  Name                cmd
-  Everything else     Off  Items you have not set one by one use this switch, and so do MCP servers and skills added later
+  cmd                                          jobs
 
-  Built-in tools
-  read                Off  Read, follows everything else
-  write               Off  Write, follows everything else
-  edit                Off  Edit, follows everything else
-  shell               On   Run
-  jobs                On   Jobs
+  Name  cmd
+
+  Built-in tools  2/12     MCP servers  0/0
+  [ ] Read                 No MCP servers yet
+  [ ] Write
+  [ ] Edit                 Skills  0/0
+  [*] Run                  No skills yet
+  [*] Jobs
+  [ ] Ask
   …
-
-  MCP servers
-  files               Off  follows everything else
-
-  Skills
-  skill-creator       Off  follows everything else
 ```
 
-- Select a row with `↑` `↓` and press `Enter` or `Space` to change it. Every change is saved at once; there is no separate save step.
-- Press `Enter` on the `Name` row to rename the preset.
-- `Everything else` is a master switch: every item you have not set one by one uses it, and so does every MCP server you connect and every skill you add later.
-- An item you have set one by one no longer follows `Everything else`. Press `d` on such a row to make it follow `Everything else` again.
+`[*]` is on and `[ ]` is off; the numbers after a group name are how many items are on and how many there are.
 
-Saved changes apply to sessions you start afterwards. Sessions that have already started stay as they are.
+| Key | What it does |
+|---|---|
+| `↑` `↓` (also `j` `k` in Vim mode) | Move up and down within a column. Moving up from the top of a column returns to the `Name` row |
+| `←` `→` (also `h` `l` in Vim mode) | Move to the other column |
+| `Space`, `Tab`, `Enter` | Turn the item under the cursor on or off |
+| `Ctrl+A` | Turn everything on when anything is off; turn everything off when everything is on |
+| `Enter` (on the `Name` row) | Rename the preset, right in that row |
+| `d` | Delete this preset; it asks once before deleting |
+| `Esc`, `q` | Close the window |
+
+Every change is saved at once; there is no separate save step. Saved changes apply to sessions you start afterwards. Sessions that have already started stay as they are.
+
+A new preset starts with everything on. MCP servers you connect and skills you add later are on in a preset you last turned all on with `Ctrl+A`, and off in a preset you turned all off and then picked from.
 
 ### Example: only shell and jobs
 
 1. Run `/preset`, press `a`, enter a name such as `cmd`, and press `Enter`.
-2. A new preset starts with everything off. Move to `shell` and press `Space` to turn it on; do the same for `jobs`.
-3. For the opposite, everything on except a few items, move to `Everything else`, press `Space` to turn it on, then turn off the items you do not want.
+2. A new preset starts with everything on. Press `Ctrl+A` to turn everything off.
+3. Move to `Run` (the corner shows `shell`) and press `Space` to turn it on; do the same for `Jobs` (`jobs`).
 4. Press `Esc` to return to the preset list. Press `s` to use it for the current session, or `Enter` to make it the default preset.
 
-You can also press `e` on `All features`: the new preset then starts with everything on and you only turn off the items you do not want.
+For "everything on except a few items", skip `Ctrl+A` in step 2 and turn off the items you do not want.
 
 ## Presets and the switches on the MCP and Skills pages
 
 On the `MCP` and `Skills` pages of `/config`, every server and every skill has a switch. That is a global switch and applies to every session. A switch in a preset only applies to sessions that use that preset.
 
-An MCP server or a skill is available only when both hold: its global switch is on, and it is on in the session's preset. An item whose global switch is off stays unavailable even when it is on in a preset; the preset form says `turned off on the MCP page, so it stays unavailable even when on here` after that item.
+An MCP server or a skill is available only when both hold: its global switch is on, and it is on in the session's preset. An item whose global switch is off stays unavailable even when it is on in a preset; the preset's window says `off on the MCP page` or `off on the Skills page` after that item.
 
 ## Writing presets in the configuration file
 
@@ -139,9 +143,9 @@ Presets are stored in the configuration file `config.toml` (see [Where your data
 default = "cmd"              # the default preset; full when not written
 
 [presets.cmd]
-unlisted = "off"             # everything else: on or off
+unlisted = "off"             # items not listed below: on or off
 
-[presets.cmd.features]       # items set one by one: id = true or false
+[presets.cmd.features]       # items written one by one: id = true or false
 shell = true
 jobs = true
 mcp-files = true
@@ -151,8 +155,8 @@ skill-notes = true
 | Entry | Meaning |
 |---|---|
 | `[presets.<name>]` | One table per preset. Quote the name when it contains non-ASCII or other special characters, for example `[presets."只用命令"]` |
-| `unlisted` | `"on"` or `"off"`: the `Everything else` row of the form. It is required; a table without it is not a preset |
-| `[presets.<name>.features]` | The items set one by one, one per line |
+| `unlisted` | `"on"` or `"off"`: whether items not listed in `features`, and MCP servers and skills added later, are on or off. It is required; a table without it is not a preset. `Ctrl+A` in the window writes `"on"` when it turns everything on and `"off"` when it turns everything off |
+| `[presets.<name>.features]` | The items written one by one, one per line. Turning an item on or off in the window writes here |
 
 The ids used in `features`:
 
@@ -162,10 +166,10 @@ The ids used in `features`:
 | MCP server | `mcp-<server name>` | `mcp-files` |
 | Skill | `skill-<skill name>` | `skill-notes` |
 
-When the list names a tool, MCP server or skill that no longer exists (for example an MCP server you later removed from the configuration), LiteMiyu reports no error; that entry simply has no effect. The preset form lists such entries under `Items that no longer exist`, and pressing `Enter` on one removes it from the preset.
+When the list names a tool, MCP server or skill that no longer exists (for example an MCP server you later removed from the configuration), LiteMiyu reports no error; that entry simply has no effect. The preset's window lists such entries last, marked `gone, Enter removes`; pressing `Enter` or `Space` on one removes it from the preset.
 
 When the default preset names a preset that no longer exists, new sessions start with `All features`, and after your first message LiteMiyu shows `These entries are invalid and were ignored: setting sessions.default`.
 
 ## Rescue mode
 
-[Rescue mode](rescue.md) reads no configuration and gives the AI a fixed set of tools, so it has no `/preset` command. `--preset` and `/new` only accept the built-in `full` and `bare` there; when you write the name of a preset of your own, LiteMiyu explains why it cannot be used.
+[Rescue mode](rescue.md) reads no configuration and gives the AI a fixed set of tools, so it has no `/preset` command and `/status` has no preset row. `--preset` and `/new` only accept the built-in `full` and `bare` there; when you write the name of a preset of your own, LiteMiyu says `Rescue mode only takes full or bare`.

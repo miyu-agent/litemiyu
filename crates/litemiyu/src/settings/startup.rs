@@ -132,7 +132,7 @@ pub fn scan_chat(text: &str) -> Option<String> {
 }
 
 /// 照字面在 `config.toml` 里找默认预设（`sessions.default`，LM-29），不解析整份 TOML（同 [`scan_chat`]，认的写法也一样）：
-/// 首页输入框下面那一行照它写新会话会用哪个预设。交回的是不是全部功能时的那个名字：没写的、写 `full` 的是 `None`；`bare`
+/// `/status`、侧边栏照它写还没开的会话会用哪个预设。交回的是不是全部功能时的那个名字：没写的、写 `full` 的是 `None`；`bare`
 /// 照交；自己定义的要配置里照字面找得到它那张表的表头（`[presets.<名字>]`、`[presets."<名字>"]`），找不到的（删掉了、写法
 /// 认不出）当全部功能，同引擎开会话时的退法。
 pub fn scan_default_preset(text: &str) -> Option<String> {
