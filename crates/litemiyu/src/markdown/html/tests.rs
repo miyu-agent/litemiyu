@@ -8,7 +8,7 @@ fn draw(text: &str, width: u16, flipped: &[usize]) -> Vec<MdLine> {
     let config = Config::builtin().unwrap();
     let kit = Kit {
         languages: config.languages(),
-        math: config.math(),
+        scripts: config.scripts(),
         labels: &config.text().markdown,
         tab: config.layout.tab,
     };
@@ -181,7 +181,7 @@ fn html_ruler() {
     let config = Config::builtin().unwrap();
     let kit = Kit {
         languages: config.languages(),
-        math: config.math(),
+        scripts: config.scripts(),
         labels: &config.text().markdown,
         tab: config.layout.tab,
     };

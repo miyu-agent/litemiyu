@@ -34,8 +34,8 @@ pub struct Plan {
     pub message: String,
     /// 要问人的高危命令放行（`--yes`）。
     pub yes: bool,
-    /// 新开无功能的那一档。
-    pub bare: bool,
+    /// 新开的会话用哪个预设（`--preset`、`--bare`）：查过在的名字；没写的照配置里的默认预设。
+    pub preset: Option<String>,
     /// 应急模式备好的。
     pub rescue: Option<crate::rescue::Prepared>,
     /// `--timeout`。
@@ -51,8 +51,8 @@ pub fn drive(plan: Plan, words: &Words, output: &mut dyn Output) -> Ending {
     let (tx, rx) = mpsc::channel();
     signals(&tx);
     let mut core = Core::new(move |update| tx.send(Event::Update(Box::new(update))).is_ok());
-    if plan.bare {
-        core.first_bare();
+    if let Some(preset) = plan.preset {
+        core.first_preset(preset);
     }
     if let Some(prepared) = plan.rescue {
         core.rescue(prepared);
@@ -348,7 +348,7 @@ impl Run {
 
     /// 有计划地停下会话：日志落好盘，后台命令、子代理整组停掉（同全屏 `/new` 停下旧会话），等它办完再交回。
     fn close(&self) {
-        self.core.send(Command::New { bare: None });
+        self.core.send(Command::New { preset: None });
         let (done, back) = mpsc::channel();
         self.core.send(Command::Barrier(done));
         let _waited = back.recv_timeout(CLOSING);

@@ -25,6 +25,8 @@ impl App {
                 core,
                 human: Human::default(),
                 default_chat: None,
+                next_preset: None,
+                default_preset: None,
             },
             typing: super::typing::Typing {
                 input,

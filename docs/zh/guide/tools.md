@@ -29,12 +29,13 @@ LiteMiyu 没有专门的搜索文件、抓取网页、回收站工具。AI 需�
 
 > 删除的文件不会进回收站。重要的项目建议放在 `git` 里，AI 改错了可以找回来。
 
-不同的会话能用的工具不同：
+不同的会话能用的工具不同，由会话的[预设](presets.md)决定：
 
 | 会话 | 工具 |
 |---|---|
-| 全部功能（默认） | 12 件全部可用，加上 MCP 的工具 |
-| 无功能（`/new bare`、`litemiyu --bare`） | 没有任何工具 |
+| `全部功能` 预设（默认） | 12 件全部可用，加上 MCP 的工具 |
+| `无功能` 预设（`/new bare`、`litemiyu --bare`） | 没有任何工具 |
+| 自己定义的预设 | 预设里打开的那几件，加上预设里打开的 MCP 服务的工具 |
 | 应急模式（`litemiyu --rescue`） | 只有 `read`、`write`、`edit`、`shell`、`jobs`、`schedule_wakeup`、`ask_user` |
 | 子代理 | 没有 `ask_user`、`sessions` 和 `schedule_wakeup` |
 

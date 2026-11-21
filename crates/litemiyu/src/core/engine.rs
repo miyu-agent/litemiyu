@@ -8,6 +8,7 @@ mod forward;
 mod handing;
 mod looping;
 mod models;
+mod presets;
 mod readback;
 mod retitle;
 mod sessions;
@@ -54,7 +55,7 @@ const QUIET: Duration = Duration::from_secs(2);
 /// 退出时照它等，`super::Core` 的 `Drop`）。线程起不来的照「起不来」报给界面，断开的那一头当场断开。
 pub fn spawn(
     deliver: Deliver,
-    bare: bool,
+    preset: Option<String>,
     rescue: Option<crate::rescue::Prepared>,
 ) -> (
     mpsc::UnboundedSender<Command>,
@@ -67,7 +68,7 @@ pub fn spawn(
         .name("engine".into())
         .stack_size(STACK)
         .spawn(move || {
-            run(inbox, deliver, bare, rescue);
+            run(inbox, deliver, preset, rescue);
             drop(finished);
         });
     if let Err(error) = started {
@@ -80,7 +81,7 @@ pub fn spawn(
 fn run(
     inbox: mpsc::UnboundedReceiver<Command>,
     deliver: Deliver,
-    bare: bool,
+    preset: Option<String>,
     rescue: Option<crate::rescue::Prepared>,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -97,7 +98,7 @@ fn run(
         }
     };
     let mut engine = Engine::new(deliver);
-    engine.bare = bare.then_some(true);
+    engine.preset = preset;
     engine.rescue = rescue;
     runtime.block_on(engine.serve(inbox));
 }
@@ -114,8 +115,8 @@ struct Engine {
     forwarder: Option<tokio::task::AbortHandle>,
     /// 读回以后安静下来还堆的那个任务（`readback.rs`）：又读回了就掐掉重排。
     settling: Option<tokio::task::AbortHandle>,
-    /// 下一个新开的会话开哪一档（[`Command::New`]）：`None` 照配置的默认。
-    bare: Option<bool>,
+    /// 下一个新开的会话用哪个预设（[`Command::New`]，预设的名字）：`None` 照配置里的默认预设。
+    preset: Option<String>,
     /// 推送里派出去的子会话的编号交回这里订阅（`children.rs`）：转推送的那几个任务拿着发的一头。
     agents: (
         mpsc::UnboundedSender<String>,
@@ -150,7 +151,7 @@ impl Engine {
             session: None,
             forwarder: None,
             settling: None,
-            bare: None,
+            preset: None,
             agents: mpsc::unbounded_channel(),
             watched: std::collections::BTreeSet::new(),
             viewing: None,
@@ -236,10 +237,13 @@ impl Engine {
             Command::ChatDefault(reference) => self.chat_default(reference).await,
             Command::Efforts(reference) => self.efforts(reference).await,
             Command::Effort(level) => self.set_effort(level).await,
-            Command::New { bare } => {
-                self.bare = bare;
+            Command::New { preset } => {
+                self.preset = preset;
                 self.close().await;
             }
+            Command::Presets => self.presets().await,
+            Command::PresetDefault(name) => self.preset_default(name).await,
+            Command::PresetDelete(name) => self.preset_delete(name).await,
             Command::Sessions => self.list().await,
             Command::Delete(id) => self.delete(id).await,
             Command::Export(id, path) => self.export(id, path).await,
@@ -253,6 +257,8 @@ impl Engine {
                 if let Some(Err(why)) = self.ready.as_ref().map(setup::Ready::reconfigure) {
                     self.report(Update::Failed(why));
                 }
+                // 预设可能改了、删了：正在说话的会话钉着的那一个再比一次（`presets.rs`）。
+                self.tell_preset();
             }
             Command::Interrupt { send } => {
                 let queued = if send { Queued::Send } else { Queued::Return };
@@ -438,9 +444,13 @@ impl Engine {
         let Some(ready) = &self.ready else {
             return Err("engine not ready".to_string());
         };
-        let handle = ready
-            .create(command, self.bare, self.rescue_chat.clone())
+        let (handle, missing) = ready
+            .create(command, self.preset.as_deref(), self.rescue_chat.clone())
             .await?;
+        // 要的预设现在没有（默认预设写的名字删掉了）：照全部功能开了，连同别的被忽略的配置项提示。
+        if missing.is_some() {
+            self.note_ignored(lm_engine::presets::DEFAULT);
+        }
         self.unattend(Some(&handle));
         let subscription = handle
             .subscribe()
@@ -449,6 +459,7 @@ impl Engine {
         self.report(Update::Ready(handle.id().as_str().to_string()));
         self.report(Update::Loops(handle.loops()));
         self.follow(subscription, handle, false);
+        self.tell_preset();
         self.hand_pending_effort().await;
         Ok(())
     }

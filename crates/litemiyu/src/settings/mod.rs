@@ -15,6 +15,7 @@ pub mod opening;
 mod page;
 mod popup;
 pub mod prefs;
+mod presets;
 mod preview;
 pub mod probe;
 mod providers;
@@ -34,6 +35,7 @@ pub use extras::{EXTRAS, Extra};
 pub use mouse::{Hit, Hits};
 pub use page::Row;
 pub use popup::{Choose, Popup, Target, Window};
+pub use presets::{FormRow, PresetTarget, Presets};
 use texts::{Texts, fill};
 
 /// 按了一个键以后界面要做的。
@@ -137,6 +139,8 @@ pub struct Settings {
     pub wait: std::time::Duration,
     /// 技能页、MCP 页进页时读的那一份。
     pub extra_list: extras::Listed,
+    /// 「预设」页（`presets.rs`，LM-29）：进页时开，回主菜单放掉。
+    pub presets: Option<Presets>,
     /// 第一次运行的开头（`opening.rs`）：开着时画它、按键归它。
     pub opening: Option<opening::Opening>,
     /// 这一下存过：界面照读回的值把终端自己的几项换上（`prefs.rs`），换完放下。
@@ -223,6 +227,7 @@ impl Settings {
             auto_catalog: false,
             wait: probe::WAIT,
             extra_list: extras::Listed::default(),
+            presets: None,
             opening: None,
             saved: false,
             looked: Vec::new(),
@@ -339,11 +344,14 @@ impl Settings {
             .map(|(value, origin)| (value, origin.layer_name()))
     }
 
-    /// 第 `item` 项现在的值写给人看。
+    /// 第 `item` 项现在的值写给人看。「默认预设」写预设给人看的名字（自带的两个照界面语言；写的名字现在没有的原样）。
     pub fn shown_value(&self, item: usize) -> String {
         let shown = &self.schema.items[item];
         let value = self.value(shown.item.key).map(|(value, _)| value);
-        self.shown_of(item, value)
+        match (shown.item.key, value) {
+            (lm_engine::presets::DEFAULT, Some(Value::Text(name))) => self.preset_shown(name),
+            _ => self.shown_of(item, value),
+        }
     }
 
     /// 第 `item` 项是 `value` 时写给人看的样子。
@@ -414,7 +422,11 @@ impl Settings {
         }
         if self.popup.is_some() {
             self.popup_key(key);
-            return Outcome::Stay;
+            // 从对话里的 `/preset` 框来新建、填名字的窗取消了：直接回对话（`presets.rs`）。
+            return match self.presets_leaving() {
+                true => Outcome::Back,
+                false => Outcome::Stay,
+            };
         }
         if self.models.as_ref().is_some_and(|m| m.popup.is_some()) {
             self.models_key(self.models_page(), key);
@@ -425,6 +437,9 @@ impl Settings {
         }
         match self.view {
             View::Menu(at) => self.menu_key(at, key),
+            View::Page { page, at } if self.extra(page) == Some(Extra::Presets) => {
+                self.presets_key(page, at, key)
+            }
             View::Page { page, at } if self.extra(page).is_some() => {
                 if let Some(extra) = self.extra(page) {
                     self.extra_key(page, at, extra, key);
@@ -460,7 +475,10 @@ impl Settings {
                 }
                 self.note_models();
                 if let Some(extra) = self.extra(at) {
-                    self.enter_extra(extra);
+                    match extra {
+                        Extra::Presets => self.enter_presets(),
+                        _ => self.enter_extra(extra),
+                    }
                     self.view = View::Page { page: at, at: 0 };
                     self.status = None;
                     return Outcome::Stay;
@@ -553,6 +571,11 @@ impl Settings {
         let key = shown.item.key.to_string();
         let value = self.value(&key).map(|(value, _)| value.clone());
         match (shown.item.ui.control, shown.item.kind) {
+            // 「默认预设」：照现在有的预设列（`presets.rs`）。
+            _ if key == lm_engine::presets::DEFAULT => {
+                let title = shown.words.name.clone();
+                self.choose_default_preset(title);
+            }
             (Control::Toggle, _) => {
                 let on = matches!(value, Some(Value::Bool(true)));
                 self.save(&[Edit::Set(key, Value::Bool(!on))], item);
@@ -591,8 +614,10 @@ impl Settings {
         match popup.window.key(key) {
             popup::Done::Open => {}
             popup::Done::Cancel => {
+                let target = popup.target.clone();
                 self.popup = None;
                 self.importing = None;
+                self.preset_cancelled(&target);
             }
             popup::Done::Accept => {
                 let target = popup.target.clone();
@@ -613,6 +638,9 @@ impl Settings {
             Target::Pick(key) => self.theme_picked(&key),
             Target::Import => self.import_ticked(),
             Target::ImportClash(ids) => self.import_clash(&ids, chosen),
+            Target::PresetNew(base) => self.preset_new(base.as_deref()),
+            Target::PresetRename(old) => self.preset_rename(&old),
+            Target::PresetDelete(name) => self.preset_delete(&name, chosen),
             Target::Unset(item) => {
                 self.popup = None;
                 let key = self.schema.items[item].item.key.to_string();
@@ -639,6 +667,13 @@ impl Settings {
             self.popup.as_ref().map(|popup| &popup.window),
             shown.item.kind,
         ) {
+            // 「默认预设」的选择窗（`presets.rs`）：选的是第几个预设。
+            (Some(Window::Choose(choose)), _) if key == lm_engine::presets::DEFAULT => {
+                match self.default_preset_at(choose.at) {
+                    Some(name) => Edit::Set(key.to_string(), Value::Text(name.into())),
+                    None => return,
+                }
+            }
             (Some(Window::Choose(choose)), Kind::Option(options)) => {
                 Edit::Set(key.to_string(), Value::Text(options[choose.at].into()))
             }

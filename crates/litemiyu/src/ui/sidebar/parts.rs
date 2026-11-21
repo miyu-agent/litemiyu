@@ -27,7 +27,13 @@ pub struct Session {
 impl Part<Side<'_, '_>> for Session {
     fn lay(&mut self, side: &Side, width: u16) -> Vec<Line<'static>> {
         let t = &side.seen.talk.transcript;
-        let (lines, id_row) = super::session_lines(t, side.seen.config, width);
+        // 引擎还没说的（第一句话刚发出去、会话还没开好）：照会用的那一个写；应急模式不写。
+        let ahead = match side.seen.rescue {
+            Some(_) => None,
+            None => crate::app::presets::ahead(side.seen.talk, side.seen.link),
+        };
+        let preset = side.seen.talk.preset.as_ref().or(ahead.as_ref());
+        let (lines, id_row) = super::session_lines(t, preset, side.seen.config, width);
         self.id_row = id_row;
         lines
     }

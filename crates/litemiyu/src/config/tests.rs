@@ -103,7 +103,7 @@ fn the_squeezed_resources_read_the_same_as_the_originals() {
         "icons/plain.json",
         "languages.json",
         "layout.json",
-        "math.json",
+        "scripts.json",
         "pulse.json",
         "settings/en.json",
         "settings/zh.json",

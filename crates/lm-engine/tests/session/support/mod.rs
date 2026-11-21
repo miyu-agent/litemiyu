@@ -112,6 +112,7 @@ impl Home {
             configs: self.configs.clone(),
             model: opening.model,
             no_tools: opening.no_tools,
+            preset: opening.preset,
         });
         within("造会话", created).await.expect("造得出会话")
     }

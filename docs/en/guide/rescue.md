@@ -21,7 +21,8 @@ You do not need rescue mode in normal use. It keeps no conversation and has fewe
 | Configuration file | Must be readable | Used if readable; starts anyway if not |
 | The AI's tools | All | Only `read`, `write`, `edit`, `shell`, `jobs`, `schedule_wakeup` and `ask_user` |
 | Skills, MCP, memory | Yes | No |
-| Commands | All | No `/sessions`, `/config`, `/export` or `/delete` |
+| Commands | All | No `/sessions`, `/config`, `/export`, `/delete` or `/preset` |
+| Presets | You can choose and define them | No configuration is read and the tools are fixed; `--preset` and `/new` only accept the built-in `full` and `bare` |
 | `/model`, `/effort` | Your choice becomes the default from then on | Lasts for this run only; nothing is written to the configuration |
 | Model catalog | Fetched over the network when needed, then cached | Never fetched; a copy already in the cache is read |
 | `Ctrl+G` external editor | Available | Not available; shows `Not available in rescue mode: nothing is saved to disk` |

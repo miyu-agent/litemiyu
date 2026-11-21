@@ -248,6 +248,7 @@ fn the_mcp_page_lists_a_server_with_its_switch_and_state() {
 }
 
 mod mouse;
+mod presets;
 mod slow_disk;
 mod status;
 

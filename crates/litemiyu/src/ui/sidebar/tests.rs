@@ -15,7 +15,7 @@ fn info_lines(
     width: u16,
     cwd: &str,
 ) -> (Vec<ratatui::text::Line<'static>>, Option<usize>) {
-    let (mut out, id_row) = session_lines(t, config, width);
+    let (mut out, id_row) = session_lines(t, None, config, width);
     for part in [
         cwd_lines(config, width, cwd),
         context_lines(t, config, width),

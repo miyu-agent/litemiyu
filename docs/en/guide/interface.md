@@ -14,7 +14,7 @@ Most of the window is the conversation: what you and the AI have said, from top 
 
 - Your messages have a vertical bar on the left.
 - Each thing the AI does (thinking, running a command, reading or writing a file) is a step in the timeline. Running steps are shown live; when the reply is done they fold into one line, for example `Run echo · 1s`. Click that line to expand it.
-- The AI's reply is rendered as Markdown: headings, lists, tables, syntax-highlighted code and links. Math formulas are converted to Unicode characters.
+- The AI's reply is rendered as Markdown: headings, lists, tables, syntax-highlighted code and links. Math formulas (LaTeX) are not typeset; they are shown as written.
 - Each turn ends with a small line such as `▣  14:18 · deepseek/deepseek-chat · 1.4s · 6.5k(C62%) · 286 tok/s`: the time it finished, the provider and model, how long it took, the tokens this turn used (cache hit rate in parentheses), and the output speed. For a turn you interrupted, the line only says `▣  Interrupted`.
 
 When the conversation is longer than the window, scroll with `PgUp`, `PgDn` or the mouse wheel. After scrolling up, `Jump to bottom (Ctrl+End) ↓` appears at the bottom.
@@ -55,7 +55,7 @@ When the window is at least 120 columns wide and a conversation has started, a s
 
 | Section | Content |
 |---|---|
-| Session | The session's title and short ID (for example `#f991af35`) |
+| Session | The session's title, short ID (for example `#f991af35`) and the preset it uses (for example `Preset All features`; see [Presets](presets.md)) |
 | `Workspace` | The directory the AI works in |
 | `Context` | Used and window size, with a progress bar below |
 | `Usage` | Total tokens, input and output, cache hit rate, cost |

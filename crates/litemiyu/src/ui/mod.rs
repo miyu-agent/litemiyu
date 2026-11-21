@@ -17,6 +17,7 @@ mod drawer;
 pub(crate) mod effort_list;
 pub mod estimate;
 mod files_page;
+pub(crate) mod preset_list;
 pub use files_page::FilesFrame;
 mod jobs_panel;
 mod loop_tag;

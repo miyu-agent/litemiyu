@@ -23,6 +23,8 @@ pub struct Opening {
     pub model: Option<String>,
     /// 无功能的一档（设计第五节第 14 条）：默认不是。
     pub no_tools: bool,
+    /// 自定义的预设（LM-29）：默认没有。
+    pub preset: Option<lm_kernel::policy::PresetPin>,
 }
 
 impl Default for Opening {
@@ -37,6 +39,7 @@ impl Default for Opening {
             oneshot: false,
             model: None,
             no_tools: false,
+            preset: None,
         }
     }
 }

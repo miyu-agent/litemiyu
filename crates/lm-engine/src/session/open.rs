@@ -95,12 +95,30 @@ async fn created(
         configs,
         model,
         no_tools,
+        preset,
     } = setup;
     let (family, table) = match family {
         Some(family) => (family, None),
         None => family::main_family(root, models, &tools, (home, &configs, &environment)),
     };
     let lineage = family.lineage.clone();
+    // 预设（LM-29）：主会话照交进来的，记给它以后派的子会话；子会话照主会话记下的那一份。
+    let preset = match &lineage {
+        None => {
+            let chosen = match (no_tools, preset) {
+                (true, _) => crate::presets::Chosen::Bare,
+                (false, Some(pin)) => crate::presets::Chosen::Custom(pin),
+                (false, None) => crate::presets::Chosen::Full,
+            };
+            family.mcp.preset.get_or_init(|| chosen).pin().cloned()
+        }
+        Some(_) => family
+            .mcp
+            .preset
+            .get()
+            .and_then(crate::presets::Chosen::pin)
+            .cloned(),
+    };
     let mcp_configs = configs.clone();
     let config = Turning::start(configs, environment.cwd.clone()).await;
     let values = config.current().resolved.values();
@@ -109,10 +127,13 @@ async fn created(
         main: lineage.is_none(),
         spawns: family::spawns(&family),
     };
-    let face = match no_tools {
+    let mut face = match no_tools {
         true => Vec::new(),
         false => face::face(&tools, &kind),
     };
+    if let Some(pin) = &preset {
+        face.retain(|tool| pin.on(&tool.name));
+    }
     let mut parts = Parts {
         attended,
         face,
@@ -122,10 +143,16 @@ async fn created(
         skills: None,
         appended: std::collections::BTreeMap::new(),
     };
-    // 技能（L5 五）、MCP 服务（L5 六）照这一刻的全局开关找；无功能的一档一个都不找。
+    // 技能（L5 五）、MCP 服务（L5 六）照这一刻的全局开关找，有预设的再照预设收窄（LM-29）；无功能的一档一个都不找。
     // 应急模式同无功能的一档：一个都不找。
     let extras = !no_tools && !rescue;
-    let switches = extras.then(|| crate::skills::switches::of(&values));
+    let switches = extras.then(|| {
+        let switches = crate::skills::switches::of(&values);
+        match &preset {
+            Some(pin) => crate::presets::narrowed(switches, pin),
+            None => switches,
+        }
+    });
     // 压缩触发线照这时的配置（Miyu 施工 CT-1）：会话钉的造好以后才记，第一个回合开始换。
     let line = crate::session::settings::CompactionSettings::from(&values).line_for(None);
     let mcp = extras.then(|| (Arc::clone(&family.mcp), mcp_configs.clone()));
@@ -187,6 +214,7 @@ async fn created(
             let marks = crate::skills::Marks::of(&skills);
             let mut snapshot = build(&config_dir, parts).with_line(Some(line));
             snapshot.no_tools = no_tools;
+            snapshot.preset = preset;
             let policy = snapshot.policy().map_err(CreateError::Policy)?;
             let texts = snapshot.driver_texts().map_err(CreateError::Policy)?;
             let run = snapshot.run_texts().map_err(CreateError::Policy)?;

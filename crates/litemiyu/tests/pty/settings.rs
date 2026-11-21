@@ -236,8 +236,8 @@ fn the_skills_and_mcp_pages_list_what_is_there() {
         std::fs::create_dir_all(skills.join(name)).expect("建得了目录");
         std::fs::write(skills.join(name).join("SKILL.md"), head).expect("写得进");
     }
-    // 同 Miyu 的先后：通用、外观、供应商和模型、隐私与安全、MCP、技能、高级。
-    for _ in 0..5 {
+    // 同 Miyu 的先后：通用、外观、供应商和模型、隐私与安全、MCP、技能、高级；预设页（LM-29）排在 MCP 前面。
+    for _ in 0..6 {
         session.press(DOWN);
     }
     session.press_enter();

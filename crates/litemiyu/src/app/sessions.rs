@@ -1,6 +1,6 @@
 //! 会话的进出（Miyu 终端 `app/switch.rs`，蓝图 `tui.md`「会话列表 `/sessions`」、「后台命令、子代理和侧边栏」第 7 条）：
 //! `/sessions` 开会话列表的框，打字筛，`↑` `↓` 选，`Enter` 切过去，空格勾、`Ctrl+A` 全勾、`Ctrl+D` 按两下删，`Esc` 关；
-//! 鼠标悬停选中、点一行切过去，滚轮挪露出的那一段。侧边栏「最近会话」点一行也切过去。`/new bare`、`/new full` 定新会话开哪一档（设计第五节第 14 条）。
+//! 鼠标悬停选中、点一行切过去，滚轮挪露出的那一段。侧边栏「最近会话」点一行也切过去。`/new <预设名>` 在 `presets.rs`。
 //!
 //! 列表照引擎扫的会话目录（`Command::Sessions`，连这个窗口开着的一起列，最近有动静的在前）：开框时要一份，侧边栏看得到
 //! 时、会话开了换了、一轮做完、起了标题以后再要一份；看不到侧边栏、没开框时不扫（设计第五节第 12 条）。
@@ -433,21 +433,6 @@ impl App {
         self.talk
             .transcript
             .update(Update::Ready(session), self.config.text());
-    }
-
-    /// `/new`，后面的字定开哪一档：不写的照配置的默认，`bare` 无功能，`full` 全部功能；写别的弹一句、不开。
-    pub(super) fn new_session_with(&mut self, words: Option<&str>) {
-        let bare = match words {
-            None => None,
-            Some("bare") => Some(true),
-            Some("full") => Some(false),
-            Some(_) => {
-                let note = self.config.text().sessions.new_tier.clone();
-                self.hint(note, false);
-                return;
-            }
-        };
-        self.new_session(bare);
     }
 }
 

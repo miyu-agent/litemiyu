@@ -2,6 +2,7 @@
   "width_percent": 90,
   "narrow_below": 20,
   "home_max_width": 80,
+  "preset_tag": "footer",
   "sidebar_from": 120,
   "sidebar_width": 38,
   "sidebar_jumps": 8,

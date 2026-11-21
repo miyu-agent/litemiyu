@@ -74,6 +74,8 @@ Run `/config` and open the `Skills` page to see all skills:
 
 Press `Enter` on one to switch it on or off. The AI cannot see skills that are off. The switch is stored under `[features]` in the configuration file, for example `skill-commit-message = false`.
 
+These switches apply to every session. To keep a skill away from only some sessions, use a [preset](presets.md): a skill is available only when it is on both here and in the session's preset.
+
 To remove a skill completely, delete its folder. The built-in `Write a skill` cannot be deleted, only switched off.
 
 ## MCP
@@ -136,7 +138,7 @@ Once MCP servers are configured, the main menu of `/config` gains an `MCP` page:
 ┃ echo  On  command python3 /home/user/mcp/echo.py · 1 tools last listed
 ```
 
-There is one row per server, with its command or URL and how many tools it last listed (`not started yet` if it never ran). Press `Enter` on one to switch it on or off. The switch is stored under `[features]` as well, for example `mcp-echo = false`.
+There is one row per server, with its command or URL and how many tools it last listed (`not started yet` if it never ran). Press `Enter` on one to switch it on or off. The switch is stored under `[features]` as well, for example `mcp-echo = false`. As with skills, these switches apply to every session, and a [preset](presets.md) can filter further per session.
 
 When a server fails to start or a call goes wrong, look at what it printed to standard error, in `~/.local/state/litemiyu/logs/mcp-<server>.stderr`.
 

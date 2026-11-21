@@ -11,10 +11,9 @@ mod inline;
 mod kit;
 mod layout;
 mod links;
-mod math;
 mod paths;
 mod pieces;
-mod stack;
+mod scripts;
 mod table;
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -25,7 +24,7 @@ pub use code::Languages;
 pub use inline::Folded;
 use inline::{Piece, fold};
 pub use kit::{Kit, Labels};
-pub use math::MathTable;
+pub use scripts::ScriptTable;
 use table::Cell;
 
 use crate::theme;
@@ -43,7 +42,7 @@ pub struct MdLine {
     pub details: Option<usize>,
 }
 
-/// 把一段 Markdown 排成 `width` 列宽的行，照 `kit` 着色、转写公式、写字。`flipped` 是这一条回答里点过的
+/// 把一段 Markdown 排成 `width` 列宽的行，照 `kit` 着色、写字。`flipped` 是这一条回答里点过的
 /// `<details>`（第几个），和它写的 `open` 反过来。
 pub fn render(text: &str, width: u16, kit: &Kit, flipped: &[usize]) -> Vec<MdLine> {
     // 制表符画不出来：先展开成空格（review C1）；`\[…\]`、`\(…\)` 换成 `$`（`dollars.rs`）。
@@ -57,7 +56,7 @@ pub fn render(text: &str, width: u16, kit: &Kit, flipped: &[usize]) -> Vec<MdLin
     let mut r = Renderer {
         width,
         languages: kit.languages,
-        math: kit.math,
+        scripts: kit.scripts,
         labels: kit.labels,
         flipped,
         details: Vec::new(),
@@ -93,9 +92,9 @@ pub fn render(text: &str, width: u16, kit: &Kit, flipped: &[usize]) -> Vec<MdLin
     r.finish()
 }
 
-/// 引用、列表的一项、`<details>` 最多套几层（照公式的 [`math::MAX_NESTING`]，审计 #052 的做法）：再往里的不套，照原文写在一行里。
+/// 引用、列表的一项、`<details>` 最多套几层（审计 #052 的做法）：再往里的不套，照原文写在一行里。
 /// 每一行的引子一层一段，不限的话套 n 层排出 n 行、每行 n 段，时间和内存随层数平方涨（LM-2）。
-pub(super) const NESTING: usize = math::MAX_NESTING;
+pub(super) const NESTING: usize = 64;
 
 /// 套在外面的一层：引用、列表的一项，或者展开着的 `<details>`。
 enum Container {
@@ -115,7 +114,7 @@ struct TableState {
 struct Renderer<'a> {
     width: u16,
     languages: &'a Languages,
-    math: &'a MathTable,
+    scripts: &'a ScriptTable,
     labels: &'a Labels,
     /// 这一条回答里点过的 `<details>`（第几个）。
     flipped: &'a [usize],
@@ -500,8 +499,6 @@ impl Renderer<'_> {
     }
 }
 
-#[cfg(test)]
-mod formulas;
 #[cfg(test)]
 mod speed;
 #[cfg(test)]

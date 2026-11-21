@@ -46,7 +46,7 @@ pub fn of(values: &Values) -> BTreeMap<String, bool> {
             switches.extend(
                 names
                     .into_iter()
-                    .filter(|feature| SWITCHABLE.iter().any(|kind| feature.starts_with(kind)))
+                    .filter(|feature| switchable(feature))
                     .map(|feature| (feature, *on)),
             );
         }
@@ -54,7 +54,20 @@ pub fn of(values: &Values) -> BTreeMap<String, bool> {
     switches
 }
 
-/// 功能 `feature` 的全局开关这时开不开：没写的算开。
+/// 「没写的」那一格（LM-29，`crate::presets::narrowed`）：照预设收窄以后，预设的 `unlisted` 关着的记 `false`，没写的功能照它
+/// 关着。配置里写不出这个键（[`of`] 只留 `skill-`、`mcp-` 开头的），只有全局开关的表里没有它。
+pub const REST: &str = "*";
+
+/// 功能编号 `feature` 是不是全局开关管的那几类（技能、MCP 服务）。
+pub fn switchable(feature: &str) -> bool {
+    SWITCHABLE.iter().any(|kind| feature.starts_with(kind))
+}
+
+/// 功能 `feature` 的开关这时开不开：没写的照「没写的」那一格（[`REST`]），那一格也没有的算开。
 pub fn on(switches: &BTreeMap<String, bool>, feature: &str) -> bool {
-    switches.get(feature).copied().unwrap_or(true)
+    switches
+        .get(feature)
+        .or_else(|| switches.get(REST))
+        .copied()
+        .unwrap_or(true)
 }

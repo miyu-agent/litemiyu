@@ -54,7 +54,7 @@
     "no_such_session": "no session {id}",
     "no_value": "option '{option}' requires a value",
     "not_utf8_arg": "an argument is not UTF-8 text",
-    "o.ask.bare": "No features: no tools (new sessions only)",
+    "o.ask.bare": "No features: same as --preset bare (new sessions)",
     "o.ask.cd": "Work in the given directory (new sessions only)",
     "o.ask.continue": "Continue the latest session",
     "o.ask.file": "Append this file's path to the message; repeatable",
@@ -67,7 +67,7 @@
     "o.ask.yes": "Allow risky commands that need confirmation",
     "o.help": "Print help",
     "o.root.api": "Rescue API (default: openai-chat)",
-    "o.root.bare": "First session without features: no tools, no context",
+    "o.root.bare": "First session without features (--preset bare)",
     "o.root.base_url": "Rescue provider URL",
     "o.root.continue": "Open the latest session full-screen",
     "o.root.model": "Rescue model name (overrides LITEMIYU_RESCUE_MODEL)",
@@ -130,6 +130,10 @@
     "warning": "warning: ",
     "write_failed": "cannot write {file}: {reason}",
     "x.ask": "No one can confirm risky commands while ask runs: catastrophic ones are always\nrefused; ones that need confirmation are refused and reported at the end\n(exit 4) unless --yes is given.\n\nExit status:\n  0  The turn ended normally\n  1  An error occurred, e.g. a model error or the session is open elsewhere\n  2  Bad arguments\n  3  Interrupted, or --timeout or --max-steps reached\n  4  The turn ended, but some steps needed confirmation and were skipped\n  5  No usable model\n\nExamples:\n  litemiyu ask \"What does this project do\"\n  cat error.log | litemiyu ask \"Why did this fail\" -\n  git diff | litemiyu ask --format jsonl \"Review these changes\" -\n  litemiyu ask -c --format json \"How do I run the tests\"",
-    "x.root": "Examples:\n  litemiyu ask \"What does this project do\"\n  git diff | litemiyu ask --format jsonl \"Review these changes\" -\n  litemiyu -c\n  litemiyu --version\n\nThe rescue provider can also come from LITEMIYU_RESCUE_BASE_URL,\nLITEMIYU_RESCUE_MODEL and LITEMIYU_RESCUE_API; the key only from\nLITEMIYU_RESCUE_API_KEY.\n\nRun 'litemiyu help <command>' for more on a command."
+    "x.root": "Examples:\n  litemiyu ask \"What does this project do\"\n  git diff | litemiyu ask --format jsonl \"Review these changes\" -\n  litemiyu -c\n  litemiyu --version\n\nThe rescue provider can also come from LITEMIYU_RESCUE_BASE_URL,\nLITEMIYU_RESCUE_MODEL and LITEMIYU_RESCUE_API; the key only from\nLITEMIYU_RESCUE_API_KEY.\n\nRun 'litemiyu help <command>' for more on a command.",
+    "o.root.preset": "First session with this preset; default unchanged",
+    "o.ask.preset": "Use this preset (new sessions only)",
+    "v.preset": "preset",
+    "hint.preset_rescue": "Rescue mode reads no config: only the built-in full (all features) and bare (no features) work"
   }
 }

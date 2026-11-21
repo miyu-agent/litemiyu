@@ -29,11 +29,7 @@ impl Actor {
             .mcp
             .as_ref()
             .filter(|_| !self.bare && self.tools.reads_files())
-            .map(|kit| {
-                let switches =
-                    crate::skills::switches::of(&self.config.current().resolved.values());
-                (kit.paths.clone(), switches, self.skills.clone())
-            });
+            .map(|kit| (kit.paths.clone(), self.switches(), self.skills.clone()));
         async move {
             let (paths, switches, last) = asking?;
             let looked = blocking(move || {

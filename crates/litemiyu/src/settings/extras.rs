@@ -15,17 +15,20 @@ use lm_kernel::config::mcp::{McpServer, Reach, configured};
 use super::texts::fill;
 use super::{Settings, Tone};
 
-/// 不照清单画的两页。
+/// 不照清单画的几页。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Extra {
+    /// 预设（`presets.rs`，LM-29）：不是一行一个开关的那种，按键、画法另有一套。
+    Presets,
     /// 技能。
     Skills,
     /// MCP。
     Mcp,
 }
 
-/// 这两页，照主菜单里的先后（MCP 在前，同 Miyu；技能页是 LiteMiyu 多的，挨着它）。
-pub const EXTRAS: [Extra; 2] = [Extra::Mcp, Extra::Skills];
+/// 这几页，照主菜单里的先后（预设在最前：它管的就是后面两页的东西和内置工具；MCP 在技能前，同 Miyu；技能页是 LiteMiyu
+/// 多的，挨着它）。
+pub const EXTRAS: [Extra; 3] = [Extra::Presets, Extra::Mcp, Extra::Skills];
 
 /// 一页里的一行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +82,8 @@ impl Settings {
         match extra {
             Extra::Skills => self.skills_listed(),
             Extra::Mcp => self.mcp_listed(),
+            // 预设页不走这里（`presets.rs`）。
+            Extra::Presets => Listed::default(),
         }
     }
 
@@ -218,6 +223,8 @@ impl Settings {
         let kind = match extra {
             Extra::Skills => "skill",
             Extra::Mcp => "mcp",
+            // 预设页不走这里（`presets.rs`）。
+            Extra::Presets => return,
         };
         let key = format!("features.{kind}-{}", entry.name);
         let edit = Edit::Set(key, Value::Bool(!entry.on));

@@ -21,7 +21,8 @@
 | 配置文件 | 必须能读 | 读得到就用，读不到也照样启动 |
 | AI 的工具 | 全部 | 只有 `read`、`write`、`edit`、`shell`、`jobs`、`schedule_wakeup`、`ask_user` 七件 |
 | 技能、MCP、记忆 | 有 | 没有 |
-| 命令 | 全部 | 没有 `/sessions`、`/config`、`/export`、`/delete` |
+| 命令 | 全部 | 没有 `/sessions`、`/config`、`/export`、`/delete`、`/preset` |
+| 预设 | 可以选择、自己定义 | 不读取配置，工具是固定的；`--preset` 和 `/new` 后面只能写自带的 `full`、`bare` |
 | `/model`、`/effort` | 选择会成为以后的默认 | 只在这一次运行里有效，不写进配置 |
 | 模型目录 | 需要时联网获取并缓存 | 不联网；缓存里已经有的会读取 |
 | `Ctrl+G` 外部编辑器 | 可用 | 不可用，提示 `应急模式下不可用：不保存任何内容到磁盘` |

@@ -136,7 +136,5 @@ texts! {
         pub delete_running: String,
         /// `/delete` 删不掉，`{reason}` 是原话。
         pub delete_failed: String,
-        /// `/new` 后面写了认不得的档。
-        pub new_tier: String,
     }
 }

@@ -17,7 +17,8 @@ pub fn lines(settings: &Settings, extra: Extra, at: usize, width: u16) -> Vec<Li
     if listed.entries.is_empty() {
         let empty = match extra {
             Extra::Skills => &texts.empty[0],
-            Extra::Mcp => &texts.empty[1],
+            // 预设页不走这里（`presets.rs`）。
+            Extra::Mcp | Extra::Presets => &texts.empty[1],
         };
         lines.push(Line::styled(format!("  {empty}"), theme::dim()));
     }

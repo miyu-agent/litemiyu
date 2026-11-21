@@ -47,6 +47,7 @@ pub fn items() -> Vec<Item> {
         TuiSettings::ITEMS,
         SessionDefaults::ITEMS,
         crate::skills::switches::ITEMS,
+        crate::presets::ITEMS,
     ]
     .concat()
 }

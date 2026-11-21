@@ -174,7 +174,7 @@ impl Renderer<'_> {
         }
     }
 
-    /// 在 `<sub>`、`<sup>` 里的字转成下标、上标（和公式同一张表）；转不动的字照原样。
+    /// 在 `<sub>`、`<sup>` 里的字转成下标、上标（`scripts.rs`）；转不动的字照原样。
     pub(in crate::markdown) fn scripted<'t>(&self, text: &'t str) -> Cow<'t, str> {
         let up = self.html_open.iter().rev().find_map(|(_, o)| match o {
             Opened::Script(up) => Some(*up),
@@ -184,9 +184,9 @@ impl Renderer<'_> {
             return Cow::Borrowed(text);
         };
         let table = if up {
-            &self.math.get().superscripts
+            &self.scripts.get().superscripts
         } else {
-            &self.math.get().subscripts
+            &self.scripts.get().subscripts
         };
         Cow::Owned(text.chars().map(|c| *table.get(&c).unwrap_or(&c)).collect())
     }

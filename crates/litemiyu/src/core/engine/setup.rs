@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use lm_engine::models::catalog::Places;
 use lm_engine::models::refresh::Schedule;
+use lm_engine::presets::{self, Chosen};
 use lm_engine::session::{
     ConfigSource, Configs, Create, Handle, Load, LoadError, ModelDirs, Routes, Workplace, create,
     create_rescue, load, new_id,
 };
-use lm_engine::settings::declared::{BARE, SessionDefaults};
 use lm_engine::store::paths::{Env, Paths};
 use lm_engine::tool::Catalog;
 use lm_kernel::config::merge::Resolved;
@@ -158,13 +158,27 @@ impl Ready {
         catalog.schedule = Some(sender);
     }
 
+    /// 多记一项被忽略的配置项（默认预设写的名字现在没有）：还没交过的记进那一份，交回真；交过的交回假（调的一方另交）。
+    pub fn note_ignored(&mut self, key: &str) -> bool {
+        match self.ignored.as_mut() {
+            Some(ignored) => {
+                if !ignored.iter().any(|seen| seen == key) {
+                    ignored.push(key.to_string());
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
     /// 读配置时被忽略的配置项：只交一次（一次运行只提示一次）；交过的、应急模式的没有。
     pub fn take_ignored(&mut self) -> Option<Vec<String>> {
         self.ignored.take()
     }
 
-    /// 在终端所在的目录开一个新会话，造它的命令编号是 `command`；`bare` 是开哪一档（`None` 照配置的默认）；`model` 是用
-    /// 哪个模型（应急模式下 `/model` 选了的；`None` 照配置的 `models.chat`）。
+    /// 在终端所在的目录开一个新会话，造它的命令编号是 `command`；`preset` 是用哪个预设（预设的名字；`None` 照配置里的默认
+    /// 预设）；`model` 是用哪个模型（应急模式下 `/model` 选了的；`None` 照配置的 `models.chat`）。连同「要的预设现在没有」时的
+    /// 那个名字交回：那时照全部功能开（界面选的时候查过在，走到这里是选了以后又删了，或者默认预设写的名字没有了）。
     ///
     /// # Errors
     ///
@@ -172,16 +186,25 @@ impl Ready {
     pub async fn create(
         &self,
         command: CommandId,
-        bare: Option<bool>,
+        preset: Option<&str>,
         model: Option<String>,
-    ) -> Result<Handle, String> {
+    ) -> Result<(Handle, Option<String>), String> {
         let now = now().ok_or("the system clock is out of range")?;
         let cwd = std::env::current_dir()
             .map(|dir| dir.to_string_lossy().into_owned())
             .map_err(|error| error.to_string())?;
-        // 新会话默认的档（`sessions.default`，设计第五节第 14 条）：钉在会话上。
-        let defaults = SessionDefaults::from(&self.configs.borrow().with_project(&cwd).values());
-        let no_tools = bare.unwrap_or(defaults.default == BARE);
+        // 用哪个预设（设计第六节第 14 条，LM-29）：钉在会话上。应急模式不读配置里的预设，只认无功能。
+        let values = self.configs.borrow().with_project(&cwd).values();
+        let (chosen, missing) = match (preset, self.rescue) {
+            (Some(presets::BARE), true) => (Chosen::Bare, None),
+            (_, true) => (Chosen::Full, None),
+            (Some(name), false) => match presets::choose(&values, name) {
+                Some(chosen) => (chosen, None),
+                None => (Chosen::Full, Some(name.to_string())),
+            },
+            (None, false) => presets::default_of(&values),
+        };
+        let no_tools = chosen == Chosen::Bare;
         let setup = Create {
             root: &self.paths,
             id: new_id(now),
@@ -200,12 +223,15 @@ impl Ready {
             configs: self.configs.clone(),
             model,
             no_tools,
+            preset: chosen.pin().cloned(),
         };
         let created = match self.rescue {
             true => create_rescue(setup).await,
             false => create(setup).await,
         };
-        created.map_err(|error| error.to_string())
+        created
+            .map(|handle| (handle, missing))
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -292,6 +318,14 @@ impl Ready {
     /// 数据放哪。
     pub fn paths(&self) -> &Paths {
         &self.paths
+    }
+
+    /// 这一刻配置里的最终值（比会话钉着的预设改没改，`presets.rs`）。
+    pub fn values(&self) -> lm_kernel::config::Values {
+        let cwd = std::env::current_dir()
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.configs.borrow().with_project(&cwd).values()
     }
 
     /// 现在的配置（`/model` 列模型、查思考程度照它）。

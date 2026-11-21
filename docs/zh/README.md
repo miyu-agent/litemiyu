@@ -17,6 +17,7 @@ LiteMiyu 是一个在终端里全屏运行的 Agent Harness（智能体框架）
 | [模型和供应商](guide/models.md) | 添加供应商、选择模型、从 Miyu 导入、上下文和花费的显示 |
 | [工具和权限](guide/tools.md) | AI 能用的工具、哪些操作会先问你、哪些永远被拦下 |
 | [会话](guide/sessions.md) | 新建、继续、列表、撤销、导出、删除，长会话和压缩 |
+| [预设](guide/presets.md) | 决定会话可以使用哪些工具、MCP 服务和技能；选择、新建、编辑预设 |
 | [子代理、跨会话消息和循环](guide/agents.md) | 后台命令、子代理、几个窗口互相发消息、`/loop` |
 | [技能和 MCP](guide/skills-mcp.md) | 给 AI 写技能、接入 MCP 服务、开关，“以下内容无效，已忽略”的提示 |
 | [提示词、项目说明和记忆](guide/memory.md) | 自己写提示词、`AGENTS.md`、AI 的记忆 |

@@ -50,11 +50,17 @@ pub fn draw(frame: &mut Frame, area: Rect, seen: &Seen, screen: &Screen, spin: u
         .map(|p| p.spans.iter().map(Span::width).sum())
         .collect();
     let cells_meta: Vec<Meta> = cells.iter().map(|p| (p.tight, p.hit)).collect();
+    // 预设名（LM-29）：看不到侧边栏时（首页、窄窗口）接在模型后面；位置照布局表的 `preset_tag`，全部功能的不写。
+    let preset = (seen.config.layout.preset_tag == "footer"
+        && screen.areas.sidebar.width == 0
+        && seen.rescue.is_none())
+    .then(|| crate::app::presets::tag(seen.talk, seen.link, seen.config))
+    .flatten();
     let (left, right, kept) = split(
         [
-            left(seen, Model::Full),
-            left(seen, Model::Short),
-            left(seen, Model::Bare),
+            left(seen, Model::Full, preset.as_deref()),
+            left(seen, Model::Short, preset.as_deref()),
+            left(seen, Model::Bare, None),
         ],
         cells,
         button_w,
@@ -334,7 +340,8 @@ enum Model {
 }
 
 /// 左边那一段：模型和端点、思考强度。`model`：模型那一格写多全；一行放不下时用窄的（[`split`]）。
-fn left<'a>(seen: &Seen<'a>, model: Model) -> Vec<Span<'a>> {
+/// `preset` 是接在后面的预设名（最窄的那一种不写）。
+fn left<'a>(seen: &Seen<'a>, model: Model, preset: Option<&str>) -> Vec<Span<'a>> {
     let t = &seen.talk.transcript;
     match &t.link {
         // 整句红字折行写在输入框上面（`above.rs`），这里只写前面那一截。
@@ -349,6 +356,12 @@ fn left<'a>(seen: &Seen<'a>, model: Model) -> Vec<Span<'a>> {
                     spans.push(Span::styled(crate::sheet::sep(), theme::dim()));
                     spans.push(Span::styled(effort.to_string(), theme::accent()));
                 }
+            }
+            if let Some(preset) = preset {
+                if !spans.is_empty() {
+                    spans.push(Span::styled(crate::sheet::sep(), theme::dim()));
+                }
+                spans.push(Span::styled(preset.to_string(), theme::dim()));
             }
             spans
         }

@@ -79,10 +79,18 @@ pub const PAGES: [(&str, &str, &str); 12] = [
 ];
 
 /// 登记了、界面不画的项，和为什么。
-pub const HIDDEN: [(&str, &str); 18] = [
+pub const HIDDEN: [(&str, &str); 20] = [
     (
         "features.<name>",
         "技能、MCP 的全局开关（L5 五）：设置页的技能、MCP 两页另画（Miyu 的 `feature.set`），界面线接",
+    ),
+    (
+        "presets.<name>.unlisted",
+        "预设（LM-29）：设置页的「预设」一页另画（主程序 `settings/presets.rs`），不照清单画",
+    ),
+    (
+        "presets.<name>.features.<name>",
+        "预设（LM-29）：设置页的「预设」一页另画（主程序 `settings/presets.rs`），不照清单画",
     ),
     (
         "providers.<id>.models.<model>.window",

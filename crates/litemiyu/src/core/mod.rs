@@ -9,6 +9,7 @@ mod engine;
 mod kinds;
 mod limits;
 mod models;
+mod presets;
 pub(crate) mod push;
 mod update;
 
@@ -21,6 +22,7 @@ use tokio::sync::mpsc;
 pub use kinds::{EndReason, ToolStatus};
 pub use limits::Limits;
 pub use models::{Choice, ChoiceState, Efforts};
+pub use presets::{PinState, Pinned};
 pub use push::{
     Asking, Block, CallError, ChildEnd, Compaction, JobEnd, JobStart, Push, ShellRan, Usage,
 };
@@ -55,12 +57,18 @@ pub enum Command {
     Compact(Option<String>),
     /// 清空上下文（`/clear`）。
     Clear,
-    /// 开新会话（`/new`）：等第一句话再开。`bare` 是开哪一档（设计第五节第 14 条）：`Some(true)` 无功能的、`Some(false)`
-    /// 全部功能，`None` 照配置里新会话默认的那一档。
+    /// 开新会话（`/new`）：等第一句话再开。`preset` 是用哪个预设（设计第六节第 14 条，LM-29）：预设的名字（自带的是
+    /// `full`、`bare`），`None` 照配置里的默认预设。
     New {
-        /// 开哪一档。
-        bare: Option<bool>,
+        /// 用哪个预设。
+        preset: Option<String>,
     },
+    /// 列预设（`/preset` 的框，`engine/presets.rs`）：照这一刻的配置文件读，交回 [`Update::Presets`]。
+    Presets,
+    /// 把这个预设记成默认预设（`sessions.default`，`/preset` 里回车选的）：写进配置，写完再交一次 [`Update::Presets`]。
+    PresetDefault(String),
+    /// 删掉这个自己定义的预设（`/preset` 里按 `d`、确认过的）：从配置里去掉，去完再交一次 [`Update::Presets`]。
+    PresetDelete(String),
     /// 列磁盘上的会话，连这个窗口开着的也列（`/sessions` 的框、侧边栏「最近会话」，照 Miyu 当前这个照先后排在原位）：在
     /// 阻塞线程里扫，交回 [`Update::Sessions`]。
     Sessions,
@@ -190,8 +198,8 @@ pub struct Core {
     )>,
     /// 引擎的消息怎么交回界面。
     deliver: Deliver,
-    /// 第一个会话开无功能的那一档（`litemiyu --bare`，设计第五节第 14 条）：起引擎线程时交给它。
-    bare: bool,
+    /// 第一个会话用哪个预设（`litemiyu --preset <名字>`、`--bare`，设计第六节第 14 条）：起引擎线程时交给它；没写的照默认预设。
+    preset: Option<String>,
     /// 应急模式备好的（`litemiyu --rescue`，设计第五节第 16 条）：起引擎线程时交给它；不是应急模式的没有。
     rescue: std::cell::Cell<Option<crate::rescue::Prepared>>,
 }
@@ -202,7 +210,7 @@ impl Core {
         Self {
             commands: OnceCell::new(),
             deliver: Arc::new(deliver),
-            bare: false,
+            preset: None,
             rescue: std::cell::Cell::new(None),
         }
     }
@@ -218,14 +226,14 @@ impl Core {
         core
     }
 
-    /// 应急模式（`litemiyu --rescue`）：引擎照备好的配置开不落盘的会话。同 [`Core::first_bare`]，起来时就要定。
+    /// 应急模式（`litemiyu --rescue`）：引擎照备好的配置开不落盘的会话。同 [`Core::first_preset`]，起来时就要定。
     pub fn rescue(&mut self, prepared: crate::rescue::Prepared) {
         self.rescue.set(Some(prepared));
     }
 
-    /// 第一个会话开无功能的那一档（`litemiyu --bare`）。引擎线程起了以后再设不管用：起来时就要定。
-    pub fn first_bare(&mut self) {
-        self.bare = true;
+    /// 第一个会话用预设 `name`（`litemiyu --preset <名字>`，`--bare` 是 `bare`）。引擎线程起了以后再设不管用：起来时就要定。
+    pub fn first_preset(&mut self, name: String) {
+        self.preset = Some(name);
     }
 
     /// 起引擎线程（起过的不再起）：人敲了第一个字，顺手先起，发第一句话时不用再等。
@@ -243,7 +251,13 @@ impl Core {
     fn sender(&self) -> &mpsc::UnboundedSender<Command> {
         &self
             .commands
-            .get_or_init(|| engine::spawn(Arc::clone(&self.deliver), self.bare, self.rescue.take()))
+            .get_or_init(|| {
+                engine::spawn(
+                    Arc::clone(&self.deliver),
+                    self.preset.clone(),
+                    self.rescue.take(),
+                )
+            })
             .0
     }
 }

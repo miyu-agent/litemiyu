@@ -228,7 +228,7 @@ fn d_goes_back_to_the_default() {
     assert!(matches!(
         &settings.popup,
         Some(Popup { window: Window::Confirm(confirm), .. })
-            if confirm.title == "恢复默认：新会话的功能？"
+            if confirm.title == "恢复默认：默认预设？"
                 && confirm.lines == ["移除此项的设置，恢复为默认的值"]
                 && confirm.at == 1
     ));

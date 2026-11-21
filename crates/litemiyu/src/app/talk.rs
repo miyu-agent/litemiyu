@@ -28,6 +28,8 @@ pub struct Talk {
     pub looping: Option<lm_engine::session::Looping>,
     /// 这个会话认不认 `/loop`（`Handle::loops`）：会话开好以前不知道（`None`），照认的办。
     pub loops: Option<bool>,
+    /// 这个会话钉着哪个预设（引擎交的，`presets.rs`，LM-29）：侧边栏照它写；会话开好以前、应急模式没有。
+    pub preset: Option<crate::core::Pinned>,
     /// 最近列出来的会话（侧边栏「最近会话」、会话列表）：不跟着会话换。
     pub recent: super::Recent,
     /// 打开的旧会话在哪个目录干活（照列出来时记的；那个目录不在了的、新开的会话是 `None`，照终端所在的目录）。

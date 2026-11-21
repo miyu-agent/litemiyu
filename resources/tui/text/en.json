@@ -242,6 +242,34 @@
     "loading": "Reading models…",
     "none": "This model has no effort levels to choose"
   },
+  "presets": {
+    "title": "Presets",
+    "hint": "↑/↓ · Enter default · s switch · e edit · a new · d delete · Esc close",
+    "hint_fixed": "↑/↓ · Enter default · s new session · e edit · a new · d delete · Esc close",
+    "loading": "Reading presets…",
+    "full": "All features",
+    "bare": "No features",
+    "marks": [
+      "built-in",
+      "default",
+      "this session"
+    ],
+    "marks_join": " · ",
+    "fixed": "This session's preset is fixed: it cannot change after the session has sent its first request. Enter only changes the default preset for later sessions; s starts a new session with the selected preset.",
+    "side": "Preset {name}",
+    "changed": "{name} (changed)",
+    "gone": "{name} (deleted)",
+    "default_set": "Default preset set to {name}; this session stays as it is",
+    "default_set_switched": "Default preset set to {name}; this session switched too",
+    "switched": "This session switched to preset {name}; the default stays",
+    "new_with": "Started a new session with preset {name}; the default stays",
+    "running": "Still answering: interrupt first, then start a session with another preset",
+    "built_in_fixed": "Built-in presets cannot be deleted",
+    "delete_again": "Press d again to delete preset {name}",
+    "deleted": "Deleted preset {name}",
+    "unknown": "No preset named {name}; type /preset to see them all",
+    "rescue": "Rescue mode reads no config: /new only takes full (all features) or bare (no features)"
+  },
   "menu": {
     "title": "Commands",
     "count": " {count}"
@@ -364,8 +392,7 @@
     "deleted_many": "Deleted {count} sessions",
     "groups": ["Recent", "Past 7 days", "Past 30 days", "Older"],
     "delete_running": "A turn is running: interrupt it before deleting this session",
-    "delete_failed": "Couldn't delete this session: {reason}",
-    "new_tier": "/new only takes bare (no features) or full (all features)"
+    "delete_failed": "Couldn't delete this session: {reason}"
   },
   "history": {
     "title": "History",
@@ -619,11 +646,12 @@
     "missing_config": "The config couldn't be read either: {why}",
     "bad": "litemiyu --rescue: {name} is not valid.",
     "help": [
-      "Usage: litemiyu [config] [--bare] [--rescue [--base-url <url>] [--model <name>]\n                [--api <api>]] | --version | --help",
+      "Usage: litemiyu [config] [--preset <preset> | --bare]\n                [--rescue [--base-url <url>] [--model <name>] [--api <api>]]\n                | --version | --help",
       "",
-      "  litemiyu            start a conversation (all features)",
+      "  litemiyu            start a conversation (default preset)",
       "  litemiyu config     open the settings",
-      "  litemiyu --bare     first session without features: no tools, no context",
+      "  litemiyu --preset <preset>\n                      first session with this preset; the default stays",
+      "  litemiyu --bare     first session with the No features preset: no tools,\n                      no context",
       "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file, command,\n                      scheduling and question tools; the session is not kept\n                      after closing",
       "  litemiyu --version  print the version and exit (also -V)",
       "",

@@ -242,6 +242,34 @@
     "loading": "正在加载模型…",
     "none": "该模型没有可选的思考程度"
   },
+  "presets": {
+    "title": "预设",
+    "hint": "↑/↓ 选择 · Enter 设默认 · s 只切换 · e 编辑 · a 新建 · d 删除 · Esc 关闭",
+    "hint_fixed": "↑/↓ 选择 · Enter 设默认 · s 新会话 · e 编辑 · a 新建 · d 删除 · Esc 关闭",
+    "loading": "正在读取预设…",
+    "full": "全部功能",
+    "bare": "无功能",
+    "marks": [
+      "自带",
+      "默认",
+      "当前会话"
+    ],
+    "marks_join": " · ",
+    "fixed": "当前会话的预设已经固定：会话发出第一个请求以后不能更换预设。Enter 只修改以后新会话使用的默认预设，s 用选中的预设新建一个会话。",
+    "side": "预设 {name}",
+    "changed": "{name}（已修改）",
+    "gone": "{name}（已删除）",
+    "default_set": "默认预设已设为「{name}」，当前会话不变",
+    "default_set_switched": "默认预设已设为「{name}」，当前会话也已切换",
+    "switched": "当前会话已切换到预设「{name}」，默认预设不变",
+    "new_with": "已用预设「{name}」新建会话，默认预设不变",
+    "running": "回答进行中：先打断，再用其他预设新建会话",
+    "built_in_fixed": "自带的预设不能删除",
+    "delete_again": "再按一次 d 删除预设「{name}」",
+    "deleted": "已删除预设「{name}」",
+    "unknown": "没有名为「{name}」的预设，输入 /preset 查看全部预设",
+    "rescue": "应急模式不读取配置，/new 后面只能写 full（全部功能）或 bare（无功能）"
+  },
   "menu": {
     "title": "命令",
     "count": " {count} 条"
@@ -364,8 +392,7 @@
     "deleted_many": "已删除 {count} 个会话",
     "groups": ["最近", "近 7 天", "近 30 天", "30 天前"],
     "delete_running": "回答进行中：先打断再删除当前会话",
-    "delete_failed": "无法删除此会话：{reason}",
-    "new_tier": "/new 的参数只能是 bare（无功能）或 full（全部功能）"
+    "delete_failed": "无法删除此会话：{reason}"
   },
   "history": {
     "title": "历史",
@@ -619,11 +646,12 @@
     "missing_config": "配置也无法读取：{why}",
     "bad": "litemiyu --rescue：{name} 的值无效。",
     "help": [
-      "用法：litemiyu [config] [--bare] [--rescue [--base-url <地址>] [--model <名字>]\n                [--api <接口>]] | --version | --help",
+      "用法：litemiyu [config] [--preset <预设名> | --bare]\n                [--rescue [--base-url <地址>] [--model <名字>] [--api <接口>]]\n                | --version | --help",
       "",
-      "  litemiyu            打开对话（全部功能）",
+      "  litemiyu            打开对话（使用默认预设）",
       "  litemiyu config     打开配置界面",
-      "  litemiyu --bare     第一个会话为无功能会话：不提供工具，不注入任何内容",
+      "  litemiyu --preset <预设名>\n                      第一个会话使用指定的预设，不修改默认预设",
+      "  litemiyu --bare     第一个会话使用「无功能」预设：不提供工具，不注入任何内容",
       "  litemiyu --rescue   应急模式：不保存任何内容到磁盘（包括会话日志、配置、\n                      输入历史），只提供文件、命令、定时触发和提问工具；\n                      关闭后会话不保留",
       "  litemiyu --version  显示版本后退出（也可以写 -V）",
       "",

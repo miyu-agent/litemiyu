@@ -147,6 +147,12 @@ pub(super) async fn opened(
             ),
         ),
     };
+    // 会话钉着的预设（LM-29）：主会话的记给它以后派的子会话（子会话照会话表载入的，表里已经有主会话那一份，不再填）；
+    // 界面直接打开的子会话记它自己快照里的。
+    family
+        .mcp
+        .preset
+        .get_or_init(|| crate::presets::Chosen::of(&snapshot));
     let environment = match placing {
         Workplace::Given(environment) => environment,
         Workplace::Remembered { offset, pick } => {

@@ -48,6 +48,16 @@ pub fn tell(words: &Words, path: &str, misuse: &Misuse) -> ExitCode {
             ),
             words.say("possible", &[("values", &joined(words, values))]),
         ),
+        Misuse::BadChoice(long, value, values) => {
+            let values: Vec<&str> = values.iter().map(String::as_str).collect();
+            (
+                words.say(
+                    "bad_value",
+                    &[("option", &format!("--{long}")), ("value", value)],
+                ),
+                words.say("possible", &[("values", &joined(words, &values))]),
+            )
+        }
         Misuse::Invalid(long, value, hint) => (
             words.say(
                 "bad_value",

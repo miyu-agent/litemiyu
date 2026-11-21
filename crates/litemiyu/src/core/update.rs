@@ -121,6 +121,11 @@ pub enum Update {
         /// 列出来的。
         listed: Result<Vec<lm_engine::session::Listed>, String>,
     },
+    /// 正在说话的会话钉着哪个预设（LM-29，`engine/presets.rs`）：开了新会话、打开了旧会话时交一次；配置换了、预设改了删了
+    /// 的再交一次（名字后面的「已修改」「已删除」照它）。
+    Preset(super::Pinned),
+    /// 列出来的预设（[`super::Command::Presets`]，写了默认预设、删了一个以后也交）。
+    Presets(lm_engine::presets::Listed),
     /// 旧会话打开了（[`super::Command::Open`]）：会话编号。界面换一份空的正文，接着来的推送是它从头补发的。
     Opened(String),
     /// 旧会话打不开（[`super::Command::Open`]）：正在说话的会话照旧。

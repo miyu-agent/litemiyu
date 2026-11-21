@@ -46,6 +46,7 @@ mod parts;
 mod path;
 mod path_drivers;
 mod prepare;
+mod presets;
 mod project_docs;
 mod questions;
 mod read;

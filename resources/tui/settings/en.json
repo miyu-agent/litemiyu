@@ -186,6 +186,97 @@
       ]
     ]
   },
+  "presets": {
+    "entry": [
+      "Presets",
+      "Create, edit and delete presets, set the default preset"
+    ],
+    "built_in": [
+      "All features",
+      "No features"
+    ],
+    "marks": [
+      "built-in, cannot be changed",
+      "default preset"
+    ],
+    "summary": [
+      "everything else on",
+      "everything else off"
+    ],
+    "summary_parts": [
+      "{n} turned on",
+      "{n} turned off"
+    ],
+    "hints": [
+      [
+        "Enter",
+        "edit"
+      ],
+      [
+        "a",
+        "new"
+      ],
+      [
+        "d",
+        "delete"
+      ],
+      [
+        "Space",
+        "set as default"
+      ],
+      [
+        "Esc",
+        "back"
+      ]
+    ],
+    "form_hints": [
+      [
+        "Enter/Space",
+        "change"
+      ],
+      [
+        "d",
+        "follow everything else"
+      ],
+      [
+        "Esc",
+        "back"
+      ]
+    ],
+    "rows": [
+      "Name",
+      "Everything else"
+    ],
+    "unlisted_note": "Items you have not set one by one use this switch, and so do MCP servers and skills added later",
+    "groups": [
+      "Built-in tools",
+      "MCP servers",
+      "Skills",
+      "Items that no longer exist"
+    ],
+    "follows_mark": "follows everything else",
+    "mcp_off": "turned off on the MCP page, so it stays unavailable even when on here",
+    "skill_off": "turned off on the Skills page, so it stays unavailable even when on here",
+    "missing": "no longer exists, press Enter to remove it from the preset",
+    "new": "New preset: name",
+    "new_from": "New preset based on {name}: name",
+    "name_empty": "Enter a name",
+    "name_built_in": "full and bare are the names of the built-in presets, choose another",
+    "name_bad": "A name has at most {max} characters, no spaces or periods, and does not start with -",
+    "name_taken": "There is already a preset with this name",
+    "created": "Created preset {name}",
+    "saved": "Saved, applies to new sessions",
+    "default_set": "Default preset set to {name}",
+    "built_in_fixed": "Built-in presets cannot be deleted",
+    "delete_ask": [
+      "Delete preset {name}?",
+      "Sessions that have already started are not affected",
+      "Delete",
+      "Cancel"
+    ],
+    "deleted": "Deleted preset {name}",
+    "follows": "This item has no setting of its own"
+  },
   "opening": {
     "steps": [
       "Language",

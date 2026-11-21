@@ -42,6 +42,9 @@ pub struct Create<'a> {
     pub model: Option<String>,
     /// 无功能的一档（设计第五节第 14 条）：一件工具都不给，回合开始什么都不注入；记进快照、`session.created` 的 `no_tools`。
     pub no_tools: bool,
+    /// 自定义的预设（设计第六节第 14 条，LM-29，`crate::presets`）：工具面、技能、MCP 服务照这张名单筛，记进快照。没有的是
+    /// 自带的两个预设（全部功能，或者 `no_tools` 的无功能）。子会话不看这一格，照主会话的。
+    pub preset: Option<lm_kernel::policy::PresetPin>,
 }
 
 /// 照最后一次记下的工作目录（没有的是空的）定实际在哪干活。

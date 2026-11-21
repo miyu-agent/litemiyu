@@ -126,7 +126,8 @@ fn a_wide_window_shows_the_session_and_its_numbers_match_the_footer_and_status()
             .position(|l| l == line)
             .unwrap_or_else(|| panic!("侧边栏有「{line}」：\n{}", rows.join("\n")))
     };
-    // 会话：没起名字的写「未命名会话」，下面短编号；接着工作区、上下文、用量，段和段之间空一行，跳转消息、最近会话在后面。
+    // 会话：没起名字的写「未命名会话」，下面短编号、这个会话用的预设（LM-29）；接着工作区、上下文、用量，段和段之间空一行，
+    // 跳转消息、最近会话在后面。
     assert_eq!(
         rows[1],
         "未命名会话",
@@ -135,8 +136,9 @@ fn a_wide_window_shows_the_session_and_its_numbers_match_the_footer_and_status()
     );
     let id = rows[2].strip_prefix('#').expect("短编号").to_string();
     assert_eq!(id.chars().count(), 8, "短编号 8 位：{id}");
-    assert_eq!(rows[3], "");
-    assert_eq!(rows[4], "工作区");
+    assert_eq!(rows[3], "预设 全部功能", "用默认预设的也写");
+    assert_eq!(rows[4], "");
+    assert_eq!(rows[5], "工作区");
     let context = at("上下文");
     assert_eq!(rows[context - 1], "", "段前空一行");
     assert_eq!(

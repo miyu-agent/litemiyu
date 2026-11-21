@@ -1,5 +1,6 @@
-//! LiteMiyu 自己加的几项（`docs/00-设计.md` 第五节第 12、14 条）：界面语言、新会话默认的档。Miyu 的界面语言 `ui.language`
-//! 写在个人设置里，这里只有一份配置；新会话的档在 Miyu 是预设（`preset.default`），这里没有预设，只有全部功能、无功能两档。
+//! LiteMiyu 自己加的几项（`docs/00-设计.md` 第六节第 12、14 条）：界面语言、默认预设。Miyu 的界面语言 `ui.language`
+//! 写在个人设置里，这里只有一份配置；默认预设在 Miyu 是 `preset.default`，这里是 `sessions.default`（LM-29 以前只有全部功能、
+//! 无功能两档，键名沿用）。
 
 lm_kernel::settings! {
     /// 界面这一块。
@@ -18,10 +19,14 @@ lm_kernel::settings! {
 lm_kernel::settings! {
     /// 新会话。
     pub struct SessionDefaults in "sessions" {
-        /// 新会话默认开哪一档（设计第五节第 14 条）：`full` 全部功能，`bare` 无功能（一件工具都不给、回合开始什么都不注入）。
-        /// 造会话时读，钉在会话上，开着的会话不变。
+        /// 默认预设（设计第六节第 14 条，LM-29，`crate::presets`）：新会话没另指定时用哪个预设。`full` 全部功能，`bare`
+        /// 无功能（一件工具都不给、回合开始什么都不注入），别的是自己定义的预设的名字。造会话时读，钉在会话上，开着的会话
+        /// 不变。写的名字现在没有的照全部功能开，主程序提示一次（[`crate::presets::default_of`]）。
+        ///
+        /// LM-29 以前是只有 `full`、`bare` 两个选项的下拉；现在是文字，配置界面照现有的预设列成下拉（主程序
+        /// `settings/presets.rs`）。
         default: String = "full" {
-            kind: option ["full", "bare"],
+            kind: text [64],
             layers: [System],
             applies: new_session,
             ui: { page: "general", group: "new_session", control: select },
@@ -130,9 +135,6 @@ lm_kernel::settings! {
 
 /// 界面语言跟系统的那一档。
 pub const AUTO: &str = "auto";
-
-/// 无功能的那一档。
-pub const BARE: &str = "bare";
 
 #[cfg(test)]
 mod tests {

@@ -30,6 +30,10 @@ impl App {
             } => return self.viewed(&session, (pushes, first), &done),
             other => other,
         };
+        // `/preset` 的列表、当前会话钉着的预设（`presets.rs`）。
+        let Some(update) = self.preset_update(update) else {
+            return;
+        };
         // 要开的旧会话补完了（钟回到现在；读坏了的也照样交这一条）、引擎起不来：不等了，当场画（`sessions.rs`）。
         let filled = matches!(update, Update::Push(Push::Clock(None)) | Update::Failed(_));
         let pieces = self.talk.transcript.pieces().len();

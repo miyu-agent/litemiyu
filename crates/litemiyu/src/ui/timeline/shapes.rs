@@ -98,7 +98,7 @@ fn markdown_table(detail: &Value) -> Option<String> {
 fn markdown_pieces(text: &str, width: u16, ctx: &Ctx) -> Vec<Piece> {
     let kit = markdown::Kit {
         languages: ctx.config.languages(),
-        math: ctx.config.math(),
+        scripts: ctx.config.scripts(),
         labels: &ctx.config.text().markdown,
         tab: ctx.config.layout.tab,
     };

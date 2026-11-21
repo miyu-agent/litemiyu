@@ -143,10 +143,12 @@ fn run() -> io::Result<ExitCode> {
         to_main.send(message).is_ok()
     })?;
     let mut core = core::Core::new(move |update| sender.send(Incoming::Core(update)).is_ok());
-    // `litemiyu --bare`：第一个会话开无功能的那一档（设计第五节第 14 条），开好以前命令列表就不列 `/loop`。
-    let bare = start.bare;
-    if bare {
-        core.first_bare();
+    // `litemiyu --preset <名字>`（`--bare` 是 `bare`）：第一个会话用这个预设（设计第六节第 14 条）；定了无功能的，开好以前
+    // 命令列表就不列 `/loop`。
+    let preset = start.preset;
+    let bare = preset.as_deref() == Some(lm_engine::presets::BARE);
+    if let Some(name) = &preset {
+        core.first_preset(name.clone());
     }
     let rescue = rescue.map(|started| {
         let notes = (
@@ -162,6 +164,7 @@ fn run() -> io::Result<ExitCode> {
     let mut app = App::new(config, core);
     // 一格几个像素：拖滚动条按像素报鼠标时换回格子用（`pixel_mouse.rs`）。
     app.screen.pixel.cell = pixel_mouse::cell();
+    app.link.next_preset = preset;
     if bare {
         app.talk.loops = Some(false);
     }
@@ -177,6 +180,7 @@ fn run() -> io::Result<ExitCode> {
     // 模型目录（Miyu 终端连上核心时要 `models.chat`，`app/effort.rs::chat_configured`）。应急模式照它备好的那一个。
     if rescue.is_none() {
         app.chat_configured(startup.chat.clone());
+        app.link.default_preset.clone_from(&startup.preset);
     }
     if let Some((words, (unreadable, keyless), chat)) = rescue {
         // 应急模式不进配置界面：配置要写盘；没配置也照环境变量给的说话。

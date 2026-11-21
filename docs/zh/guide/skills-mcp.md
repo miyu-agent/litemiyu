@@ -74,6 +74,8 @@ AI 会把技能写进 `~/.config/litemiyu/skills/`。写好的技能从下一轮
 
 选中一个按 `Enter` 切换开和关。关掉的技能 AI 看不到。开关记在配置文件的 `[features]` 里，例如 `skill-commit-message = false`。
 
+这里的开关对全部会话生效。如果只想让某一类会话不使用某个技能，可以用[预设](presets.md)：一个技能要在这里和会话的预设里都打开才可用。
+
 想彻底去掉一个技能，删除它的文件夹即可。自带的 `写技能` 不能删除，只能关掉。
 
 ## MCP
@@ -136,7 +138,7 @@ bearer = { secret = "tracker" }
 ┃ echo  开  命令 python3 /home/user/mcp/echo.py · 上次获取到 1 个工具
 ```
 
-每个服务一行，显示它的命令或者网址，以及上次取到几个工具（还没有启动过的显示 `尚未启动过`）。选中一个按 `Enter` 切换开和关。开关同样记在 `[features]` 里，例如 `mcp-echo = false`。
+每个服务一行，显示它的命令或者网址，以及上次取到几个工具（还没有启动过的显示 `尚未启动过`）。选中一个按 `Enter` 切换开和关。开关同样记在 `[features]` 里，例如 `mcp-echo = false`。和技能一样，这里的开关对全部会话生效，[预设](presets.md)可以再按会话筛选。
 
 服务启动失败、调用出错时，可以查看它输出的错误信息，在 `~/.local/state/litemiyu/logs/mcp-<服务名>.stderr`。
 

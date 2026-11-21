@@ -11,16 +11,20 @@ A session is one continuous conversation between you and the AI. Every session i
 
 A session's working directory is the directory LiteMiyu was started from, and it does not change once the session exists. To have the AI work in another project, start LiteMiyu again from that directory.
 
-### Two kinds of session
+### The preset of a session
+
+Every session uses one preset, and the preset decides which built-in tools, MCP servers and skills the session can use. LiteMiyu ships two presets:
 
 | | All features | No features |
 |---|---|---|
-| How to start | `/new`, `litemiyu` | `/new bare`, `litemiyu --bare` |
+| How to start | `/new`, `litemiyu` (while the default preset is unchanged) | `/new bare`, `litemiyu --bare` |
 | Tools | All | None |
 | Content added to the conversation automatically | Time, working directory, project instructions, skill list, memory and so on | Nothing |
 | Good for | Getting work done | Just chatting with the model or asking questions |
 
-Which kind a session is gets fixed when it is created and cannot change midway; use `/new` to switch. If you want new sessions to have no features by default, change `New session features` on the `General` page of `/config`.
+You can also define presets of your own, for example one that only turns on the `shell` and `jobs` tools, and choose it with `/new <preset>`, `litemiyu --preset <preset>` or `/preset`.
+
+Once a session has sent its first request, its preset is fixed and cannot change midway; start a new session to use another one. The session part of the sidebar always shows the preset of the current session. See [Presets](presets.md) for the details.
 
 ## Continuing an earlier session
 

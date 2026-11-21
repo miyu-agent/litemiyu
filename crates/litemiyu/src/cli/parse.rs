@@ -48,6 +48,8 @@ pub enum Misuse {
     Conflict(&'static str, &'static str),
     /// 值不认识：选项、写的值、能写的几个。
     BadValue(&'static str, String, Vec<&'static str>),
+    /// 值不认识，能写的几个是现查的（`--preset`：这一刻配置里的预设）：选项、写的值、能写的几个。
+    BadChoice(&'static str, String, Vec<String>),
     /// 值写得不对（不是时长、不是正整数、不是目录……）：选项、写的值、提示的编号。
     Invalid(&'static str, String, &'static str),
     /// 这个选项要和另一个一起写（长的写法）：`--base-url` 要 `--rescue`。

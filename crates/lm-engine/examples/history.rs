@@ -187,6 +187,7 @@ async fn make(root: &Path, turns: usize, window: u64) {
         configs: configs(),
         model: None,
         no_tools: false,
+        preset: None,
     })
     .await
     .expect("造得出会话");
@@ -434,6 +435,7 @@ async fn forked(root: &Path, turns: usize) {
         configs: configs(),
         model: None,
         no_tools: false,
+        preset: None,
     })
     .await
     .expect("造得出会话");

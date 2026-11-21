@@ -2,7 +2,8 @@
 //! 的命令不列（同无功能的一档不列 `/loop`），起来时说一句配置读不了、没给 key。
 //!
 //! 不列的：`/sessions`（会话都在磁盘上）、`/config`（要写配置）、`/export`（照磁盘上的会话日志导出，应急模式的日志只在
-//! 内存里）、`/delete`（删的是磁盘上的会话目录；应急模式的会话 `/new` 就没了）；敲了照「没有这个命令」答，`/help` 也不列。
+//! 内存里）、`/delete`（删的是磁盘上的会话目录；应急模式的会话 `/new` 就没了）、`/preset`（预设在配置里，应急模式不读
+//! 配置，工具面是固定的；`/new` 后面只认自带的 `full`、`bare`）；敲了照「没有这个命令」答，`/help` 也不列。
 //! `/model`、`/effort`、`/loop` 照常（只在这一次运行里生效，不写盘：`app/models.rs`、`core/engine/models.rs`）。
 //! `Ctrl+G` 的外部编辑器要写临时文件，按了照实说没有。侧边栏的「最近会话」不扫（`app/sessions.rs`）。
 
@@ -85,7 +86,7 @@ impl App {
 pub fn offers(loops: Option<bool>, rescue: bool, spec: &Spec) -> bool {
     let no_disk = matches!(
         spec.run,
-        Run::Sessions | Run::Config | Run::Export | Run::Delete
+        Run::Sessions | Run::Config | Run::Export | Run::Delete | Run::Preset
     );
     (spec.run != Run::Loop || loops != Some(false)) && !(rescue && no_disk)
 }

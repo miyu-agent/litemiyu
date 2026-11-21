@@ -80,6 +80,9 @@ pub(crate) struct Extras {
     /// 第一次找技能、读 MCP 服务时被忽略的那两样（LM-3补，`crate::checkup`）：造会话时当场填，载入的会话第一次开回合时填；
     /// 无功能的一档什么都不读，填空的。只填一次。主程序照它在第一句话以后弹一条提示。
     pub(crate) ignored: tokio::sync::watch::Sender<Option<crate::checkup::Ignored>>,
+    /// 主会话钉着的预设（LM-29）：造主会话、载入时填，只填一次；它派的子会话照这一份筛工具面、技能、MCP 服务
+    /// （`open.rs`），头照它写会话用的是哪个预设（`Handle::preset`）。
+    pub(crate) preset: std::sync::OnceLock<crate::presets::Chosen>,
 }
 
 impl Default for Extras {
@@ -87,6 +90,7 @@ impl Default for Extras {
         Extras {
             servers: std::sync::OnceLock::new(),
             ignored: tokio::sync::watch::Sender::new(None),
+            preset: std::sync::OnceLock::new(),
         }
     }
 }

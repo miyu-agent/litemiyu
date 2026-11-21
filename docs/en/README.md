@@ -17,6 +17,7 @@ If this is your first time, start with the [Quick start](guide/quickstart.md).
 | [Models and providers](guide/models.md) | Adding providers, choosing models, importing from Miyu, context and cost in the footer |
 | [Tools and permissions](guide/tools.md) | The tools the AI can use, which actions ask first, which are always blocked |
 | [Sessions](guide/sessions.md) | Starting, continuing, listing, undoing, exporting and deleting; long sessions and compaction |
+| [Presets](guide/presets.md) | Deciding which tools, MCP servers and skills a session can use; choosing, creating and editing presets |
 | [Subagents, cross-session messages and loops](guide/agents.md) | Background commands, subagents, messages between windows, `/loop` |
 | [Skills and MCP](guide/skills-mcp.md) | Writing skills for the AI, connecting MCP servers, switches, the "These entries are invalid and were ignored" message |
 | [Prompt, project instructions and memory](guide/memory.md) | Writing your own prompt, `AGENTS.md`, the AI's memory |

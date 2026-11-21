@@ -108,6 +108,7 @@ impl Engine {
         self.replay(backlog).await;
         // 补发时读、解、补发、界面放掉的一大堆：安静下来以后还一次堆（原来要等下一条推送来过才还，打开以后一直留着）。
         self.follow(subscription, handle, true);
+        self.tell_preset();
     }
 
     /// 日志中间坏了一行的会话 `id`（在 `dir`，坏在第 `line` 行，读到第 `upto` 条为止）只读打开（同 Miyu 核心 YC-6：日志一个

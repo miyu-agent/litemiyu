@@ -23,7 +23,8 @@ Without a command, opens the full-screen interface.
 |---|---|
 | `-c`, `--continue` | Open the latest session |
 | `-s`, `--session <id>` | Open the given session; the full ID is required |
-| `--bare` | The first session has no features: no tools and nothing added to the conversation |
+| `--preset <preset>` | The first session uses the given preset; the default preset does not change, see [Presets](presets.md). Cannot be combined with `-c` or `-s` |
+| `--bare` | The first session uses the `No features` preset: no tools and nothing added to the conversation. Same as `--preset bare` |
 | `--rescue` | Rescue mode; see [Rescue mode](rescue.md) |
 | `--base-url <url>`, `--model <name>`, `--api <api>` | The rescue provider; only used with `--rescue` |
 | `-V`, `--version` | Print the version |
@@ -35,6 +36,7 @@ For example:
 litemiyu                # a new session
 litemiyu -c             # carry on with the last session
 litemiyu --bare         # just chat with the model
+litemiyu --preset cmd   # the first session uses the preset named cmd
 ```
 
 When the session does not exist or is open in another window, the program exits right away and says why, for example `litemiyu: session … is open in another window`.
@@ -77,7 +79,8 @@ litemiyu ask "What does this project do"
 | `--format <text\|json\|jsonl>` | Output format; the default is `text` |
 | `--file <file>` | Append this file's path to the message; repeatable |
 | `--model <name>` | Use this model, written as `provider/model`; a continued session keeps it |
-| `--bare` | A session with no features and no tools (new sessions only) |
+| `--preset <preset>` | Use the given preset (new sessions only) |
+| `--bare` | Use the `No features` preset, no tools; same as `--preset bare` (new sessions only) |
 | `--yes` | Allow dangerous commands that need confirmation |
 | `--timeout <time>` | Maximum time to wait, for example `30s`, `10m`, `1h` |
 | `--max-steps <n>` | Maximum number of model requests |

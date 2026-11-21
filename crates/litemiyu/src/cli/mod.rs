@@ -28,6 +28,7 @@ pub use words::clean;
 const ROOT_OPTS: &[Opt] = &[
     Opt::value("session", Some('s'), "v.id", "o.root.session"),
     Opt::flag("continue", Some('c'), "o.root.continue"),
+    Opt::value("preset", None, "v.preset", "o.root.preset"),
     Opt::flag("bare", None, "o.root.bare"),
     Opt::flag("rescue", None, "o.root.rescue"),
     Opt::value("base-url", None, "v.url", "o.root.base_url"),
@@ -73,13 +74,13 @@ const CONFIG: Cmd = Cmd {
     run: None,
 };
 
-/// 进全屏要的：应急模式的参数、`--bare`、`config`、开哪个旧会话。
+/// 进全屏要的：应急模式的参数、`--preset`（`--bare`）、`config`、开哪个旧会话。
 #[derive(Debug, Default)]
 pub struct Fullscreen {
     /// 应急模式（`--rescue`、`--base-url`、`--model`、`--api`）。
     pub rescue: crate::rescue::Args,
-    /// 第一个会话开无功能的那一档。
-    pub bare: bool,
+    /// 第一个会话用哪个预设（`--preset <名字>`；`--bare` 是 `bare`）：查过在的名字。没写的照配置里的默认预设。
+    pub preset: Option<String>,
     /// 直接进配置界面（`litemiyu config`）。
     pub config: bool,
     /// 直接打开这个旧会话（`-s`、`-c`，开之前查过在、没被别的窗口开着）。
@@ -222,9 +223,14 @@ fn fullscreen(args: &[String]) -> Start {
         &["rescue", "session"],
         &["rescue", "continue"],
     ];
-    if let Err(bad) = parse::exclusive(&parsed, groups) {
-        return Start::Done(misuse::tell(&Words::current(), "litemiyu", &bad));
-    }
+    // 预设只管新会话（钉在会话上，中途不换）：和 `-s`、`-c` 不能一起写。
+    let checked = parse::exclusive(&parsed, groups)
+        .and_then(|()| parse::only_new(&parsed, &["preset", "bare"]))
+        .and_then(|()| preset(&parsed));
+    let preset = match checked {
+        Ok(preset) => preset,
+        Err(bad) => return Start::Done(misuse::tell(&Words::current(), "litemiyu", &bad)),
+    };
     let open = match pick_session(&parsed) {
         Ok(open) => open,
         Err(code) => return Start::Done(code),
@@ -237,10 +243,49 @@ fn fullscreen(args: &[String]) -> Start {
             value("model"),
             value("api"),
         ),
-        bare: parsed.has("bare"),
+        preset,
         config: false,
         open,
     })
+}
+
+/// `--preset <名字>`、`--bare` 要的预设（设计第六节第 14 条，LM-29）：`--bare` 就是 `--preset bare`，两个不能一起写。自己定义的
+/// 照这一刻的配置文件查在不在（只认预设那几项，`lm_engine::presets::read`），没有的连同有哪些一起说、退出码 2。应急模式不读
+/// 配置、工具面是固定的：只认自带的两个，别的照实说。没写的是 `None`。
+///
+/// # Errors
+///
+/// 两个一起写了、没有这个预设、应急模式下写了自己定义的。
+pub(super) fn preset(parsed: &parse::Parsed) -> Result<Option<String>, Misuse> {
+    use lm_engine::presets::{BARE, FULL};
+    parse::exclusive(parsed, &[&["bare", "preset"]])?;
+    if parsed.has("bare") {
+        return Ok(Some(BARE.to_string()));
+    }
+    let Some(name) = parsed.value("preset") else {
+        return Ok(None);
+    };
+    if name == FULL || name == BARE {
+        return Ok(Some(name.to_string()));
+    }
+    if parsed.has("rescue") {
+        return Err(Misuse::Invalid(
+            "preset",
+            name.to_string(),
+            "hint.preset_rescue",
+        ));
+    }
+    let listed = lm_engine::store::paths::Paths::locate(&lm_engine::store::paths::Env::current())
+        .map(|paths| lm_engine::presets::read(&paths))
+        .unwrap_or_default();
+    match listed.has(name) {
+        true => Ok(Some(name.to_string())),
+        false => Err(Misuse::BadChoice(
+            "preset",
+            name.to_string(),
+            listed.names().map(str::to_string).collect(),
+        )),
+    }
 }
 
 /// 进全屏时要打开的旧会话（`-s`、`-c`）：先照会话目录查在不在、有没有窗口开着，不在的、开着的照实说、退出码 1，不进全屏。

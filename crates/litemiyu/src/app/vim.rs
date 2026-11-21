@@ -30,6 +30,7 @@ impl App {
                     self.boxes.panel,
                     Some(
                         Panel::Effort { .. }
+                            | Panel::Presets
                             | Panel::Jobs
                             | Panel::Help { .. }
                             | Panel::Status { .. }

@@ -25,6 +25,7 @@ The main menu has these pages:
 | `Appearance` | Color scheme, Icons |
 | `Providers & models` | Providers and default models; see [Models and providers](models.md) |
 | `Privacy & security` | Permissions |
+| `Presets` | Create, edit and delete presets and set the default preset; see [Presets](presets.md) |
 | `MCP` | MCP server status and switches. Present only when MCP servers are configured; see [Skills and MCP](skills-mcp.md) |
 | `Skills` | Skill descriptions and switches |
 | `Advanced` | Compaction |
@@ -56,7 +57,7 @@ keys = "arrows"
 | Name in the interface | Key | Default | Meaning |
 |---|---|---|---|
 | `Interface language` | `ui.language` | `auto` | `auto` (follow the system), `zh`, `en`. Applies after a restart |
-| `New session features` | `sessions.default` | `full` | `full` (all features) or `bare` (no features). Only affects sessions started afterwards |
+| `Default preset` | `sessions.default` | `full` | The preset new sessions use unless you choose another: `full` (all features), `bare` (no features) or the name of a preset of your own; see [Presets](presets.md). Only affects sessions started afterwards |
 | `Prompt` | (a separate file) | Built-in | Opens `prompt.md` in your editor; see [Prompt, project instructions and memory](memory.md#prompt) |
 | `Longest background command` | `jobs.max_running` | `30m` | How long a command the AI put in the background may run, from 1 minute to 2 hours. Written like `30m` or `2h` |
 | `Recent sessions in the sidebar` | `tui.sidebar_sessions` | `8` | How many sessions the sidebar lists; `0` hides the list. Range 0 to 100 |

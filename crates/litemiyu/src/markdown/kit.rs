@@ -2,7 +2,7 @@
 
 use crate::config::texts;
 
-use super::{Languages, MathTable};
+use super::{Languages, ScriptTable};
 
 texts! {
     /// Markdown 里要写的几个字（`text/zh.json` 的 `markdown`）。
@@ -23,8 +23,8 @@ texts! {
 pub struct Kit<'a> {
     /// 代码着色照哪种语言认什么（`code.json`）。
     pub languages: &'a Languages,
-    /// 公式的转写（`math.json`）：排到公式时才读。
-    pub math: &'a MathTable,
+    /// `<sup>`、`<sub>` 的上下标字符（`scripts.json`）：排到这两种标签时才读。
+    pub scripts: &'a ScriptTable,
     /// 要写的几个字。
     pub labels: &'a Labels,
     /// 制表位几列（`layout.json` 的 `output.tab`）：进排版以前展开（`tabs.rs`）。

@@ -20,6 +20,8 @@ pub enum Panel {
         /// 选中第几行。
         selected: usize,
     },
+    /// `/preset`（`presets.rs`，LM-29）：列表在 [`Boxes::presets`]。
+    Presets,
     /// `/status`（`status.rs`）：滚到第几行。
     Status {
         /// 第一行是第几行。
@@ -42,4 +44,8 @@ pub struct Boxes {
     pub files_page: Option<super::files_page::FilesPage>,
     /// `/effort` 框改哪个模型、有哪几级：引擎交回来以前是 `None`。
     pub efforts: Option<crate::core::Efforts>,
+    /// 开着的 `/preset` 框（`presets.rs`）。
+    pub presets: Option<super::presets::PresetList>,
+    /// 配置界面是从 `/preset` 的框里按 `e`、`a` 进去的：关了回到这个框。
+    pub presets_return: bool,
 }

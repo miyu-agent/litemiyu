@@ -262,6 +262,12 @@ pub enum Target {
     ImportClash(Vec<usize>),
     /// 照清单画的一页里 `d` 恢复默认先问一句：清单里的第几项。
     Unset(usize),
+    /// 「预设」页新建（`presets.rs`）：填名字；带着以自带的哪一个为底（没有的是全开的一份）。
+    PresetNew(Option<String>),
+    /// 「预设」页的表单里改名字：原来的名字。
+    PresetRename(String),
+    /// 「预设」页 `d` 删除先问一句：哪个预设。
+    PresetDelete(String),
     /// 开头配色方案那一步的一项（键）：选好了先记下，到「下一步」一起存（Miyu `oobe/theme.rs`）。
     Pick(String),
 }

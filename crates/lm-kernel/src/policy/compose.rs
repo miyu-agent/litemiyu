@@ -65,6 +65,7 @@ pub fn compose(sources: Sources, attended: bool) -> Snapshot {
         skills: None,
         profile: None,
         appended: std::collections::BTreeMap::new(),
+        preset: None,
     }
     // 步数上限照有没有人看着给出厂的（施工 AE-1）：子代理由造会话的一方再盖（[`Snapshot::with_steps`]）。
     .with_steps(StepLimits::of(Watched::of(attended), None))

@@ -26,6 +26,8 @@ pub struct Startup {
     pub tui: Vec<(String, Value)>,
     /// 新会话默认的聊天模型（`models.chat`）；没写的是 `None`。
     pub chat: Option<String>,
+    /// 默认预设不是全部功能时它的名字（[`scan_default_preset`]，LM-29）：首页照它写新会话会用哪个预设。
+    pub preset: Option<String>,
 }
 
 impl Startup {
@@ -53,6 +55,7 @@ pub fn read(table: &LanguageTable, var: impl Fn(&str) -> Option<String>) -> Star
             opening: true,
             tui: Vec::new(),
             chat: None,
+            preset: None,
         };
     };
     read_at(&paths, table, auto)
@@ -114,6 +117,7 @@ pub fn read_at(paths: &Paths, table: &LanguageTable, auto: Language) -> Startup 
         opening,
         tui,
         chat,
+        preset: text.and_then(scan_default_preset),
     }
 }
 
@@ -124,6 +128,35 @@ pub fn read_at(paths: &Paths, table: &LanguageTable, auto: Language) -> Startup 
 /// 照推来的写（Miyu 照核心读的整份配置，没有这一处）。`@` 开头的（LM-8 以前指着模型池）也交 `None`：整份解析照写法不对丢掉它，
 /// 引擎说「没有可用的模型」，底栏不写一个用不了的名字。
 pub fn scan_chat(text: &str) -> Option<String> {
+    scan_string(text, "models", "chat").filter(|chat| !chat.is_empty() && !chat.starts_with('@'))
+}
+
+/// 照字面在 `config.toml` 里找默认预设（`sessions.default`，LM-29），不解析整份 TOML（同 [`scan_chat`]，认的写法也一样）：
+/// 首页输入框下面那一行照它写新会话会用哪个预设。交回的是不是全部功能时的那个名字：没写的、写 `full` 的是 `None`；`bare`
+/// 照交；自己定义的要配置里照字面找得到它那张表的表头（`[presets.<名字>]`、`[presets."<名字>"]`），找不到的（删掉了、写法
+/// 认不出）当全部功能，同引擎开会话时的退法。
+pub fn scan_default_preset(text: &str) -> Option<String> {
+    use lm_engine::presets::{BARE, FULL};
+    let name = scan_string(text, "sessions", "default")?;
+    if name == FULL {
+        return None;
+    }
+    if name == BARE {
+        return Some(name);
+    }
+    let headers = [format!("[presets.{name}]"), format!("[presets.\"{name}\"]")];
+    let defined = text.lines().map(str::trim).any(|line| {
+        headers
+            .iter()
+            .any(|header| line.starts_with(header.as_str()))
+    });
+    (defined && lm_engine::presets::valid_name(&name)).then_some(name)
+}
+
+/// 照字面找 `[<table>]` 表里的 `<key> = "…"`，或者表头以前的 `<table>.<key> = "…"`（见 [`scan_chat`]）。
+fn scan_string(text: &str, wanted: &str, wanted_key: &str) -> Option<String> {
+    let dotted = format!("{wanted}.{wanted_key}");
+    let quoted = format!("\"{wanted_key}\"");
     let mut table: Option<&str> = Some("");
     // 在多行字符串里（别处写的长段落）：里面像表头、像 `chat =` 的行不算。
     let mut open: Option<&str> = None;
@@ -145,7 +178,7 @@ pub fn scan_chat(text: &str) -> Option<String> {
             continue;
         }
         if let Some(header) = line.strip_prefix('[') {
-            // `[[…]]` 是表数组，不是 `models`。
+            // `[[…]]` 是表数组，不是要找的那张表。
             table = match header.starts_with('[') {
                 true => None,
                 false => header.split(']').next().map(str::trim),
@@ -157,13 +190,12 @@ pub fn scan_chat(text: &str) -> Option<String> {
         };
         let key = key.trim();
         let ours = match table {
-            Some("models") => key == "chat" || key == "\"chat\"",
-            Some("") => key == "models.chat",
+            Some(table) if table == wanted => key == wanted_key || key == quoted,
+            Some("") => key == dotted,
             _ => false,
         };
         if ours {
-            return string_value(value.trim())
-                .filter(|chat| !chat.is_empty() && !chat.starts_with('@'));
+            return string_value(value.trim());
         }
     }
     None
@@ -332,6 +364,35 @@ mod tests {
             "[models]\nchat = \"@daily\"\n",
         ] {
             assert_eq!(scan_chat(text), None, "{text}");
+        }
+    }
+    #[test]
+    fn the_default_preset_is_found_literally_when_it_is_not_all_features() {
+        use super::scan_default_preset;
+        let web = "[presets.web]\nunlisted = \"off\"\n";
+        for (text, want) in [
+            ("", None),
+            ("[sessions]\ndefault = \"full\"\n", None),
+            ("[sessions]\ndefault = \"bare\"\n", Some("bare")),
+            ("sessions.default = \"bare\" # 只聊天\n", Some("bare")),
+            (
+                &format!("[sessions]\ndefault = \"web\"\n\n{web}"),
+                Some("web"),
+            ),
+            (
+                "[sessions]\ndefault = \"只用命令\"\n[presets.\"只用命令\"]\nunlisted = \"off\"\n",
+                Some("只用命令"),
+            ),
+            // 写的名字没有那张表（删掉了）：照全部功能，同引擎开会话时的退法。
+            ("[sessions]\ndefault = \"web\"\n", None),
+            (
+                "[sessions]\ndefault = \"web\"\n[presets.web-lite]\nunlisted = \"on\"\n",
+                None,
+            ),
+            // 别的表里的 default 不算。
+            (&format!("[other]\ndefault = \"web\"\n{web}"), None),
+        ] {
+            assert_eq!(scan_default_preset(text).as_deref(), want, "{text}");
         }
     }
 }

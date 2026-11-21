@@ -8,7 +8,7 @@ use ratatui::text::Span;
 use unicode_width::UnicodeWidthStr;
 
 use super::inline::{Folded, Piece};
-use super::{MdLine, Renderer, code, math};
+use super::{MdLine, Renderer, code};
 use crate::theme;
 
 /// 围栏代码块收完了没有：`block` 是它在原文里的那一截，最后一个非空行是一排（至少三个）``` 或 ~~~，
@@ -22,32 +22,28 @@ pub(super) fn closed(block: &str) -> bool {
 }
 
 impl Renderer<'_> {
-    /// 代码块：上下两条框线，代码按语言着色，太长的折行。语言写 `math` 的（GitHub 的写法）、收完了的照块级公式写
-    /// （2026-10-19 项目主人，`latex`、`tex` 的照代码）；没收完的（回答还在流）照代码写。
+    /// 代码块：上下两条框线，代码按语言着色，太长的折行。
     pub(super) fn code_block(&mut self) {
         let Some((lang, body)) = self.code.take() else {
             return;
         };
-        if lang.eq_ignore_ascii_case("math") && self.code_closed {
-            self.display_math(&body);
-        } else {
-            self.code_lines(&lang, &body);
-        }
+        self.code_lines(&lang, &body);
     }
 
-    /// 块级公式：先把前面收着的字排出去，自己占一块，写成 Unicode：分式上下摞、环境分行分列（`stack.rs`），
-    /// 摞出来比正文宽的照一行写（折开就对不齐了）。
+    /// 块级公式：不转写，照原文写，前后带上 `$$`（复制出去还是公式）；先把前面收着的字排出去，自己占一块。
     pub(super) fn display_math(&mut self, tex: &str) {
         self.flush();
-        let room = usize::from(self.room());
-        let lines = super::stack::stacked(tex, self.math.get(), room);
-        self.emit(vec![Piece::new(lines.join("\n"), theme::md_math())], true);
+        let tex = tex.trim_matches('\n');
+        let text = match tex.contains('\n') {
+            true => format!("$$\n{tex}\n$$"),
+            false => format!("$${tex}$$"),
+        };
+        self.emit(vec![Piece::new(text, theme::md_math())], true);
     }
 
-    /// 行内公式：转成 Unicode，公式色。
+    /// 行内公式：不转写，照原文写，前后带上 `$`，公式色。
     pub(super) fn inline_math(&mut self, tex: &str) {
-        let text = math::unicode(tex, self.math.get());
-        self.push(&text, theme::md_math());
+        self.push(&format!("${tex}$"), theme::md_math());
     }
 
     pub(super) fn code_lines(&mut self, lang: &str, body: &str) {

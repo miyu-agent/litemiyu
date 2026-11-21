@@ -12,25 +12,22 @@
    以后」，有记下的查目录的答、有上一个会话，走的路和第一次不全一样；只录第一次的话，这些函数散在程序各处，一个小函数带进
    一整片邻居页。最后另用一个新的数据目录连本机的 HTTPS 假服务器（`fake_model.start_tls`，现造的临时 CA）起一个、说一句（HTTPS
    那一段，占用 四）：真用的人连供应商走的都是 HTTPS，TLS 那一路（rustls、ring、webpki、读证书库）只录明文的话一个都不在清单里，
-   散在程序各处，每一处带进一片邻居（2026-11-16 量的：HTTPS 发过消息多 0.9 MB 代码页）。再另用一个新的数据目录起一个、说一句，
-   假服务器这一回答的是带公式的话（公式那一段，界面 二十七）：公式排版只在正文里有公式时才跑（`markdown/math.rs`、`stack.rs`、
-   读 `math.json`），平常那几段一个都录不到，散在程序各处；放在最后、挨在一起，有公式的回答少带进几片邻居（2026-11-17 量的：
-   没录时有公式的回答比没有公式的多 0.5 MB 代码页）。数据目录在临时目录里（不在就退出），
+   散在程序各处，每一处带进一片邻居（2026-11-16 量的：HTTPS 发过消息多 0.9 MB 代码页）。数据目录在临时目录里（不在就退出），
    家目录也指到那下面，不碰真实的家目录、不连外网（假服务器在本机）。
    缓存里的模型目录（LM-9补）：LM-9 起程序不带目录，用户平常的样子是缓存里有一份取来的目录，发话时读目录、查到窗口和价格、
    底栏写花费；录的沙箱里没有目录的话这几条路一条都录不到，散在程序各处（LM-9 量到：有目录时 HTTPS 发过消息多 0.7 MB 代码页）。
    所以第一段、日常那几段、HTTPS 那一段的数据目录缓存里都放 `catalog.py` 造的那一份目录（同真目录的形状、规模），供应商写目录里
    认得的那一家，假服务器听 `127.0.0.2`（照网上的供应商走，`fake_model.home`）；第一段第一次说话读整份目录、记下查目录的答，
    日常那几段照记下的答。HTTPS 那一段以后另录一段没有目录的（新的数据目录，供应商在本机、缓存里没有目录：首次使用、只用本机
-   模型的样子），排在有目录的几段后面、公式那一段前面。公式那一段照旧没有目录（目录的路前面录过了，不再在模拟器里读一遍整份
-   目录）。最后再录一段在 herdr 的窗格里起来的（LM-21，herdr 那一段）：新的数据目录，环境变量 `HERDR_ENV`、`HERDR_PANE_ID`、
+   模型的样子），排在有目录的几段后面。原来还有一段带公式的回答，公式排版的代码移除以后（2026-11-21）不录了。
+   最后再录一段在 herdr 的窗格里起来的（LM-21，herdr 那一段）：新的数据目录，环境变量 `HERDR_ENV`、`HERDR_PANE_ID`、
    `HERDR_BIN_PATH` 指向临时目录里一个假的 herdr（`/bin/sh` 脚本，只把参数记进文件），起来、等它报完第一次状态、闲一会儿。
    在 herdr 里一起来就要起一条上报的线程、起一次子进程，这些函数前面几段一个都录不到，散在程序各处，每碰一处带进 64 kB 的
    邻居页（2026-11-20 量的：在 herdr 里空闲多 896 kB 代码页，分成 11 片）；排在最后、挨在一起，不影响前面几段的先后。
    `--no-catalog` 照 LM-9补 以前录（几段都没有目录，也没有单录的那一段）。
    用模拟器而不用覆盖率：标准库是预先编好的，覆盖率记不到它，启动时跑的又大半是它；
 3. 地址照程序的符号表换成函数名，照第一次跑到的先后写成清单：启动那一段跑到的自然排在最前，发话那一段新跑到的排在其后，
-   日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，公式那一段新跑到的再其后，herdr 那一段
+   日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，herdr 那一段
    新跑到的最后（前面几段的先后不受后面的影响）；
 4. 带着清单再链一遍。
 
@@ -48,7 +45,7 @@ x86_64-unknown-linux-gnu 默认用的就是它），不另装 lld。`--no-pie` �
 记的是执行过的地址，换成函数名照的是程序自己的符号表。
 
 用法：order.py <crate 目录> <程序名> [--target <三元组>] [--no-pie] [--typed <敲的字>] [--settle <秒>] [--said <说的话，空的不说>]
-      [--daily new,continue] [--no-https] [--no-formula] [--no-herdr] [--no-catalog]
+      [--daily new,continue] [--no-https] [--no-herdr] [--no-catalog]
 产物：<crate 目录>/target-ordered/<三元组>/release/<程序名>，清单在 <crate 目录>/target-ordered/order.txt；
 设了 LITEMIYU_ORDER_TARGET 就编在它指的目录里。
 """
@@ -181,14 +178,6 @@ WAIT = float(os.environ.get("LITEMIYU_ORDER_WAIT", "600"))
 # （2026-11-16 量到：一次没录到，九个小函数散在清单以外，各带进一片邻居，发过消息多了 0.2–0.3 MB）。
 ANSWER_DELAY = 2.0
 
-# 公式那一段假服务器回的话：行内、行间、分式上下摞、根号、上下标、附标、`<sup>`（同一张表），最后一段照旧是认得出回完的那一句。
-FORMULA_ANSWER = [
-    "瑞利散射：\n\n$$I \\propto \\frac{1}{\\lambda^4}$$\n\n求根公式 $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\n\n",
-    "行内 $E = mc^2$、$\\sum_{i=1}^n \\hat{x}_i \\le \\infty$、x<sup>2</sup>。",
-    fake_model.ANSWER[-1],
-]
-
-
 def scratch(root, url, trusted=None, catalog=None):
     """在临时目录 `root` 下摆好数据目录（供应商指向假服务器；HTTPS 的照 `trusted` 信任它的证书；`catalog` 是放进缓存的目录原文，
     没有的不放，`fake_model.home`），交回给程序的环境。家目录也指到 `root` 下面：剧本不碰真实的家目录。`root` 不在系统的临时目录
@@ -203,7 +192,7 @@ def scratch(root, url, trusted=None, catalog=None):
     return env
 
 
-def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True, herdr=True):
+def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=True):
     """在模拟器里照剧本跑，交回 [(跑过的地址, 装载的起点)]，照先后。`said` 是说的那句话，空的不说（也就没有日常、HTTPS 那几段）。
 
     第一段（一个进程）：新的数据目录第一次起来、敲几个字；清掉、说一句、等回完、闲一会儿。
@@ -213,8 +202,6 @@ def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True
     HTTPS 那一段（`https`，一个进程）：另一个新的数据目录，供应商指向本机的 HTTPS 假服务器，起来、说一句、等回完、闲一会儿。
     `catalog`（LM-9补）：上面几段的数据目录缓存里放 `catalog.py` 造的目录，供应商是目录里认得的那一家（假服务器听
     `fake_model.REMOTE`）；HTTPS 那一段以后另录一段没有目录的（新的数据目录，供应商在本机，起来、说一句）。
-    公式那一段（`formula`，一个进程）：又一个新的数据目录（没有目录），假服务器这一回答带公式的话（`FORMULA_ANSWER`），起来、
-    说一句、等回完。
     herdr 那一段（`herdr`，一个进程，LM-21）：又一个新的数据目录，在假的 herdr 的窗格里起来、等它报完第一次状态、闲一会儿
     （[`run_in_herdr`]）；不说话。"""
     runs = []
@@ -238,14 +225,6 @@ def trace(binary, qemu, typed, settle, said, daily, https, formula, catalog=True
             if catalog:
                 bare = scratch(os.path.join(root, "bare"), fake_model.start())
                 runs.append(run(binary, qemu, pipe, bare, [], b"", settle, said, first=False))
-            if formula:
-                plain = fake_model.ANSWER[:]
-                fake_model.ANSWER[:] = FORMULA_ANSWER
-                try:
-                    mathy = scratch(os.path.join(root, "formula"), fake_model.start())
-                    runs.append(run(binary, qemu, pipe, mathy, [], b"", settle, said, first=False))
-                finally:
-                    fake_model.ANSWER[:] = plain
         if herdr:
             pane = os.path.join(root, "herdr")
             inside = scratch(pane, fake_model.start())
@@ -402,7 +381,6 @@ def main():
         help="第一段以后接着录的日常那几段，逗号隔开：new（平常起来开新会话）、continue（`-c` 接着上一个会话）；空的不录",
     )
     parser.add_argument("--no-https", action="store_true", help="不录 HTTPS 那一段")
-    parser.add_argument("--no-formula", action="store_true", help="不录最后那一段带公式的回答")
     parser.add_argument("--no-herdr", action="store_true", help="不录最后那一段在 herdr 的窗格里起来的")
     parser.add_argument(
         "--no-catalog", action="store_true", help="录的沙箱缓存里不放模型目录（LM-9补 以前的录法），也不单录没有目录的那一段"
@@ -437,7 +415,7 @@ def main():
     table = symbols(final)
     daily = [DAILY_ARGS[name] for name in args.daily.split(",") if name]
     runs = trace(
-        final, qemu, args.typed.encode(), args.settle, args.said, daily, not args.no_https, not args.no_formula,
+        final, qemu, args.typed.encode(), args.settle, args.said, daily, not args.no_https,
         catalog=not args.no_catalog, herdr=not args.no_herdr,
     )
     order, blocks = first_touch(runs, table)

@@ -18,14 +18,17 @@ impl App {
         !self.switching()
     }
 
-    /// `/new`：清界面回首页，第一句话时再开。旧会话停下（在跑的那一轮跟着停）。`bare` 是开哪一档（`None` 照配置的默认）：
-    /// 定了无功能的，开好以前命令列表就不列 `/loop`（同会话开好以后照 `Handle::loops`）。
-    pub(super) fn new_session(&mut self, bare: Option<bool>) {
-        self.link.core.send(Command::New { bare });
+    /// `/new`：清界面回首页，第一句话时再开。旧会话停下（在跑的那一轮跟着停）。`preset` 是用哪个预设（预设的名字，`None`
+    /// 照配置里的默认预设，设计第六节第 14 条）：定了无功能的，开好以前命令列表就不列 `/loop`（同会话开好以后照
+    /// `Handle::loops`）。
+    pub(super) fn new_session(&mut self, preset: Option<String>) {
+        let bare = preset.as_deref() == Some(lm_engine::presets::BARE);
+        self.link.next_preset.clone_from(&preset);
+        self.link.core.send(Command::New { preset });
         self.reset_talk();
         // 空会话的底栏照默认的聊天模型写（Miyu 终端 `app/session.rs` 开新会话以后的 `refresh_effort`）。
         self.footer_default();
-        if bare == Some(true) {
+        if bare {
             self.talk.loops = Some(false);
         }
     }
@@ -41,6 +44,7 @@ impl App {
         self.talk.drawers = Default::default();
         self.talk.looping = None;
         self.talk.loops = None;
+        self.talk.preset = None;
         self.talk.jobs = Default::default();
         self.talk.meter = None;
         self.talk.agent_meters.clear();

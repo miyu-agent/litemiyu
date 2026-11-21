@@ -64,13 +64,19 @@ impl App {
         {
             self.chat_configured(Some(chat.to_string()));
         }
+        // 默认预设照配置界面里的值换：首页当场照它写（`presets.rs`）。
+        let default = settings.presets_listed().effective_default().to_string();
+        self.link.default_preset = Some(default).filter(|name| name != lm_engine::presets::FULL);
         let changed = settings.changed;
+        let edited = settings.preset_edited();
         let writer = settings.into_writer();
         if writer.busy() {
             self.writes = Some((writer, changed));
         } else if changed {
             self.link.core.send(Command::Reconfigure);
         }
+        // 从 `/preset` 的框里进来的：回到那个框（`presets.rs`）。
+        self.presets_back(edited);
     }
 
     /// 换界面语言（开头「语言」那一步，Miyu `app/language.rs` 的 `switch_language`）：照那一种重读界面的字，终端自己的几项照

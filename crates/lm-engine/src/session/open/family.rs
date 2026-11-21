@@ -127,6 +127,8 @@ pub(crate) async fn create_child(table: &Arc<Table>, child: Child) -> Result<Han
         configs: kit.configs.clone(),
         model: child.model,
         no_tools: false,
+        // 子会话的预设照主会话记在会话表里的那一份（`open.rs`）。
+        preset: None,
     };
     Box::pin(super::created(
         setup,

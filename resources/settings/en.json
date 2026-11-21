@@ -10,12 +10,8 @@
       }
     },
     "sessions.default": {
-      "name": "New session features",
-      "description": "Which features new sessions get. No features gives the model no tools and injects nothing at turn start: just a chat with the model. Open sessions stay as they are.",
-      "options": {
-        "full": "All features",
-        "bare": "No features"
-      }
+      "name": "Default preset",
+      "description": "The preset new sessions use unless you choose another. A preset decides which built-in tools, MCP servers and skills a session can use; create and edit presets on the Presets page. Open sessions stay as they are."
     },
     "compaction.prepare": {
       "name": "Pre-compaction",

@@ -45,6 +45,7 @@ fn rows(seen: &Seen, width: u16, max: usize) -> (Chrome, Vec<Line<'static>>, Vec
             width,
             max,
         ),
+        Some(Panel::Presets) => super::preset_list::lines(seen, width, max),
         Some(Panel::Sessions) => match &seen.boxes.sessions {
             Some(list) => super::session_list::lines(
                 list,

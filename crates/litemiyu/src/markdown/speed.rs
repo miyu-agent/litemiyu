@@ -20,7 +20,7 @@ fn a_long_answer_renders() {
     let config = Config::builtin().expect("出厂的配置读得进来");
     let kit = Kit {
         languages: config.languages(),
-        math: config.math(),
+        scripts: config.scripts(),
         labels: &config.text().markdown,
         tab: config.layout.tab,
     };

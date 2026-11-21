@@ -29,6 +29,7 @@ mod models;
 mod mouse;
 mod paste;
 mod peers;
+pub(crate) mod presets;
 mod redo;
 mod rename;
 mod rescue;

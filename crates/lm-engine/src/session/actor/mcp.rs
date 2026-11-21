@@ -45,8 +45,7 @@ impl Actor {
         let servers = match kit.extras.servers.get() {
             Some(servers) => Arc::clone(servers),
             None => {
-                let switches =
-                    crate::skills::switches::of(&self.config.current().resolved.values());
+                let switches = self.switches();
                 let (paths, configs) = (kit.paths.clone(), kit.configs.clone());
                 let read =
                     blocking(move || Arc::new(Servers::read(&paths, &switches, configs))).await;
@@ -101,6 +100,19 @@ impl Actor {
 }
 
 impl Actor {
+    /// 这一轮的技能、MCP 服务开关：这一刻配置里的全局开关，会话钉着预设的再照预设收窄（LM-29，`crate::presets::narrowed`）。
+    pub(super) fn switches(&self) -> std::collections::BTreeMap<String, bool> {
+        let switches = crate::skills::switches::of(&self.config.current().resolved.values());
+        match self
+            .kit
+            .as_ref()
+            .and_then(|kit| kit.snapshot.preset.as_ref())
+        {
+            Some(pin) => crate::presets::narrowed(switches, pin),
+            None => switches,
+        }
+    }
+
     /// 载入的会话第一次开回合：这一轮再找技能时跳过的 `skipped`、读服务时不收的，记成被忽略的那两样（LM-3补，
     /// `crate::checkup`）。只记一次；造会话时已经记过的、这一轮没再找技能的（指纹没变、读不了文件）什么都不做。
     pub(super) fn note_ignored(&self, skipped: Option<Vec<String>>) {

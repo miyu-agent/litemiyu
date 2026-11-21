@@ -255,6 +255,11 @@ impl Handle {
         self
     }
 
+    /// 这个会话钉着的预设（LM-29，`crate::presets`）：造会话、载入时记下的，会话中途不换。子会话是主会话的那一个。
+    pub fn preset(&self) -> Option<&crate::presets::Chosen> {
+        self.mcp.as_ref()?.0.preset.get()
+    }
+
     /// 这时连着的 MCP 服务名（L5 六，`crate::mcp::Servers::live`）：变了就有新的一份。还没读过配置的（载入以后没开过回合）、
     /// 无功能的一档、子会话的把手没有。
     pub fn mcp_live(

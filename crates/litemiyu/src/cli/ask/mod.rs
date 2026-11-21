@@ -34,6 +34,7 @@ pub const CMD: Cmd = Cmd {
         Opt::value("session", Some('s'), "v.id", "o.ask.session"),
         Opt::value("cd", Some('C'), "v.dir", "o.ask.cd"),
         Opt::value("format", None, "v.format3", "o.ask.format"),
+        Opt::value("preset", None, "v.preset", "o.ask.preset"),
         Opt::flag("bare", None, "o.ask.bare"),
         Opt::flag("yes", None, "o.ask.yes"),
         Opt::value("timeout", None, "v.time", "o.ask.timeout"),
@@ -109,7 +110,9 @@ fn early_misuse(format: Format, words: &Words, bad: &Misuse) -> ExitCode {
 /// 读参数、凑话、找会话、看模型，排成 [`drive::Plan`]。
 fn plan(parsed: &Parsed, words: &Words) -> Result<drive::Plan, Early> {
     parse::exclusive(parsed, &[&["session", "continue"]]).map_err(Early::Misuse)?;
-    parse::only_new(parsed, &["cd", "bare", "rescue"]).map_err(Early::Misuse)?;
+    parse::only_new(parsed, &["cd", "bare", "preset", "rescue"]).map_err(Early::Misuse)?;
+    // 用哪个预设（同全屏的 `--preset`、`--bare`）。
+    let preset = super::preset(parsed).map_err(Early::Misuse)?;
     for rescue_only in ["base-url", "api"] {
         if parsed.has(rescue_only) && !parsed.has("rescue") {
             return Err(Early::Misuse(Misuse::Needs(rescue_only, "rescue")));
@@ -175,7 +178,7 @@ fn plan(parsed: &Parsed, words: &Words) -> Result<drive::Plan, Early> {
         session,
         message,
         yes: parsed.has("yes"),
-        bare: parsed.has("bare"),
+        preset,
         rescue,
         timeout,
         max_steps,

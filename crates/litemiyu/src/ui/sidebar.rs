@@ -9,7 +9,8 @@
 //!
 //! 侧边栏的字能拖选（`side_select.rs`）：画的时候把写了字的行记下来，选中的那几格反显（同 Miyu）。
 //!
-//! 和 Miyu 不一样的：头像、吉祥物、人格和预设那两行、扩展包的界面块、挂载位的配置，LiteMiyu 没有这些，不搬；
+//! 和 Miyu 不一样的：头像、吉祥物、人格那一行、扩展包的界面块、挂载位的配置，LiteMiyu 没有这些，不搬（预设那一行 LM-29 有了，
+//! 写在会话那一段的短编号下面）；
 //! 子代理在输入框下面的子代理状态行（`agents.rs`），侧边栏没有子代理那一段（Miyu 也没有）。Miyu 的「循环」一段不要
 //! （2026-11-20 项目主人：「移除右侧边栏的循环部分」）：循环只在输入框上面那一行写下一次几点（`loop_tag.rs`）。
 
@@ -80,10 +81,11 @@ fn item(s: String, style: Style) -> Line<'static> {
     Line::styled(format!("  {s}"), style)
 }
 
-/// `session`：会话名当标题（没起名字的也一样蓝），下面短编号（「新会话：人格、工作区」第 3 条）。一并交回短编号在第几行
-/// （点它复制完整编号）。
+/// `session`：会话名当标题（没起名字的也一样蓝），下面短编号（「新会话：人格、工作区」第 3 条），再下面这个会话用的预设
+/// （LM-29，设计第六节第 14 条）。一并交回短编号在第几行（点它复制完整编号）。
 pub(super) fn session_lines(
     t: &Transcript,
+    preset: Option<&crate::core::Pinned>,
     config: &Config,
     width: u16,
 ) -> (Vec<Line<'static>>, Option<usize>) {
@@ -99,6 +101,11 @@ pub(super) fn session_lines(
         let short = crate::session_id::short(session);
         id_row = Some(out.len());
         out.push(item(text.side.id.replace("{id}", &short), theme::dim()));
+    }
+    // 这个会话用的预设（LM-29）：用默认预设的也写；后来改了、删了的带上说明。引擎还没说的不写。
+    if let Some(preset) = crate::app::presets::side(preset, text) {
+        let room = width.saturating_sub(2);
+        out.push(item(super::rows::clip(&preset, room), theme::dim()));
     }
     (out, id_row)
 }

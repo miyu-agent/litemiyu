@@ -361,6 +361,8 @@ impl Transcript {
             | Update::Changes { .. }
             | Update::Replayed { .. }
             | Update::Choices(_)
+            | Update::Preset(_)
+            | Update::Presets(_)
             | Update::Efforts { .. }
             | Update::EffortSet(_) => {}
         }

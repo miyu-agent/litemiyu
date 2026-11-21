@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::commands::Commands;
 use crate::language::{Language, LanguageTable};
-use crate::markdown::{Languages, MathTable};
+use crate::markdown::{Languages, ScriptTable};
 use crate::pulse::Words;
 use localize::localized;
 
@@ -173,6 +173,8 @@ texts! {
         pub model_panel: crate::ui::model_list::Texts,
         /// `/effort` 框上的字。
         pub effort: crate::ui::effort_list::Texts,
+        /// 预设的字（`/preset` 的框、`/new <名字>`、侧边栏，LM-29）。
+        pub presets: crate::ui::preset_list::Texts,
         /// `/status` 框里的字。
         pub status: crate::ui::status_box::Texts,
         /// 侧边栏会话那几段的字。
@@ -217,8 +219,8 @@ pub struct Config {
     pub timeline: Timeline,
     /// 代码着色：每种语言的关键字、注释记号。第一次排 Markdown 时才读（[`Config::languages`]）。
     languages: OnceLock<Languages>,
-    /// 公式转 Unicode 的对照表：比代码着色的表还晚，排到公式（或 `<sup>`、`<sub>`）那一刻才读（[`MathTable`]）。
-    math: MathTable,
+    /// `<sup>`、`<sub>` 的上下标字符：比代码着色的表还晚，排到这两种标签那一刻才读（[`ScriptTable`]）。
+    scripts: ScriptTable,
     /// 运行状态行的词库。
     pub pulse: Words,
     /// 当前这一套图标（`/icons` 换的是它；出厂的几套 `/icons` 时才读，[`builtin_icons`]）。
@@ -268,7 +270,7 @@ impl Config {
             )?,
             timeline: parse("timeline.json", tui_json!("timeline.json"))?,
             languages: OnceLock::new(),
-            math: MathTable::default(),
+            scripts: ScriptTable::default(),
 
             pulse: localized("pulse.json", tui_json!("pulse.json"), language, &table)?,
             icons,
@@ -332,9 +334,9 @@ impl Config {
         })
     }
 
-    /// 公式转 Unicode 的表：拿到手还没读，排到公式那一刻才读（[`MathTable::get`]）。
-    pub fn math(&self) -> &MathTable {
-        &self.math
+    /// 上下标字符的表：拿到手还没读，排到 `<sup>`、`<sub>` 那一刻才读（[`ScriptTable::get`]）。
+    pub fn scripts(&self) -> &ScriptTable {
+        &self.scripts
     }
 }
 

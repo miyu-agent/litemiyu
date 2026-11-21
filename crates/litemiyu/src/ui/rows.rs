@@ -183,7 +183,7 @@ fn reply_rows(index: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
         .lines(index, (hash, text.len()), ctx.width, || {
             let kit = markdown::Kit {
                 languages: ctx.config.languages(),
-                math: ctx.config.math(),
+                scripts: ctx.config.scripts(),
                 labels: &ctx.config.text().markdown,
                 tab: ctx.config.layout.tab,
             };

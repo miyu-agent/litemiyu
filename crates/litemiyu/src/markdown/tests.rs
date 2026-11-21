@@ -8,7 +8,7 @@ fn draw(text: &str, width: u16) -> Vec<MdLine> {
     let config = Config::builtin().unwrap();
     let kit = Kit {
         languages: config.languages(),
-        math: config.math(),
+        scripts: config.scripts(),
         labels: &config.text().markdown,
         tab: config.layout.tab,
     };
@@ -235,77 +235,77 @@ fn rules_images_and_breaks() {
 }
 
 #[test]
-fn inline_math_turns_into_unicode_in_the_math_color() {
+fn inline_math_is_shown_as_written_in_the_math_color() {
+    // 2026-11-21 项目主人定：公式不转写（用的人少，排版的代码让程序变复杂），照原文写、公式色。
     let drawn = draw("能量 $E=mc^2$，角 $\\alpha$。", 60);
-    assert_eq!(super::inline::plain(&drawn[0].folded), "能量 E=mc²，角 α。");
+    assert_eq!(
+        super::inline::plain(&drawn[0].folded),
+        "能量 $E=mc^2$，角 $\\alpha$。"
+    );
     let math = drawn[0]
         .folded
         .spans
         .iter()
-        .find(|s| s.content.contains("mc²"))
+        .find(|s| s.content.contains("mc^2"))
         .map(|s| s.style);
     assert_eq!(math, Some(theme::md_math()));
 }
 
 #[test]
-fn the_math_table_is_read_only_when_a_formula_shows_up() {
-    // 2026-11-17 公式排版加回来时定：没有公式的回答不读 `math.json`、不占内存（`MathTable`）。
+fn underscores_and_stars_inside_a_formula_are_not_markdown() {
+    // 公式里的 `_`、`*` 不当强调：原文一个字不少。
+    let text = lines("下标 $a_i * b_j * c_k$ 完", 60).join("");
+    assert_eq!(text, "下标 $a_i * b_j * c_k$ 完");
+}
+
+#[test]
+fn the_script_table_is_read_only_when_sup_or_sub_shows_up() {
+    // 没有 `<sup>`、`<sub>` 的回答不读 `scripts.json`、不占内存（`ScriptTable`）；公式不读它。
     let config = Config::builtin().unwrap();
     let kit = Kit {
         languages: config.languages(),
-        math: config.math(),
+        scripts: config.scripts(),
         labels: &config.text().markdown,
         tab: config.layout.tab,
     };
     render(
-        "平常的回答：**粗体**、`代码`、价格 $5 和 $10。",
+        "平常的回答：**粗体**、`代码`、价格 $5 和 $10，公式 $$x^2$$。",
         60,
         &kit,
         &[],
     );
-    assert!(!config.math().read(), "没有公式不读表");
-    render(
-        "瑞利散射 $$I \\propto \\frac{1}{\\lambda^4}$$",
-        60,
-        &kit,
-        &[],
+    assert!(!config.scripts().read(), "没有上下标的标签不读表");
+    render("水是 H<sub>2</sub>O", 60, &kit, &[]);
+    assert!(config.scripts().read(), "有上下标的标签才读");
+}
+
+#[test]
+fn display_math_is_shown_as_written_with_its_dollars() {
+    assert_eq!(
+        lines("$$I \\propto \\frac{1}{\\lambda^4}$$", 60),
+        ["$$I \\propto \\frac{1}{\\lambda^4}$$"]
     );
-    assert!(config.math().read(), "有公式才读");
-}
-
-#[test]
-fn the_rayleigh_formula_from_the_owner_is_stacked() {
-    // 2026-11-17 项目主人实测：问「为什么天空是蓝色」，回答里这一行原样露出来。分式上下摞，`\propto`、`\lambda` 换成符号。
-    let text = lines("$$I \\propto \\frac{1}{\\lambda^4}$$", 40);
-    assert_eq!(text, ["     1", "I ∝ ────", "     λ⁴"], "{text:?}");
-    assert!(!text.join("\n").contains('\\'), "{text:?}");
-}
-
-#[test]
-fn other_ways_of_writing_display_math_are_typeset_too() {
-    // 照 Miyu `other_ways_of_writing_display_math_are_figures_too`（2026-10-19 项目主人：```math、\[…\] 原来照字写；
-    // ```latex 照旧是代码）。LiteMiyu 不画图，看排出来的字。
-    assert_eq!(lines("```math\nx^2\n```", 40), ["x²"]);
+    // 分了行的照原来的行写，`$$` 各占一行。
+    assert_eq!(
+        lines("$$\na &= b \\\\\nc &= d\n$$", 60),
+        ["$$", "a &= b \\\\", "c &= d", "$$"]
+    );
+    // `\[…\]`、`\(…\)` 是同一回事（`dollars.rs` 先换成 `$`）。
     let bracket = lines("看：\n\\[\n\\frac{a}{b}\n\\]\n完", 40);
     assert!(
-        bracket.iter().any(|l| l.trim() == "───") && !bracket.join("\n").contains('\\'),
+        bracket.iter().any(|l| l.contains("\\frac{a}{b}")),
         "{bracket:?}"
     );
-    let latex = lines("```latex\nx^2\n```", 40);
-    assert!(
-        latex.iter().any(|l| l.contains("x^2")),
-        "latex 代码块照代码：{latex:?}"
-    );
-    let open = lines("```math\nx^2", 40);
-    assert!(
-        open.iter().any(|l| l.contains("x^2")),
-        "没收完的照代码：{open:?}"
-    );
     let inline = lines("面积 \\(\\pi r^2\\)", 40).join("");
-    assert!(
-        inline.contains("πr²") || inline.contains("π r²"),
-        "{inline}"
-    );
+    assert_eq!(inline, "面积 $\\pi r^2$");
+    // 语言写 `math`、`latex` 的代码块照代码写。
+    for lang in ["math", "latex"] {
+        let block = lines(&format!("```{lang}\nx^2\n```"), 40);
+        assert!(
+            block.iter().any(|l| l.contains("x^2")) && block.iter().any(|l| l.contains(lang)),
+            "{lang} 代码块照代码：{block:?}"
+        );
+    }
 }
 
 #[test]

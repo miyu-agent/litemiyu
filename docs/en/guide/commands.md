@@ -6,11 +6,12 @@ This page describes every `/` command of the input box. Typing `/` opens the com
 
 > Only the commands listed below are commands. Anything else that starts with `/` (for example `/usr/bin has what in it`) is sent to the AI as an ordinary message.
 
-LiteMiyu has 23 commands:
+LiteMiyu has 24 commands:
 
 | Command | What it does |
 |---|---|
-| [`/new`](#new) | Start a new session |
+| [`/new`](#new) | Start a new session, optionally with a preset |
+| [`/preset`](#preset) | Choose, create and edit presets |
 | [`/sessions`](#sessions) (`/resume`) | List sessions and switch to one |
 | [`/jump`](#jump) | List what you said in this session and jump to it |
 | [`/files`](#files) | See the files this session changed and their diffs |
@@ -42,11 +43,27 @@ Names in parentheses are aliases and behave exactly the same.
 
 Starts a new session. The current one stays on disk and you can return to it with `/sessions`.
 
-- `/new`: the features of the new session follow the `New session features` setting; by default that is all features.
-- `/new bare`: starts a session with no features. The AI has no tools and LiteMiyu adds nothing to the conversation, so it is a plain chat with the model.
-- `/new full`: starts a session with all features.
+- `/new`: the new session uses the default preset. Unless you changed it, the default preset is `All features`.
+- `/new <preset>`: the new session uses the given preset; the default preset does not change. Type the beginning of a preset name and press `Tab` to complete it; press `Tab` again for the next one.
+- `/new bare`: the new session uses the built-in `No features` preset. The AI has no tools and LiteMiyu adds nothing to the conversation, so it is a plain chat with the model.
+- `/new full`: the new session uses the built-in `All features` preset.
 
-Any other argument gets `/new only takes bare (no features) or full (all features)`.
+A preset name that does not exist gets `No preset named …; type /preset to see them all`, and no session is started.
+
+### /preset
+
+Opens the preset list. A preset decides which built-in tools, MCP servers and skills a session can use.
+
+| Key | What it does |
+|---|---|
+| `Enter` | Set the selected preset as the default preset and switch the current session to it |
+| `s` | Switch only the current session; the default preset does not change |
+| `e` | Edit the selected preset; on one of the two built-in presets it creates a new preset based on it |
+| `a` | Create a new preset |
+| `d` | Delete the selected preset; press `d` again to confirm |
+| `Esc` | Close |
+
+Once a session has sent its first request, its preset is fixed: `Enter` then only changes the default preset, and `s` starts a new session with the selected preset. See [Presets](presets.md) for the details.
 
 ### /sessions
 

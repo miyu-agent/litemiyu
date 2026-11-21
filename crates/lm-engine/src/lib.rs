@@ -12,6 +12,7 @@
 //! - [`schedule`]：循环的工具 `schedule_wakeup`、`/loop` 后面的字怎么读（Miyu 的 `miyu-schedule` 里循环那一半）；
 //! - [`skills`]：技能：找、开关、列进 system 的那一块、自带的 `skill-creator`（Miyu `miyu-store`、`miyu-session` 里技能那几块）。
 //! - [`mcp`]：MCP 的客户端：认时代、列工具、调工具，标准输入输出和网址两种连法（Miyu 的 `miyu-mcp` 里不带登录的那一半）。
+//! - [`presets`]：预设：配置里一张张带名字的开关名单，管内置工具、MCP 服务、技能（LM-29）。
 //! - [`checkup`]：被忽略的配置项、MCP 服务、技能，引擎本来要读的时候顺手记下（运行日志去掉以后它们没处说，主程序在第一句话以后汇成一条提示）；
 //! - [`providers`]：供应商的增删改、试通不通、从 Miyu 导入，不带界面的那一层（命令行调，配置界面以后也调它）。
 
@@ -22,6 +23,7 @@ pub mod fs;
 pub mod http;
 pub mod mcp;
 pub mod models;
+pub mod presets;
 pub mod providers;
 pub mod resources;
 pub mod schedule;

@@ -29,12 +29,13 @@ LiteMiyu has no dedicated file search, web fetch or trash tool. To search, the A
 
 > Deleted files do not go to a trash can. Keep important projects in `git` so that mistakes by the AI can be undone.
 
-Different sessions have different tools:
+Different sessions have different tools, decided by the session's [preset](presets.md):
 
 | Session | Tools |
 |---|---|
-| All features (default) | All 12, plus MCP tools |
-| No features (`/new bare`, `litemiyu --bare`) | None |
+| The `All features` preset (default) | All 12, plus MCP tools |
+| The `No features` preset (`/new bare`, `litemiyu --bare`) | None |
+| A preset of your own | The tools turned on in the preset, plus the tools of the MCP servers turned on in it |
 | Rescue mode (`litemiyu --rescue`) | Only `read`, `write`, `edit`, `shell`, `jobs`, `schedule_wakeup`, `ask_user` |
 | Subagent | No `ask_user`, `sessions` or `schedule_wakeup` |
 

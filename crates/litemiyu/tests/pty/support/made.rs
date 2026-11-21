@@ -75,6 +75,7 @@ async fn talk(root: &Path, turns: usize) {
         configs: configs(),
         model: None,
         no_tools: false,
+        preset: None,
     })
     .await
     .expect("造得出会话");

@@ -8,6 +8,7 @@ mod model_popups;
 mod models;
 mod opening;
 mod popup;
+mod presets;
 
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
@@ -86,7 +87,14 @@ pub fn draw(frame: &mut Frame, settings: &Settings) -> Option<Position> {
                     theme::accent().add_modifier(Modifier::BOLD),
                 ));
             }
-            if let Some(extra) = settings.extra(page) {
+            if settings.extra(page) == Some(Extra::Presets) {
+                let drawn = presets::lines(settings, at, area.width);
+                let hints = match drawn.form {
+                    true => &texts.presets.form_hints,
+                    false => &texts.presets.hints,
+                };
+                (drawn.lines, drawn.focus, drawn.place, hints)
+            } else if let Some(extra) = settings.extra(page) {
                 let count = settings.extra_list.entries.len();
                 let lines = extras::lines(settings, extra, at, area.width);
                 (lines, at, (at, count), &texts.extras.hints)
@@ -237,6 +245,7 @@ fn crumb(frame: &mut Frame, stage: Rect, title: &str, inside: Option<&str>) {
 /// 技能页、MCP 页在主菜单里的名字和底下那一行。
 fn extra_name(settings: &Settings, extra: Extra) -> &[String; 2] {
     match extra {
+        Extra::Presets => &settings.texts.presets.entry,
         Extra::Skills => &settings.texts.extras.skills,
         Extra::Mcp => &settings.texts.extras.mcp,
     }

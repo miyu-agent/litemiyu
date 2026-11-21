@@ -82,6 +82,11 @@ pub struct Snapshot {
     /// 造会话时钉下，工具面换了的那一轮跟着换。没有的不写，字节和以前一样。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub appended: std::collections::BTreeMap<String, String>,
+    /// 自定义的预设（`docs/00-设计.md` 第六节第 14 条，LM-29，`preset.rs`）：造会话时钉下的那一张开关名单，会话中途不换；
+    /// 回合开始再找技能、换 MCP 工具面时照它筛，子代理照它开。自带的两个预设没有（「无功能」是 `no_tools`）；没有的不写，
+    /// 字节和以前一样。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<crate::policy::PresetPin>,
 }
 
 /// 随核心附带的字（`resources/core/`），原文照抄，行尾的换行也算（`26-提示词.md` 第八节）。

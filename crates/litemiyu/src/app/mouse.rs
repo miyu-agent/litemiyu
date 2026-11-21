@@ -44,7 +44,11 @@ impl App {
             return Action::None;
         }
         // `/model`、`/effort` 框里的一行（`models.rs`、`effort.rs`）。
-        if !captured && (self.models_mouse(mouse, at) || self.effort_mouse(mouse, at)) {
+        if !captured
+            && (self.models_mouse(mouse, at)
+                || self.effort_mouse(mouse, at)
+                || self.presets_mouse(mouse, at))
+        {
             return Action::None;
         }
         // 会话列表里的一行（`sessions.rs`）。

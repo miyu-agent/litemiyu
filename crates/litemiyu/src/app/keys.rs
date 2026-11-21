@@ -100,6 +100,11 @@ impl App {
             self.effort_key(selected, key);
             return Action::None;
         }
+        // `/preset` 的框开着时按键先归它（`presets.rs`）。
+        if self.boxes.panel == Some(super::Panel::Presets) {
+            self.presets_key(key);
+            return Action::None;
+        }
         // 会话列表开着时按键先归它（`sessions.rs`）。
         if self.boxes.panel == Some(super::Panel::Sessions) {
             self.sessions_key(key);
@@ -194,6 +199,10 @@ impl App {
             return action;
         }
         let Some(matches) = self.menu_matches() else {
+            // `/new <打了一半的预设名>`：`Tab` 补全（`presets.rs`）。
+            if key.code == KeyCode::Tab && self.complete_preset() {
+                return Action::None;
+            }
             return self.typing.input.key(key);
         };
         let selected = matches.get(self.typing.menu.selected).cloned();
@@ -336,6 +345,7 @@ impl App {
             Run::Export => self.export(),
             Run::Model => self.open_models(),
             Run::Effort => self.open_effort(),
+            Run::Preset => self.open_presets(),
             Run::Compact => self.compact(words),
             Run::Icons => self.next_icons(),
             Run::Quit => self.quit = true,

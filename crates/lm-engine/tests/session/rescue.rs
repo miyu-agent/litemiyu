@@ -60,6 +60,7 @@ async fn rescued_with(home: &Home, script: &Script, tools: Catalog) -> Handle {
         configs: home.configs.clone(),
         model: None,
         no_tools: false,
+        preset: None,
     });
     within("造会话", created).await.expect("造得出会话")
 }

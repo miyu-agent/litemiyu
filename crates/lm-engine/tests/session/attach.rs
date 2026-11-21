@@ -265,6 +265,7 @@ async fn rescue_mode_sends_the_picture_and_writes_nothing() {
         configs: home.configs.clone(),
         model: None,
         no_tools: false,
+        preset: None,
     });
     let handle = within("造会话", created).await.expect("造得出会话");
     let before = tree(&home.scratch.0);

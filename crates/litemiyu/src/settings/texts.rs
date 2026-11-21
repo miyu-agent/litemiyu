@@ -49,6 +49,8 @@ texts! {
         pub probe: ProbeTexts,
         /// 技能页、MCP 页。
         pub extras: ExtraTexts,
+        /// 「预设」页。
+        pub presets: PresetTexts,
         /// 第一次运行的开头。
         pub opening: super::opening::OpeningTexts,
         /// 「供应商和模型」那一页。
@@ -82,6 +84,67 @@ texts! {
         pub never: String,
         /// 按键提示。
         pub hints: Vec<[String; 2]>,
+    }
+}
+
+texts! {
+    /// 「预设」页的字（`presets.rs`，LM-29）。
+    #[derive(Debug, Clone)]
+    pub struct PresetTexts {
+        /// 在主菜单里的名字和底下那一行。
+        pub entry: [String; 2],
+        /// 自带的两个预设的名字：全部功能、无功能。
+        pub built_in: [String; 2],
+        /// 列表里名字后面的记号：自带、默认预设。
+        pub marks: [String; 2],
+        /// 列表里自己定义的预设后面写的：其余项目开着、关着时各一句。
+        pub summary: [String; 2],
+        /// 接在后面的两截：单独打开了几项、单独关掉了几项（`{n}`）；一项都没有的那一截不写。
+        pub summary_parts: [String; 2],
+        /// 列表的按键提示。
+        pub hints: Vec<[String; 2]>,
+        /// 表单的按键提示。
+        pub form_hints: Vec<[String; 2]>,
+        /// 表单头两行的名字：名称、没写的项目。
+        pub rows: [String; 2],
+        /// 「没写的项目」那一行后面暗色的说明。
+        pub unlisted_note: String,
+        /// 表单里的几组：内置工具、MCP 服务、技能、已经没有的。
+        pub groups: [String; 4],
+        /// 一项后面暗色写的：跟着「没写的项目」、全局开关关着（MCP、技能各一句）、已经没有。
+        pub follows_mark: String,
+        /// 见上：MCP 页里关着。
+        pub mcp_off: String,
+        /// 见上：技能页里关着。
+        pub skill_off: String,
+        /// 见上：已经没有，`Enter` 去掉。
+        pub missing: String,
+        /// 新建：填名字的窗的标题。
+        pub new: String,
+        /// 以自带的一个为底新建：窗的标题，`{name}`。
+        pub new_from: String,
+        /// 名字是空的。
+        pub name_empty: String,
+        /// 名字和自带的重了。
+        pub name_built_in: String,
+        /// 名字不合写法，`{max}`。
+        pub name_bad: String,
+        /// 已经有这个名字的预设。
+        pub name_taken: String,
+        /// 建好了，`{name}`。
+        pub created: String,
+        /// 改了一项、存成了。
+        pub saved: String,
+        /// 设成了默认预设，`{name}`。
+        pub default_set: String,
+        /// 自带的不能删。
+        pub built_in_fixed: String,
+        /// 删除先问的：标题（`{name}`）、一句、两个按钮。
+        pub delete_ask: [String; 4],
+        /// 删掉了，`{name}`。
+        pub deleted: String,
+        /// `d`：这一项本来就跟着「没写的项目」。
+        pub follows: String,
     }
 }
 
