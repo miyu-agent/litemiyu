@@ -5,6 +5,7 @@
 mod support;
 
 mod actor;
+mod attach;
 mod backlog;
 mod bell;
 mod busy;

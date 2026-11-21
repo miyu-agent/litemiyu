@@ -15,6 +15,7 @@ use lm_kernel::kernel::session::{Command, ContextLimits, Outcome, Reason};
 use crate::session::backlog::Backlog;
 use crate::session::jobs::Unreadable;
 
+pub(crate) mod attach;
 mod context;
 mod face;
 mod jobs;
@@ -25,6 +26,7 @@ mod retitle;
 mod subscription;
 
 use crate::session::shown::{Next, Shown};
+pub use attach::{Attach, AttachError, Attached, Source as AttachSource};
 pub use context::{ContextRefused, LineRefused, about_tokens, parse_context};
 pub use meter::Meter;
 pub use parts::{Charged, Context, Spent, SystemPart};
@@ -175,6 +177,12 @@ pub(crate) enum Message {
     Output {
         job: JobId,
         reply: oneshot::Sender<Result<Output, Unreadable>>,
+    },
+    /// 头附的图片（LM-28，`handle/attach.rs`）：存成 blob，交回图片块。不进内核、不记事件。
+    Attach {
+        session: SessionId,
+        items: Vec<attach::Attach>,
+        reply: oneshot::Sender<Result<attach::Attached, attach::AttachError>>,
     },
     /// 人开、停循环（L5 四，`/loop`）：不进内核。交回停掉了没有（开的照原来有没有一个被换掉）。
     Loop(crate::session::looping::Order, oneshot::Sender<bool>),

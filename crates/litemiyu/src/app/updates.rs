@@ -10,6 +10,8 @@ impl App {
         let update = match update {
             // 第一句话以后交来的被忽略的几样（`checkup.rs`）。
             Update::Ignored(ignored) => return self.ignored_found(ignored),
+            // 附了图片、这时的模型看不了图（`paste.rs`）。
+            Update::ImagesUnseen => return self.images_unseen(),
             // `/model`、`/effort` 的框要的（`models.rs`、`effort.rs`）。
             Update::Choices(all) => return self.models_listed(all),
             Update::Efforts { reference, levels } => return self.efforts_listed(reference, levels),

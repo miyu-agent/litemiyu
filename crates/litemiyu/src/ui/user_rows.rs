@@ -24,8 +24,8 @@ pub fn rows(i: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
     let bar_style = theme::user_bar();
     let bar = Span::styled(ctx.config.layout.user_bar.clone(), bar_style);
     let said = entry.text.trim_matches('\n');
-    // 有粘贴块的才能点开。
-    let clickable = !entry.pasted.is_empty();
+    // 有粘贴块的才能点开；图片块不展开，点块打开文件（照链接）。
+    let clickable = entry.pasted.iter().any(|c| !c.image);
     let hovered = clickable && ctx.hover == Some(Target::Entry(i));
     let (text, pieces) = shaped(said, &entry.pasted, entry.open, hovered);
     let mut out = vec![ctx.row(bar.clone(), Vec::new())];
@@ -35,6 +35,7 @@ pub fn rows(i: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
             pieces.iter().map(|p| (p.from, p.to, p.style)).collect();
         let mut row = ctx.row(bar.clone(), spans(&text, line.start, line.end, &styled));
         row.copy_blocks = copy_blocks(i, &text, line.start, line.end, &pieces);
+        row.links = image_links(&text, line.start, line.end, &pieces);
         row.joined = prev_end == Some(line.start);
         prev_end = Some(line.end);
         out.push(row);
@@ -54,6 +55,8 @@ pub(super) struct Piece {
     pub(super) to: usize,
     pub(super) style: Style,
     replacement: Option<(usize, Rc<str>)>,
+    /// 图片块指的文件：点块用系统的程序打开它（照点链接那一套，蓝图「输入框」第 12 条）。
+    file: Option<Rc<str>>,
 }
 
 /// 排成的字，和每一块。收着的块写块上的字，悬停时亮一档；点开了粘贴块原地换成全文，悬停时粘的那几段铺上块的底色。
@@ -74,7 +77,8 @@ pub(super) fn shaped(
     for (index, ((start, end), c)) in block_ranges(text, chips).into_iter().zip(chips).enumerate() {
         out.push_str(&text[at..start]);
         let from = out.len();
-        if open {
+        // 图片块不展开：点开了也照块画。
+        if open && !c.image {
             out.push_str(c.full.trim_matches('\n'));
             if hovered {
                 let style = theme::chip_ground();
@@ -83,6 +87,7 @@ pub(super) fn shaped(
                     to: out.len(),
                     style,
                     replacement: None,
+                    file: None,
                 });
             }
         } else {
@@ -93,6 +98,10 @@ pub(super) fn shaped(
                 to: out.len(),
                 style,
                 replacement: Some((index, Rc::from(c.full.as_str()))),
+                file: c
+                    .file
+                    .as_ref()
+                    .map(|file| Rc::from(file.to_string_lossy().as_ref())),
             });
         }
         at = end;
@@ -124,6 +133,23 @@ fn copy_blocks(
                 cols: (from, from + cols(s, e)),
                 text: full.clone(),
             })
+        })
+        .collect()
+}
+
+/// 这一行里图片块占的列和它的文件：照链接记（[`Row::links`]），点了用系统的程序打开。
+fn image_links(text: &str, start: usize, end: usize, pieces: &[Piece]) -> Vec<(u16, u16, String)> {
+    let cols = |a: usize, b: usize| u16::try_from(text[a..b].width()).unwrap_or(u16::MAX);
+    pieces
+        .iter()
+        .filter_map(|p| {
+            let file = p.file.as_ref()?;
+            let (s, e) = (p.from.max(start), p.to.min(end));
+            if s >= e {
+                return None;
+            }
+            let from = cols(start, s);
+            Some((from, from + cols(s, e), file.to_string()))
         })
         .collect()
 }

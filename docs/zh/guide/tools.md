@@ -35,7 +35,7 @@ LiteMiyu 没有专门的搜索文件、抓取网页、回收站工具。AI 需�
 |---|---|
 | 全部功能（默认） | 12 件全部可用，加上 MCP 的工具 |
 | 无功能（`/new bare`、`litemiyu --bare`） | 没有任何工具 |
-| 应急模式（`litemiyu --rescue`） | 只有 `read`、`write`、`edit`、`shell`、`jobs` |
+| 应急模式（`litemiyu --rescue`） | 只有 `read`、`write`、`edit`、`shell`、`jobs`、`schedule_wakeup`、`ask_user` |
 | 子代理 | 没有 `ask_user`、`sessions` 和 `schedule_wakeup` |
 
 ## 权限：默认不询问

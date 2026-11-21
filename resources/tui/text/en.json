@@ -67,7 +67,7 @@
   "omitted": "{count} line(s) omitted",
   "shell": {
     "placeholder": "Type a command to run",
-    "no_attachments": "Commands can't carry attachments",
+    "no_attachments": "A command can't carry files or images",
     "running": "Running",
     "exited": "Exit {code} · {elapsed}",
     "signal": "Signal {signal} · {elapsed}",
@@ -168,6 +168,9 @@
     ]
   },
   "refusal_hints": {
+    "attachment_unreadable": "One image's file no longer exists or can't be read, so the message wasn't sent: delete that image block or paste it again",
+    "attachment_too_big": "One image is over 5 MB or has a side over 8000 pixels, so the message wasn't sent",
+    "attachment_not_image": "One image block's file isn't a supported image (PNG, JPEG, GIF, WebP), so the message wasn't sent",
     "path_unreadable": "Can't find or read that directory",
     "not_a_directory": "That's a file, not a directory",
     "path_forbidden": "That can't be a workspace",
@@ -245,7 +248,12 @@
   },
   "file_block": {
     "file": "[{name}]",
-    "folder": "[{name}/]"
+    "folder": "[{name}/]",
+    "too_big": "The image on the clipboard is over 5 MB and can't be sent",
+    "too_wide": "The image on the clipboard has a side over 8000 pixels and can't be sent",
+    "unstaged": "The image couldn't be saved to the cache directory ({reason}), so it wasn't pasted",
+    "file_too_big": "The image {name} is over 5 MB or has a side over 8000 pixels, so only its file path will be sent",
+    "unseen": "This model doesn't take images: a configured vision model describes them for it, otherwise it only gets each image's file name and path"
   },
   "compaction": {
     "triggered": "Context compaction started",
@@ -447,7 +455,7 @@
       ],
       [
         "Ctrl+V",
-        "Paste"
+        "Paste; an image on the clipboard becomes an attachment"
       ],
       [
         "↓ (empty input)",
@@ -525,7 +533,11 @@
     "denied_with": "Not allowed · {reason}",
     "cancel_hint": "Press Esc again to cancel"
   },
-  "clipboard_unreadable": "Can't read the clipboard: use your terminal's own paste (Ctrl+Shift+V in kitty)",
+  "image_label": "[image {n}]",
+  "clipboard_unreadable": "The clipboard command failed or timed out: use your terminal's own paste (Ctrl+Shift+V in kitty)",
+  "clipboard_missing": "No clipboard command was found (Wayland needs wl-clipboard, X11 needs xclip or xsel): use your terminal's own paste (Ctrl+Shift+V in kitty)",
+  "clipboard_not_text": "The clipboard holds neither text nor a supported image (PNG, JPEG, GIF, WebP), so it can't be pasted",
+  "clipboard_too_big": "The clipboard content is over 16 MB and can't be pasted",
   "clipboard_text_only": "Only text can be pasted here",
   "clipboard_empty": "The clipboard is empty",
   "paste_label": "[pasted {lines} line(s)]",
@@ -612,7 +624,7 @@
       "  litemiyu            start a conversation (all features)",
       "  litemiyu config     open the settings",
       "  litemiyu --bare     first session without features: no tools, no context",
-      "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file, command and\n                      scheduling tools; the session is not kept after closing",
+      "  litemiyu --rescue   rescue mode: nothing is saved to disk (no session log,\n                      config or input history), only the file, command,\n                      scheduling and question tools; the session is not kept\n                      after closing",
       "  litemiyu --version  print the version and exit (also -V)",
       "",
       "Rescue provider (command-line options override the environment, and both\noverride the config; with none given, models.chat from the config is used):",

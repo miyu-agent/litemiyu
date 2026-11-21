@@ -73,7 +73,10 @@ pub fn drive(plan: Plan, words: &Words, output: &mut dyn Output) -> Ending {
         run.core.send(Command::Unattended);
     }
     let new = plan.session.is_none();
-    let command = Command::Send { text: plan.message };
+    let command = Command::Send {
+        text: plan.message,
+        images: Vec::new(),
+    };
     let ended = run.go(plan.session, (command, plan.model), words, output, new);
     run.close();
     output.finish(&ended, &run.follow, run.session.as_deref());

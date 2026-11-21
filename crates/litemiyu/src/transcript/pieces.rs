@@ -172,6 +172,8 @@ impl Transcript {
         let gone = span.len();
         // 闲着的段里的调用早有结果了，结果不会再来：记着的调用编号一起丢（不丢的话一万轮的会话记着两万个）。
         self.calls.retain(|_, (i, _)| !span.contains(i));
+        // 放掉的段里你说的话带的图片照旧算数：输入框里新贴的接着它们编号（`chips.rs` 的 `image_count`）。
+        self.shed_images += images_in(&self.entries[span.clone()]);
         self.entries.drain(span.clone());
         self.shift(span.start, -isize::try_from(gone).unwrap_or(0));
         self.reshaped += 1;
@@ -212,6 +214,7 @@ impl Transcript {
                 entry.piece = index(p);
             }
             let added = mine.len();
+            self.shed_images = self.shed_images.saturating_sub(images_in(&mine));
             self.entries.splice(at..at, mine);
             self.shift(at, isize::try_from(added).unwrap_or(0));
             self.pieces.set(p, RESIDENT, true);
@@ -279,4 +282,14 @@ impl Transcript {
             moved(i);
         }
     }
+}
+
+/// 这几条里你说的话还留着几张图片（撤销藏起来的不算）。
+pub(super) fn images_in(entries: &[Entry]) -> usize {
+    entries
+        .iter()
+        .filter(|e| e.kind == super::Kind::User && !e.hidden)
+        .flat_map(|e| &e.pasted)
+        .filter(|c| c.image)
+        .count()
 }

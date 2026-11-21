@@ -131,6 +131,7 @@ fn one(event: &Event, out: &mut Vec<Push>) {
             .typed()
             .map_or_else(|| message.text(), str::to_string);
         out.push(Push::Said { seq, text });
+        super::images(&message.blocks, seq, out);
         if message.shell {
             out.push(Push::ShellAsked(seq));
         }

@@ -49,6 +49,7 @@ impl Default for Transcript {
             read_only: false,
             returned: Vec::new(),
             opened_by: Vec::new(),
+            shed_images: 0,
         }
     }
 }

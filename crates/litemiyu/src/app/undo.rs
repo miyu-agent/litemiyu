@@ -62,8 +62,12 @@ impl App {
             .iter()
             .rev()
             .find(|e| e.kind == Kind::Undo);
-        if let Some(said) = line.map(|e| e.text.clone()).filter(|s| !s.is_empty()) {
-            self.typing.input.put_back(&said);
+        if let Some((said, chips)) = line
+            .map(|e| (e.text.clone(), e.pasted.clone()))
+            .filter(|(said, _)| !said.is_empty())
+        {
+            let images = super::paste::pasted(chips);
+            self.typing.input.put_back(&said, &images);
         }
     }
 }

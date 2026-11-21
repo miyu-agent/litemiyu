@@ -35,7 +35,7 @@ Different sessions have different tools:
 |---|---|
 | All features (default) | All 12, plus MCP tools |
 | No features (`/new bare`, `litemiyu --bare`) | None |
-| Rescue mode (`litemiyu --rescue`) | Only `read`, `write`, `edit`, `shell`, `jobs` |
+| Rescue mode (`litemiyu --rescue`) | Only `read`, `write`, `edit`, `shell`, `jobs`, `schedule_wakeup`, `ask_user` |
 | Subagent | No `ask_user`, `sessions` or `schedule_wakeup` |
 
 ## Permissions: no questions by default

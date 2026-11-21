@@ -2,7 +2,7 @@
 //! 查得出来的（在回答、最后一轮不是你说的话开的）当场提示；发出去的同时先藏掉重来的那一轮、把重发的那句画在它的位置，
 //! 会话推来的序号配给它；会话拒了，那句撤掉、那一轮显示回来、编辑的字放回输入框（`updates.rs` 的 `take_back_unsent`）。
 //!
-//! 和 Miyu 不一样的：LiteMiyu 没有附件，改过的只带字；没有协议一行的上限，不用转成文字附件。
+//! 和 Miyu 不一样的：附件只有图片（LM-28）；没有协议一行的上限，不用转成文字附件。
 
 use super::{App, Unsent};
 use crate::core::Command;
@@ -16,7 +16,10 @@ impl App {
             return;
         };
         let turn = self.send_redo(text, chips);
-        self.link.core.send(Command::Redo { text: None });
+        self.link.core.send(Command::Redo {
+            text: None,
+            images: None,
+        });
         self.talk.unsent = Some(Unsent {
             draft: None,
             original: None,
@@ -40,8 +43,11 @@ impl App {
     /// 编辑上一句回车了：照改过的重来（粘贴块换回原文发）。
     pub(super) fn submit_edit(&mut self, original: Draft, draft: Draft) {
         let turn = self.send_redo(draft.text.clone(), super::paste::chips(&draft));
+        // 图片块和改之前一样的不带，会话照原来的附件；不一样的照改过的换（Miyu：「附件和原来的不一样的另带」）。
+        let images = (draft.images() != original.images()).then(|| self.images(&draft));
         self.link.core.send(Command::Redo {
             text: Some(draft.expand()),
+            images,
         });
         self.typing.input.remember(draft.clone());
         self.typing.input.forget_cleared();

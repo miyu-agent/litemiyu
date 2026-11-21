@@ -47,10 +47,18 @@ pub async fn load(setup: Load<'_>) -> Result<Handle, LoadError> {
 /// 同 [`load`]。
 pub async fn load_placed(setup: Load<'_>) -> Result<(Handle, Placed), LoadError> {
     // 先拿锁再读日志（L7 一）：别的窗口开着的载入不了。
-    let window =
-        crate::session::window::claim(setup.root.session(&setup.id), setup.root.bell.clone())
-            .await
-            .map_err(|_| LoadError::Taken)?;
+    let dir = setup.root.session(&setup.id);
+    let window = crate::session::window::claim(dir.clone(), setup.root.bell.clone())
+        .await
+        .map_err(|_| LoadError::Taken)?;
+    // 界面直接打开子会话（LM-25）：它上面哪一层有窗口开着的也载入不了。子会话跟着主会话在那个窗口的进程里，那边随时可能
+    // 叫起它、往它的日志里写。拿到它自己的锁以后才查：那边的会话表叫起它以前先看这把锁（`table.rs`）。
+    let paths = setup.root.clone();
+    if crate::session::blocking::blocking(move || crate::session::window::parent_open(&paths, &dir))
+        .await
+    {
+        return Err(LoadError::Taken);
+    }
     let loaded = opened(setup, None).await?;
     crate::session::window::attach(&loaded.0, window);
     Ok(loaded)

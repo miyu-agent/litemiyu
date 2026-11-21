@@ -33,6 +33,8 @@ pub enum Command {
     Send {
         /// 说的字。
         text: String,
+        /// 附的图片，照先后（LM-28）：字里照留着块上的字（`[图片 1]`），会话把它们存成 blob、当图片交给模型。没有的是空的。
+        images: Vec<lm_engine::session::Attach>,
     },
     /// 人用 `!` 打的一条命令（「人自己跑命令 `!`」第 2 条）：照说一句话发，会话听到它的那一刻跑，不判权限。
     Shell {
@@ -137,6 +139,8 @@ pub enum Command {
     Redo {
         /// 改过的那句；`None` 是原样。
         text: Option<String>,
+        /// 改过的那句附的图片（LM-28）；`None` 是附件照原来的，空的是不要附件。
+        images: Option<Vec<lm_engine::session::Attach>>,
     },
     /// 给正在说话的会话起名（`/rename`，内核的 `SetMeta`）。没有会话的不办。
     Title(String),

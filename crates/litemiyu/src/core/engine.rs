@@ -188,16 +188,19 @@ impl Engine {
             return self.report(refused);
         }
         match command {
-            Command::Send { text } => {
-                let blocks = vec![Block::Text(Text { text })];
-                self.send(Kernel::Send {
-                    blocks,
-                    urgent: false,
+            Command::Send { text, images } => {
+                self.send(Some(images), |attached| {
+                    let mut blocks = vec![Block::Text(Text { text })];
+                    blocks.extend(attached.unwrap_or_default());
+                    Kernel::Send {
+                        blocks,
+                        urgent: false,
+                    }
                 })
                 .await;
             }
             Command::Shell { text } => {
-                self.send(Kernel::Shell {
+                self.send(None, |_| Kernel::Shell {
                     text,
                     urgent: false,
                 })
@@ -223,7 +226,7 @@ impl Engine {
             Command::Retitle => self.retitle().await,
             Command::Revert => self.undo(false).await,
             Command::Unrevert => self.undo(true).await,
-            Command::Redo { text } => self.redo(text).await,
+            Command::Redo { text, images } => self.redo(text, images).await,
             Command::Unattended => {
                 self.unattended = true;
                 self.unattend(self.session.as_ref());
@@ -322,8 +325,13 @@ impl Engine {
         }
     }
 
-    /// 说一句话、跑一条命令：还没开会话的先开。开不成、被拒的照「没发出去」报，字回到输入框。
-    async fn send(&mut self, command: Kernel) {
+    /// 说一句话、跑一条命令：还没开会话的先开。开不成、被拒的照「没发出去」报，字回到输入框。`images` 是这一句附的图片
+    /// （LM-28）：先交给会话存成 blob、换成图片块（`Handle::attach`），再照 `make` 造命令；有一张附不上的整句不发，照原因码报。
+    async fn send(
+        &mut self,
+        images: Option<Vec<lm_engine::session::Attach>>,
+        make: impl FnOnce(Option<Vec<Block>>) -> Kernel,
+    ) {
         if self.session.is_none()
             && let Err(message) = self.open().await
         {
@@ -333,13 +341,52 @@ impl Engine {
             });
             return;
         }
-        match self.ask(command).await {
+        let attached = match images {
+            Some(images) if !images.is_empty() => match self.attach(images).await {
+                Ok(blocks) => Some(blocks),
+                Err(unsent) => return self.report(unsent),
+            },
+            images => images.map(|_| Vec::new()),
+        };
+        match self.ask(make(attached)).await {
             Some(Outcome::Rejected { reason }) => self.report(Update::Unsent {
                 reason: Some(reason.code().to_string()),
                 message: reason.code().to_string(),
             }),
             Some(_) => self.tell_ignored(),
             None => self.report(Update::Unsent {
+                reason: None,
+                message: "session stopped".to_string(),
+            }),
+        }
+    }
+
+    /// 把附的图片交给正在说话的那个会话（看着子会话的是它）存成图片块；附不上的交回要报的「没发出去」。
+    async fn attach(
+        &mut self,
+        images: Vec<lm_engine::session::Attach>,
+    ) -> Result<Vec<Block>, Update> {
+        let session = match &self.viewing {
+            Some(viewing) => Some(viewing.handle.clone()),
+            None => self.session.clone(),
+        };
+        let stored = match session {
+            Some(session) => session.attach(images).await.ok(),
+            None => None,
+        };
+        match stored {
+            Some(Ok(attached)) => {
+                // 这时的模型看不了图：照发（会话替它转述，或者换成一句占位），告诉人一声。
+                if attached.blind {
+                    self.report(Update::ImagesUnseen);
+                }
+                Ok(attached.blocks)
+            }
+            Some(Err(error)) => Err(Update::Unsent {
+                reason: Some(error.code().to_string()),
+                message: format!("{}: {}", error.code(), error.name()),
+            }),
+            None => Err(Update::Unsent {
                 reason: None,
                 message: "session stopped".to_string(),
             }),

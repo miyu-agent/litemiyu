@@ -98,6 +98,7 @@
     "step.failed": "failed",
     "step.skipped": "skipped",
     "taken": "session {id} is open in another window",
+    "taken_above": "session {id} belongs to a subagent, and session {parent} that started it is open in another window",
     "too_long": "message too long",
     "u.ask": "[<options>] [<message>…]",
     "u.help": "[<command>]",

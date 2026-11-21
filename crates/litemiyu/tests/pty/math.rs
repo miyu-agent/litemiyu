@@ -77,3 +77,83 @@ fn formulas_read_the_same_in_80_columns_without_color() {
     let (_session, screen) = answered(&options);
     assert_typeset(&screen);
 }
+
+/// 2026-11-21 项目主人让模型写的那一组复杂公式（LM-27）。模型的原文没有留下，这一份是照当时的画面反推的，
+/// 和 `markdown/formulas.rs` 的测试用同一份。
+const OWNER: &str = include_str!("../../src/markdown/formulas/owner.md");
+
+/// 假模型把那一组公式分几段回过来，等回答收完，交回屏幕。屏幕开得够高，整个回答都在上面。
+fn owner_formulas(cols: u16) -> String {
+    // 照字数切成几段（切在字的边界上）：公式从中间断开着流过来。
+    let mut pieces = Vec::new();
+    let mut rest = OWNER;
+    while !rest.is_empty() {
+        let cut = rest
+            .char_indices()
+            .map(|(i, _)| i)
+            .find(|i| *i >= 97)
+            .unwrap_or(rest.len());
+        pieces.push(&rest[..cut]);
+        rest = &rest[cut..];
+    }
+    pieces.push("\n\n完。");
+    let server = served(vec![says(&pieces)]);
+    let options = Options {
+        env: vec![("NO_COLOR", "1")],
+        cols: Some(cols),
+        rows: Some(170),
+        ..Options::default()
+    };
+    let session = Session::start_with(&server.base_url, &[], &options);
+    session.wait_for("❯", "输入框");
+    session.type_text("写几个复杂的公式");
+    session.press_enter();
+    session.wait_for("完。", "回答收完");
+    session.wait_for(crate::support::DONE, "回合结束");
+    let screen = session.screen();
+    println!("=== {cols} 列\n{screen}");
+    screen
+}
+
+/// 那一组公式在屏幕上：原样的命令一个不剩，矩阵、对齐的几行、括线各排各的。
+fn assert_owner_formulas(screen: &str) {
+    let rows: Vec<&str> = screen
+        .lines()
+        .map(|l| l.split('│').next().unwrap_or("").trim_end())
+        .collect();
+    for raw in [
+        "\\cfrac", "\\begin", "\\end", "\\mid", "\\Long", "\\arctan", "\\mathbb", "\\over",
+        "\\under", "[2pt]", "[4pt]", "&", "$$",
+    ] {
+        assert!(!screen.contains(raw), "不剩原样的 {raw}：\n{screen}");
+    }
+    // 连分数叠了四层：最里面那一层的分母单独一行。
+    assert!(rows.iter().any(|l| l.trim() == "1+⋱"), "连分数：\n{screen}");
+    // 多行对齐的推导：后两行的等号和头一行的等号对齐。
+    let first = rows
+        .iter()
+        .find(|l| l.contains("I(a)=∫₀^∞"))
+        .unwrap_or_else(|| panic!("推导的头一行：\n{screen}"));
+    let column = first.find('=').expect("有等号");
+    let third = rows
+        .iter()
+        .find(|l| l.contains("=arctan x"))
+        .unwrap_or_else(|| panic!("推导的末一行：\n{screen}"));
+    assert_eq!(third.find('='), Some(column), "等号对齐：\n{screen}");
+    assert!(third.contains("(∀ a∈ℝ)"), "双线字：\n{screen}");
+    // 括线下面的标注。
+    assert!(
+        rows.iter().any(|l| l.contains("后验")) && rows.iter().any(|l| l.contains("╰")),
+        "括线和标注：\n{screen}"
+    );
+}
+
+#[test]
+fn the_owner_formulas_are_typeset_in_120_columns() {
+    assert_owner_formulas(&owner_formulas(120));
+}
+
+#[test]
+fn the_owner_formulas_are_typeset_in_80_columns() {
+    assert_owner_formulas(&owner_formulas(80));
+}

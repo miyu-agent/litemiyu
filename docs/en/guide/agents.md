@@ -53,6 +53,22 @@ A few things to know:
 - `/stop` stops running subagents as well.
 - When you delete the main session with `/delete`, the sessions of the subagents it started are deleted too.
 
+### Reopening a subagent's session
+
+A subagent's session does not appear in `/sessions` or under `Recent sessions` in the sidebar, but you can open it directly with its full session ID and go on talking to it:
+
+```bash
+litemiyu -s <subagent session ID>
+litemiyu ask -s <subagent session ID> "Check it once more"
+```
+
+- To find the ID: while the subagent is still shown in the rows below the input box, switch into it and run `/status`; `Session ID` there is its ID. You can also copy it by clicking the short ID in the sidebar. Once a subagent has finished and left those rows, nothing in the interface shows its ID, so note it down beforehand if you will need it.
+- What opens is the subagent's own conversation. A plain subagent's conversation starts from the task the AI gave it; when you talk to a fork subagent, the model still sees the conversation from before the fork.
+- What you say there and what it answers are not reported to the main session, and the cost is not included in the main session's cost.
+- While the session that started it is open in another window, the subagent's session cannot be opened, and LiteMiyu says `session … belongs to a subagent, and session … that started it is open in another window`. Close that window first.
+- While a subagent's session is open this way, messages the AI in the main session sends to it are not delivered, and the AI gets a failure result. The main session that started it cannot be deleted either; you are told the session is open in another window.
+- `-c` opens the latest main session only, never a subagent's session.
+
 ### Subagents that continue the conversation (fork)
 
 Sometimes a task needs what was said earlier. For example, you and the AI have just agreed on a plan and you want a subagent to carry out one part of it. A plain subagent does not fit well here: it cannot see your discussion, so the AI has to write the whole plan out again for it. In this case the AI can start a "fork subagent" instead. A fork subagent continues from a copy of the main session's conversation as it is at this moment, sees everything said so far, and uses the same model as the main session.

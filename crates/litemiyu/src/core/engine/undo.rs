@@ -29,13 +29,15 @@ impl Engine {
         }
     }
 
-    /// 重做最后一轮：`text` 是改过的那句，`None` 原样重来（附件 LiteMiyu 没有，照原来的）。同说一句话：被拒的照「没发出去」报。
-    pub(super) async fn redo(&mut self, text: Option<String>) {
+    /// 重做最后一轮：`text` 是改过的那句，`None` 原样重来；`images` 是改过的那句附的图片（LM-28），`None` 照原来的。同说
+    /// 一句话：被拒的照「没发出去」报。
+    pub(super) async fn redo(
+        &mut self,
+        text: Option<String>,
+        images: Option<Vec<lm_engine::session::Attach>>,
+    ) {
         let text = text.map(|text| vec![Block::Text(Text { text })]);
-        self.send(Kernel::Redo {
-            text,
-            attachments: None,
-        })
-        .await;
+        self.send(images, |attachments| Kernel::Redo { text, attachments })
+            .await;
     }
 }

@@ -290,6 +290,8 @@ fn frame(
     app: &mut App,
     pointer: &mut pointer::Pointer,
 ) -> io::Result<()> {
+    // 输入框里的图片块照正文里已有几张接着编号（LM-28）：没有图片块的只是看一眼。
+    app.renumber_images();
     screen.draw(|buffer| {
         ui::draw(&mut ui::Frame::new(buffer), app);
         ui::wide::tidy(buffer);

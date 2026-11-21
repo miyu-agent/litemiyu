@@ -15,6 +15,13 @@ fn words() -> Option<(String, String)> {
     Some((WORDS.0.to_string(), WORDS.1.to_string()))
 }
 
+/// 图片块上的写法；这几条测试里没有图片。
+const PICTURE: &str = "[图片 {n}]";
+
+fn no_image(_: &std::path::Path) -> bool {
+    false
+}
+
 /// 在临时目录里摆几个文件。
 fn files(tag: &str, names: &[&str]) -> (PathBuf, Vec<PathBuf>) {
     let dir = std::env::temp_dir().join(format!("litemiyu-files-{tag}-{}", std::process::id()));
@@ -35,7 +42,7 @@ fn copied_files_become_blocks_that_send_their_paths() {
     let (dir, f) = files("paste", &["links.md", "my notes.txt"]);
     let mut i = input(60);
     let lines: Vec<String> = f.iter().map(|p| p.display().to_string()).collect();
-    assert!(i.paste_files(&lines.join("\n"), words));
+    assert!(i.paste_files(&lines.join("\n"), words, PICTURE, no_image));
     assert_eq!(i.editor.text(), "[links.md] [my notes.txt]");
     assert_eq!(
         i.draft().expand(),
@@ -46,11 +53,16 @@ fn copied_files_become_blocks_that_send_their_paths() {
     let sub = dir.join("子目录");
     std::fs::create_dir_all(&sub).unwrap();
     let mut i = input(60);
-    assert!(i.paste_files(&sub.display().to_string(), words));
+    assert!(i.paste_files(&sub.display().to_string(), words, PICTURE, no_image));
     assert_eq!(i.editor.text(), "[子目录/]");
     // 不是本机现成的：什么都不做，照字粘由外面办；写法也不用问。
     let mut i = input(60);
-    assert!(!i.paste_files("/nonexistent/a.txt", || unreachable!("不是文件不问写法")));
+    assert!(!i.paste_files(
+        "/nonexistent/a.txt",
+        || unreachable!("不是文件不问写法"),
+        PICTURE,
+        no_image
+    ));
     assert!(i.editor.is_empty());
     std::fs::remove_dir_all(&dir).unwrap_or_default();
 }
@@ -61,7 +73,7 @@ fn clicking_a_file_block_in_the_box_opens_it_and_leaves_the_cursor() {
     let (dir, f) = files("click", &["a.md"]);
     let mut i = input(20);
     i.editor.insert("看");
-    i.paste_files(&f[0].display().to_string(), words);
+    i.paste_files(&f[0].display().to_string(), words, PICTURE, no_image);
     i.editor.insert("吧");
     let end = i.editor.cursor();
     // 框在第 10 列、第 5 行起；「看」占两列，块「[a.md]」占第 2 到 8 列。

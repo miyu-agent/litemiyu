@@ -50,8 +50,24 @@ pub struct Block {
     /// 粘贴的原文。
     pub text: String,
     /// 文件块：`@` 选的、`Ctrl+V` 复制进来的文件、目录，`text` 是写进话里的路径（蓝图「输入框」第 12 条）。粘贴块是
-    /// `None`。
+    /// `None`。图片块也记在这里：是哪个文件（剪贴板贴的是暂存的那一份，`clipboard/staging.rs`）。
     pub path: Option<std::path::PathBuf>,
+    /// 图片块（LM-28，Miyu 的附件块，「输入框」第 12 条）：块上写 `[图片 N]`，`text` 就是块上的字（发出去时字里照留），
+    /// `path` 那个文件当图片交给模型。别的块是 `false`。
+    pub image: bool,
+}
+
+/// 正文里记着的一块（你说的话里的块），拼回输入框用（[`Draft::from_pasted`]）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Piece {
+    /// 块上写的。
+    pub label: String,
+    /// 原文。
+    pub full: String,
+    /// 是图片块。
+    pub image: bool,
+    /// 图片块的文件；别的块、不知道在哪的图片（应急模式里发的）没有。
+    pub file: Option<std::path::PathBuf>,
 }
 
 impl Block {
@@ -111,19 +127,24 @@ impl Draft {
         }
     }
 
-    /// 照正文里记着的样子和原文拼回来（被退回的排队消息）：每一块照先后在字里往后找它的样子。
-    pub fn from_pasted(text: &str, pasted: &[(String, String)]) -> Self {
+    /// 照正文里记着的样子和原文拼回来（被退回的排队消息）：每一块照先后在字里往后找它的样子。图片块连文件接回来；
+    /// 不知道文件在哪的图片不成块，块上的字照字留着。
+    pub fn from_pasted(text: &str, pasted: &[Piece]) -> Self {
         let mut blocks = Vec::new();
         let mut from = 0;
-        for (label, full) in pasted {
+        for piece in pasted {
+            let label = &piece.label;
             if let Some(at) = text[from..].find(label.as_str()) {
                 let start = from + at;
-                blocks.push(Block {
-                    start,
-                    end: start + label.len(),
-                    text: full.clone(),
-                    path: None,
-                });
+                if !piece.image || piece.file.is_some() {
+                    blocks.push(Block {
+                        start,
+                        end: start + label.len(),
+                        text: piece.full.clone(),
+                        path: piece.file.clone(),
+                        image: piece.image,
+                    });
+                }
                 from = start + label.len();
             }
         }
@@ -131,6 +152,15 @@ impl Draft {
             text: text.to_string(),
             blocks,
         }
+    }
+
+    /// 图片块的文件，照先后（发出去时当图片交给模型，「输入框」第 12 条）。
+    pub fn images(&self) -> Vec<std::path::PathBuf> {
+        self.blocks
+            .iter()
+            .filter(|b| b.image)
+            .filter_map(|b| b.path.clone())
+            .collect()
     }
 
     /// 发出去的全文：每一块换回原文。

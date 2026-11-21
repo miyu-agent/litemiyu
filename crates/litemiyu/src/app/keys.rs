@@ -270,6 +270,7 @@ impl App {
         // 输入框里的粘贴块发出去换回原文；输入历史和正文里照输入框的样子（`tui.md`「输入框」第 11 条）。
         let full = draft.expand();
         let chips = super::paste::chips(&draft);
+        let images = self.images(&draft);
         self.talk.unsent = Some(super::Unsent {
             draft: Some(draft.clone()),
             original: None,
@@ -279,7 +280,7 @@ impl App {
         self.typing.input.forget_cleared();
         self.talk.transcript.user(text, chips);
         self.awaiting_turn();
-        self.link.core.send(Command::Send { text: full });
+        self.link.core.send(Command::Send { text: full, images });
     }
 
     /// 执行一条命令；`words` 是名字后面的字（能带参数的命令才有，蓝图「斜杠命令列表」第 5 条）。

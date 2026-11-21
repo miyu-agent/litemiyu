@@ -1,5 +1,5 @@
 //! 输入历史记在文件里（Miyu 蓝图「输入历史列表」第 8 条：所有会话一起、重启以后还在）：每发一句追加一行 JSON，粘贴块
-//! 原样记；写不进、读不懂的不管，照常用。搬自 Miyu 终端的 `input/saved.rs`。LiteMiyu 起来时不读（红线 4：启动只做画第一屏要
+//! 原样记，图片块记的是文件的路径（不记图片的字节）；写不进、读不懂的不管，照常用。搬自 Miyu 终端的 `input/saved.rs`。LiteMiyu 起来时不读（红线 4：启动只做画第一屏要
 //! 的事），第一次翻历史（`↑`、`Ctrl+R`）时才读回来（`InputBox::recall_saved`）；附件、文件块、搬旧位置那几样没搬。
 
 use std::io::Write;
@@ -41,6 +41,9 @@ struct SavedBlock {
     /// 文件块的文件（Miyu 终端 `input/saved.rs` 同名的那一项）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<PathBuf>,
+    /// 图片块（LM-28）：`path` 那个文件当图片发。别的块不写这一格。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    image: bool,
 }
 
 impl Saved {
@@ -139,6 +142,7 @@ impl Line {
                 end: b.end,
                 text: b.text.clone(),
                 path: b.path.clone(),
+                image: b.image,
             })
             .collect();
         Self {
@@ -167,6 +171,7 @@ impl Line {
                     end: b.end,
                     text: b.text,
                     path: b.path,
+                    image: b.image,
                 })
                 .collect()
         } else {
@@ -212,6 +217,7 @@ mod tests {
             end: 21,
             text: "a\nb\nc".into(),
             path: None,
+            image: false,
         });
         saved.append(&pasted);
         saved.append(&sent("看看 [粘贴 3 行]"));

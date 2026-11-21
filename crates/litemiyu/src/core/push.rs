@@ -129,6 +129,14 @@ pub enum Push {
         /// 说的字。
         text: String,
     },
+    /// 一句你说的话带着图片（`message.user` 的 `image` 块，LM-28）：序号，和每一张原来在本机的哪儿（会话没记路径的是
+    /// `None`：应急模式里贴的）。紧跟在那一句的 [`Push::UserMessage`]、[`Push::Said`] 后面。
+    Images {
+        /// 那一句落盘的序号。
+        seq: u64,
+        /// 每一张的路径，照先后。
+        files: Vec<Option<String>>,
+    },
     /// 一块开始了。
     BlockStart {
         /// 这一块在这一次请求里的序号。
@@ -295,6 +303,22 @@ pub(super) fn resent(event: &Event, out: &mut Vec<Push>) {
     }
 }
 
+/// 一句话里的图片块：有的交一条 [`Push::Images`]。
+pub(super) fn images(blocks: &[Content], seq: u64, out: &mut Vec<Push>) {
+    let files: Vec<Option<String>> = blocks
+        .iter()
+        .filter_map(|block| match block {
+            Content::Image(image) => {
+                Some(image.path.as_ref().map(|path| path.as_str().to_string()))
+            }
+            _ => None,
+        })
+        .collect();
+    if !files.is_empty() {
+        out.push(Push::Images { seq, files });
+    }
+}
+
 pub fn read(event: &Event) -> Vec<Push> {
     let mut out = Vec::new();
     if let By::Model(by) = &event.by {
@@ -340,13 +364,16 @@ pub fn read(event: &Event) -> Vec<Push> {
             reason: idle.reason.as_str().to_string(),
             status: idle.status.clone(),
         }),
-        Body::MessageUser(message) => out.push(match message.typed() {
-            Some(text) if !text.is_empty() => Push::Said {
-                seq,
-                text: text.to_string(),
-            },
-            _ => Push::UserMessage(seq),
-        }),
+        Body::MessageUser(message) => {
+            out.push(match message.typed() {
+                Some(text) if !text.is_empty() => Push::Said {
+                    seq,
+                    text: text.to_string(),
+                },
+                _ => Push::UserMessage(seq),
+            });
+            images(&message.blocks, seq, &mut out);
+        }
         Body::ShellRan(ran) => out.push(Push::ShellRan(ShellRan::of(ran))),
         // 重开会话时引擎记的「上次关窗口时循环还开着」（`by` 是内核，`lm_engine::session::looping::Trail`）：正文里写一行。
         Body::CommandRan(ran) if ran.command == "loop" && matches!(event.by, By::Kernel) => {
@@ -499,6 +526,44 @@ mod tests {
             r#"{"seq":10,"at":"2026-11-12T08:00:00.000Z","kind":"command.ran","by":{"kind":"person"},"cause":"c3","body":{"text":"/loop off","command":"loop"}}"#,
         );
         assert_eq!(read(&typed), [Push::CommandRan], "人敲的照旧不画");
+    }
+
+    /// 你说的话带着图片（LM-28）：那一句后面紧跟一条 [`Push::Images`]，带每一张的路径；补发的一样。
+    #[test]
+    fn a_message_with_pictures_is_followed_by_their_paths() {
+        let hash = "a".repeat(64);
+        let said = event(&format!(
+            r#"{{"seq":4,"at":"2026-11-12T08:00:00.000Z","kind":"message.user","by":{{"kind":"person"}},"cause":"c1","body":{{"blocks":[{{"type":"text","text":"看 [图片 1] 和 [图片 2]"}},{{"type":"image","blob":"sha256:{hash}","name":"a.png","media_type":"image/png","width":8,"height":6,"path":"/s/attachments/a.png"}},{{"type":"image","blob":"sha256:{hash}","media_type":"image/png","width":8,"height":6}}]}}}}"#
+        ));
+        let images = Push::Images {
+            seq: 4,
+            files: vec![Some("/s/attachments/a.png".into()), None],
+        };
+        assert_eq!(
+            read(&said),
+            [
+                Push::Resent("c1".into()),
+                Push::UserMessage(4),
+                images.clone()
+            ]
+        );
+        let mut replay = super::replay::Replay::default();
+        let replayed: Vec<Push> = replay
+            .read(said)
+            .into_iter()
+            .filter(|push| !matches!(push, Push::Clock(_)))
+            .collect();
+        assert_eq!(
+            replayed,
+            [
+                Push::Resent("c1".into()),
+                Push::Said {
+                    seq: 4,
+                    text: "看 [图片 1] 和 [图片 2]".into()
+                },
+                images
+            ]
+        );
     }
 
     /// 旧日志里的长期目标（2026-11-14 砍了 `goal`）：`goal.*` 读成不认识的种类，什么都不推；续轮那句话照人说的画，

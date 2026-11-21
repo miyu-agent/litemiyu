@@ -14,6 +14,7 @@ mod cut;
 mod done;
 mod failure;
 mod folds;
+mod images;
 mod model;
 mod notes;
 mod queue;

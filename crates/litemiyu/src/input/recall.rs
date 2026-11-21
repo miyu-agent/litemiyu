@@ -1,19 +1,22 @@
 //! 找回来（蓝图 `tui.md`「输入框」第 7、8、13 条、「按键」`Ctrl+C`）：撤销放回的那句、恢复时收回去；照正文里的字
 //! 在输入历史里找发出去时的样子（长文、附件还是块）；`Ctrl+C` 清掉的那一份什么时候不要了。
 
-use super::{Draft, InputBox};
+use super::{Draft, InputBox, Piece};
 
 impl InputBox {
     /// 撤销成了：撤掉的那句放回输入框（框里空着才放），全选着，回车就重发；照输入历史里发出去时的样子放（「正文」第 6 条，
     /// Miyu 终端 `input/recall.rs`）。
-    pub fn put_back(&mut self, said: &str) {
+    /// `images` 是那句话带的图片块（正文里记着的）：输入历史里找不到、或者找到的那一份图片文件已经不在了的（暂存的截图
+    /// 上一次退出时删了），照它们把图片块接回来，指着会话里留着的那一份。
+    pub fn put_back(&mut self, said: &str, images: &[Piece]) {
         if !self.editor.is_empty() {
             return;
         }
         let sent = self.history.iter().rev().find(|s| s.draft.expand() == said);
-        match sent.map(|s| s.draft.clone()) {
+        match sent.map(|s| s.draft.clone()).filter(intact) {
             Some(draft) => self.editor.set_draft(draft),
-            None => self.editor.set(said),
+            None if images.is_empty() => self.editor.set(said),
+            None => self.editor.set_draft(Draft::from_pasted(said, images)),
         }
         self.editor.select_all();
         self.put_back = Some(said.to_string());
@@ -74,6 +77,11 @@ impl InputBox {
     /// 输入历史里最近一句写出来是 `text` 的，发出去时的样子（被退回的排队消息，第 8 条）。
     pub fn sent_by_text(&self, text: &str) -> Option<Draft> {
         let sent = self.history.iter().rev().find(|s| s.draft.text == text);
-        sent.map(|s| s.draft.clone())
+        sent.map(|s| s.draft.clone()).filter(intact)
     }
+}
+
+/// 这一段里图片块的文件都还在：不在了的（暂存的截图删了、应急模式里只在内存里的）不照输入历史放，照正文里记着的拼。
+fn intact(draft: &Draft) -> bool {
+    draft.images().iter().all(|path| path.exists())
 }

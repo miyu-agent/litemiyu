@@ -66,13 +66,61 @@ impl Editor {
 
     /// 在光标处放一块粘贴：输入框里写 `label`，原文记着，发出去时换回来（蓝图「输入框」第 11 条）。
     pub fn insert_block(&mut self, label: String, text: String) {
-        self.put_block(label, text, None);
+        self.put_block(label, text, None, false);
+    }
+
+    /// 在光标处放一个图片块（LM-28，Miyu 终端 `input/editor.rs` 的 `insert_attachment`）：块上写 `label`，记着文件，发出去时
+    /// 当图片交给模型，字里照留块上的字。编号随后由 [`Self::renumber`] 照先后定。
+    pub fn insert_image(&mut self, label: String, path: std::path::PathBuf) {
+        self.put_block(label.clone(), label, Some(path), true);
+    }
+
+    /// 有没有图片块。
+    pub fn has_images(&self) -> bool {
+        self.blocks.iter().any(|b| b.image)
+    }
+
+    /// 图片块照先后重新编号（Miyu 终端 `input/editor.rs` 的 `renumber`）：`label(这是输入框里的第几张)` 是块上该写的字。
+    /// 字变了长短的，后面的块、光标、选区的起点跟着挪（蓝图「输入框」第 12 条）。
+    pub fn renumber(&mut self, label: impl Fn(usize) -> String) {
+        let mut seen = 0;
+        for i in 0..self.blocks.len() {
+            if !self.blocks[i].image {
+                continue;
+            }
+            seen += 1;
+            let new = label(seen);
+            let (start, end) = (self.blocks[i].start, self.blocks[i].end);
+            if self.text[start..end] == new {
+                continue;
+            }
+            self.text.replace_range(start..end, &new);
+            let new_end = start + new.len();
+            // 块后面的照长短差挪；块中间的（不该有）挪到块尾。
+            let shift = |x: usize| {
+                if x >= end {
+                    x - end + new_end
+                } else if x > start {
+                    new_end
+                } else {
+                    x
+                }
+            };
+            self.blocks[i].end = new_end;
+            self.blocks[i].text = new;
+            for b in &mut self.blocks[i + 1..] {
+                b.start = shift(b.start);
+                b.end = shift(b.end);
+            }
+            self.cursor = shift(self.cursor);
+            self.anchor = self.anchor.map(shift);
+        }
     }
 
     /// 在光标处放一个文件块（`@` 选的、`Ctrl+V` 复制进来的文件）：块上写 `label`，发出去换回 `text`（路径），点一下打开
     /// `path`（Miyu 终端 `input/editor.rs` 的 `insert_file`）。
     pub fn insert_file(&mut self, label: String, text: String, path: std::path::PathBuf) {
-        self.put_block(label, text, Some(path));
+        self.put_block(label, text, Some(path), false);
     }
 
     /// 能点开的块：字节范围和文件（Miyu 终端 `input/editor.rs` 的 `openable`）。
@@ -82,7 +130,13 @@ impl Editor {
             .filter_map(|b| Some((b.start, b.end, b.opens()?)))
     }
 
-    fn put_block(&mut self, label: String, text: String, path: Option<std::path::PathBuf>) {
+    fn put_block(
+        &mut self,
+        label: String,
+        text: String,
+        path: Option<std::path::PathBuf>,
+        image: bool,
+    ) {
         self.delete_selection();
         let start = self.cursor;
         self.put(&label);
@@ -94,6 +148,7 @@ impl Editor {
                 end: start + label.len(),
                 text,
                 path,
+                image,
             },
         );
     }

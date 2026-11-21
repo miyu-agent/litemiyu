@@ -340,3 +340,54 @@ async fn an_image_goes_out_as_its_bytes() {
         "图照它的字节发出去了：{body}"
     );
 }
+
+/// 头附图片时（LM-28，`Handle::attach`）会话说这时的模型看不看得了图：模型资料的输入里有图片的看得了；没写的只有文字，
+/// 发出去的是一句带文件名的占位，不是图。
+#[tokio::test]
+async fn attaching_says_whether_the_model_takes_pictures() {
+    use lm_engine::session::{Attach, AttachSource};
+    let mut shot = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+    shot.extend_from_slice(&[0, 0, 0, 8, 0, 0, 0, 6, 8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    for sees in [true, false] {
+        let mut home = Home::new();
+        let server = Server::start(vec![said_hello()]).await;
+        let inputs = Inputs {
+            images: sees,
+            pdf: false,
+        };
+        let routes = models(&mut home, &server, inputs, false);
+        let handle = home.create(&routes).await;
+        let item = Attach {
+            name: "shot.png".into(),
+            source: AttachSource::Held(shot.clone().into()),
+            keep: false,
+        };
+        let attached = handle
+            .attach(vec![item])
+            .await
+            .expect("会话在跑")
+            .expect("附得上");
+        assert_eq!(attached.blind, !sees);
+        let mut blocks = vec![Block::Text(Text {
+            text: "看 [图片 1]".to_string(),
+        })];
+        blocks.extend(attached.blocks);
+        let mut pushes = watch(&handle).await;
+        let send = Command::Send {
+            blocks,
+            urgent: false,
+        };
+        ask(&handle, "cmd-1", send).await.expect("会话在跑");
+        until_turn_ends(&mut pushes).await;
+        let received = server.received();
+        let body = String::from_utf8_lossy(&received[0].body);
+        assert_eq!(body.contains("data:image/png;base64,"), sees, "{body}");
+        assert_eq!(
+            body.contains(
+                "An image was attached here (shot.png), but this model cannot view images."
+            ),
+            !sees,
+            "{body}"
+        );
+    }
+}

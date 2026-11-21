@@ -4,10 +4,12 @@
 //! 它派出去的子会话一起删（LM-18，照 Miyu `session.delete`「它派出去的子会话一起删」）：照每个会话日志的第一条
 //! （`session.created` 的 `parent`）一层层往下认，从最深的删起，它自己最后：半路出错的，它还在原处、列得出来，再删一次接着删完。
 //! fork 子代理的底子在父会话的日志里，父会话没了它也读不回来，所以不能留。原来只删主会话自己的目录，子会话的目录留在数据目录里。
+//!
+//! 它派出去的子会话有窗口直接开着的（`-s <子会话编号>`，LM-25）不删，照「别的窗口开着」报：那个窗口还在用子会话的目录。
 
 use lm_kernel::kernel::id::SessionId;
 
-use super::lock::{Claim, Claimed};
+use super::lock::{self, Claim, Claimed};
 use crate::store::paths::Paths;
 
 /// 删不成。
@@ -15,7 +17,7 @@ use crate::store::paths::Paths;
 pub enum NotRemoved {
     /// 没有这个会话（编号写法不对、目录没有）。
     Missing,
-    /// 别的窗口开着它。
+    /// 别的窗口开着它，或者开着它派出去的某个子会话。
     Open,
     /// 锁文件开不了、目录删不掉：原话。
     Failed(String),
@@ -48,6 +50,13 @@ pub fn remove(paths: &Paths, id: &str) -> Result<(), NotRemoved> {
         Claimed::Disk(error) => NotRemoved::Failed(error.to_string()),
     })?;
     let family = family(paths, &id);
+    // 它派出去的哪个子会话正被窗口直接开着（`-s <子会话编号>`，LM-25）：那个窗口还在往子会话的目录里写，一个都不删。
+    if family
+        .iter()
+        .any(|child| lock::held_by_other(&paths.session(child), lock::LOCK))
+    {
+        return Err(NotRemoved::Open);
+    }
     let removed = family
         .iter()
         .rev()

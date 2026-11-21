@@ -28,4 +28,6 @@ pub struct Typing {
     /// 切会话时输入框里没发的那句，照会话编号记着（Miyu `636b2b8d`，发版前 check 第 17 条，2026-11-09 项目主人：从侧边栏
     /// 「最近会话」切到别的会话，框里的字跟着带过去了，不该带）：切走时记在原来那个名下，切回来放回去（`sessions.rs`）。
     pub drafts: std::collections::HashMap<String, crate::input::Draft>,
+    /// 剪贴板里贴进来的图片暂存在哪（LM-28，`clipboard/staging.rs`）：第一次贴图时才造，没贴过图的是 `None`。
+    pub staging: Option<crate::clipboard::Staging>,
 }

@@ -23,7 +23,7 @@ use ratatui::layout::{Position, Rect};
 
 pub use editor::Editor;
 pub use label::quoted;
-pub use pasted::{Draft, PasteRule, Sent};
+pub use pasted::{Draft, PasteRule, Piece, Sent};
 pub use saved::Saved;
 pub use wrap::{VisualLine, locate, offset_at, pieces, tail_pieces, wrap, wrap_words};
 
@@ -248,13 +248,16 @@ impl InputBox {
         Action::None
     }
 
-    /// `Ctrl+V` 读来的是一批本机现成的文件、目录（文件管理器里复制的、复制的路径）：收成文件块，交回 `true`；不是的什么都
+    /// `Ctrl+V` 读来的是一批本机现成的文件、目录（文件管理器里复制的、复制的路径）：收成块，交回 `true`；不是的什么都
     /// 不做，交回 `false`（Miyu 终端 `input/mod.rs` 的 `paste_files`，蓝图「输入框」第 12 条）。`words` 交回块上文件、目录的
-    /// 写法，是一批文件才问；交回 `None`（字读不懂）的也当不是。
+    /// 写法，是一批文件才问；交回 `None`（字读不懂）的也当不是。`image` 说一个文件是不是能当图片发的（LM-28）：是的收成
+    /// 图片块（块上照 `picture` 写，`[图片 {n}]`），别的收成文件块（发出去写路径）。
     pub fn paste_files(
         &mut self,
         text: &str,
         words: impl FnOnce() -> Option<(String, String)>,
+        picture: &str,
+        mut image: impl FnMut(&std::path::Path) -> bool,
     ) -> bool {
         let home = std::env::var("HOME").ok();
         let Some(items) = dropped::dropped(text, home.as_deref()) else {
@@ -269,7 +272,11 @@ impl InputBox {
             if i > 0 {
                 self.editor.insert(" ");
             }
-            self.put_path(path, (&file, &folder));
+            if image(&path) {
+                self.put_image(path, picture);
+            } else {
+                self.put_path(path, (&file, &folder));
+            }
         }
         true
     }

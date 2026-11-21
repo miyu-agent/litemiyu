@@ -1,6 +1,6 @@
 //! 应急模式下的循环和定时触发（设计第五节第 16 条）：循环只是会话里的一个定时器，不写盘。`/loop 5m <话>` 当场交一次、
 //! 回执和输入框上面那一行的标记照平常，和上边框右边的「应急模式」不在同一行、互不挤掉（窄窗口也是）；`/loop off` 停掉；
-//! 模型没开循环时调 `schedule_wakeup` 照平常挂一个到点继续。工具面是六件。整棵树一个字节没变。
+//! 模型没开循环时调 `schedule_wakeup` 照平常挂一个到点继续。工具面是七件。整棵树一个字节没变。
 
 use std::ffi::OsString;
 
@@ -9,7 +9,15 @@ use super::rescue::{Root, given, writable_files};
 use super::support::{Options, Session, served};
 
 /// 应急模式带的工具（`core/engine/setup/rescue.rs` 的 `TOOLS`）。
-const TOOLS: [&str; 6] = ["edit", "jobs", "read", "schedule_wakeup", "shell", "write"];
+const TOOLS: [&str; 7] = [
+    "ask_user",
+    "edit",
+    "jobs",
+    "read",
+    "schedule_wakeup",
+    "shell",
+    "write",
+];
 
 /// 在 `root` 的工作目录里起 `litemiyu --rescue`，窗口 `cols` 列。
 fn launch(root: &Root, env: Vec<(String, OsString)>, cols: u16) -> Session {

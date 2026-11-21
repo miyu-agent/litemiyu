@@ -1,4 +1,4 @@
-//! 复制：走 OSC 52，让终端替我们写系统剪贴板。读剪贴板（`Ctrl+V`）在 `read.rs`，读复制的文件在 `files.rs`。
+//! 复制：走 OSC 52，让终端替我们写系统剪贴板。读剪贴板（`Ctrl+V`）在 `read.rs`，读复制的文件在 `files.rs`，读图片在 `image.rs`，贴进来的图片暂存在哪在 `staging.rs`。
 //!
 //! 全屏时鼠标被程序接管，终端自己的选区用不了，只能程序自己复制。OSC 52 不依赖
 //! 平台的剪贴板库，经 SSH 也能用（`13-终端界面.md` 第九节）。终端不认它时静悄悄地没效果。
@@ -8,10 +8,14 @@
 use std::io::{self, Write};
 
 mod files;
+mod image;
 mod read;
+mod staging;
 
 pub use files::read_files;
-pub use read::read;
+pub use image::read_image;
+pub use read::{Unreadable, read};
+pub use staging::{Staging, is_staged};
 
 /// 把 `text` 放进系统剪贴板。
 ///

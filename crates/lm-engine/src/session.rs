@@ -61,8 +61,9 @@ pub use clock::{new_command_id, new_id};
 pub use config::{ConfigSource, Configs, Turn, TurnConfig, fixed, fixed_with};
 pub use current::{Current, Tally};
 pub use handle::{
-    Charged, Context, ContextRefused, Ended, Handle, LineRefused, Meter, Pushed, Rejoin, Retitled,
-    Spent, Stopped, Subscription, SystemPart, about_tokens, parse_context,
+    Attach, AttachError, AttachSource, Attached, Charged, Context, ContextRefused, Ended, Handle,
+    LineRefused, Meter, Pushed, Rejoin, Retitled, Spent, Stopped, Subscription, SystemPart,
+    about_tokens, parse_context,
 };
 pub use jobs::Unreadable;
 pub use looping::{Looping, Pace};
@@ -77,4 +78,7 @@ pub use route::{
     read_observed,
 };
 pub use shown::{Next, Shown};
-pub use window::{Listed, NotRemoved, list as list_sessions, remove as remove_session};
+pub use window::{
+    Found, Listed, NotRemoved, find as find_session, list as list_sessions,
+    remove as remove_session,
+};

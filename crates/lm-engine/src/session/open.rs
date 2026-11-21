@@ -65,7 +65,7 @@ pub async fn create(setup: Create<'_>) -> Result<Handle, CreateError> {
 
 /// 造一个应急模式的会话（设计第五节第 16 条，`litemiyu --rescue`）：什么都不写盘。日志、blob、后台命令的输出只在内存里，不建
 /// 会话目录、不拿锁、没有收件目录；不找技能、不起 MCP、不交记忆；没有会话表（派不了子代理）。工具面照交进来的工具目录（主程序
-/// 只交文件和命令那几件）。会话关了就没了。
+/// 只交文件和命令那几件，全屏界面另交 `schedule_wakeup`、`ask_user`）。会话关了就没了。
 ///
 /// # Errors
 ///

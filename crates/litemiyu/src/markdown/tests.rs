@@ -16,7 +16,7 @@ fn draw(text: &str, width: u16) -> Vec<MdLine> {
 }
 
 /// 每行：引子加内容。
-fn lines(text: &str, width: u16) -> Vec<String> {
+pub(super) fn lines(text: &str, width: u16) -> Vec<String> {
     draw(text, width)
         .iter()
         .map(|l| {

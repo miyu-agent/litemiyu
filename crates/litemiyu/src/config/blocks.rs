@@ -1,5 +1,5 @@
 //! 输入框里文件块上写的字（`text/<语言>.json` 的 `file_block`，Miyu 终端 `attach.file`、`attach.folder`）：`Ctrl+V` 收成文件块时
-//! 才读，别的字表不带它（设计第七节「守红线要做的」第 1 条）。原来和 `@` 文件列表的字放在一格（`mention`），LM-2 砍了 `@` 以后
+//! 才读（贴图片粘不了时的几句提示也在这一格，LM-28），别的字表不带它（设计第七节「守红线要做的」第 1 条）。原来和 `@` 文件列表的字放在一格（`mention`），LM-2 砍了 `@` 以后
 //! 单留这两句。
 
 use super::{Config, localize, read, texts};
@@ -12,6 +12,16 @@ texts! {
         pub file: String,
         /// 目录收成的块上写的：`{name}` 目录名（Miyu 终端 `attach.folder`）。
         pub folder: String,
+        /// 剪贴板里的图片超过字节上限时的提示。
+        pub too_big: String,
+        /// 剪贴板里的图片有一边超过像素上限时的提示。
+        pub too_wide: String,
+        /// 贴进来的图片暂存不下来时的提示：`{reason}` 系统的原话。
+        pub unstaged: String,
+        /// 复制的图片文件超了上限、改成文件块时的提示：`{name}` 文件名。
+        pub file_too_big: String,
+        /// 附了图片、这时的模型看不了图时的提示。
+        pub unseen: String,
     }
 }
 

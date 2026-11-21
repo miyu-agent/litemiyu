@@ -11,6 +11,10 @@
 //!
 //! 一个主会话一个 [`Window`]：造会话、载入时先拿锁（拿不到的造不成、载入不了），交给 actor 拿着；actor 退出时放下，锁跟着放，
 //! 概要写最后一次。子会话没有：它们跟着主会话在同一个进程里。
+//!
+//! 界面直接打开的子会话（`-s <子会话编号>`，LM-25）也拿它自己目录里的锁，两头各查一次，同一份子会话日志不会有两处在写：
+//! 它上面哪一层有窗口开着的载入不了（`open/load.rs`，[`parent_open`]）；主会话的会话表要叫起一个别处直接开着的子会话时不载入
+//! 它、照实交回出错（`table.rs`）。
 
 mod list;
 mod local;
@@ -23,7 +27,8 @@ use std::path::PathBuf;
 
 use lm_kernel::kernel::event::{Body, Event};
 
-pub use list::{Listed, list};
+pub(crate) use list::parent_open;
+pub use list::{Found, Listed, find, list};
 use lock::Claim;
 pub use lock::Claimed;
 pub(crate) use port::port;

@@ -211,7 +211,7 @@ If the AI started subagents or background commands during the turn, `ask` waits 
 |---|---|
 | `litemiyu: no usable model: none is set up` | No model has been set up yet. Run `litemiyu config` to add one |
 | `litemiyu: no session …` | The ID after `-s` is wrong. The full ID is required |
-| `litemiyu: session … is open in another window` | The session is open in a full-screen window; close that window first |
+| `litemiyu: session … is open in another window` | The session is open in a full-screen window; close that window first. When the ID after `-s` is a subagent's session, you get this while the session that started it is open; see [Reopening a subagent's session](agents.md#reopening-a-subagents-session) |
 | `litemiyu: invalid value 'xml' for '--format'` | The option's value is wrong; the hint on the next line lists the values you can use |
 | `litemiyu: time is up` | The `--timeout` was reached |
 | `litemiyu: the request limit was reached` | The `--max-steps` count was reached |

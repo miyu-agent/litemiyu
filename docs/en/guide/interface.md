@@ -151,7 +151,7 @@ Copying asks the terminal to write the system clipboard (OSC 52), so it reaches 
 There are two ways to paste:
 
 - The terminal's own paste (usually `Ctrl+Shift+V`): works everywhere.
-- `Ctrl+V`: LiteMiyu reads the system clipboard itself. On Linux and BSD this needs `wl-paste` (Wayland) or `xclip` or `xsel` (X11); macOS uses the built-in `pbpaste`. When it cannot read the clipboard it says `Can't read the clipboard: use your terminal's own paste (Ctrl+Shift+V in kitty)`.
+- `Ctrl+V`: LiteMiyu reads the system clipboard itself, and can paste text, images and copied files. On Linux and BSD this needs `wl-paste` (Wayland) or `xclip` or `xsel` (X11); macOS uses the built-in `pbpaste` and `osascript`. When something cannot be pasted, the hint says why, for example that no clipboard command was found, that the command failed, or that the clipboard holds neither text nor a supported image.
 
 A long paste is folded into a block in the input box, for example `[pasted 14 line(s)]`; the full text is what gets sent.
 
@@ -159,7 +159,21 @@ A long paste is folded into a block in the input box, for example `[pasted 14 li
 
 Copy files or folders in your file manager, return to the input box and press `Ctrl+V`: they become file blocks such as `[main.rs]` and `[src/]`. When you send, the file paths are written into the message and the AI reads the files itself when it needs them.
 
+If a copied file is an image (PNG, JPEG, GIF or WebP), it becomes an image block and is given to the AI to look at, the same as a pasted screenshot below.
+
 > Pasting files works on Linux and BSD only. On macOS, type the path, or use `litemiyu ask --file`; see [Command line](cli.md).
+
+### Pasting images
+
+After taking a screenshot or copying an image somewhere, return to the input box and press `Ctrl+V`: an image block such as `[image 1]` appears in the input box. Image blocks can sit among text, you can paste several, and Backspace deletes a whole block. Once you send the message, the AI sees the image.
+
+- The interface does not display the image itself, only the image block. Clicking an image block opens the image with your system's default program.
+- PNG, JPEG, GIF and WebP are supported. An image may be at most 5 MB and at most 8000 pixels on each side; a larger one is refused with a hint and is not pasted.
+- Image blocks are numbered continuously through the whole session, so the AI can tell which image you mean.
+- A pasted image that has not been sent yet is kept in the cache directory and is deleted when LiteMiyu exits. Once sent, the image is saved in the session, and reopening the session, undoing and compaction do not affect it.
+- If the current model does not accept images, sending shows `This model doesn't take images`. In that case a configured vision model (`models.vision`) describes the image in text for the current model; without one, the current model only receives the image's file name and path. Whether a model accepts images comes from the model catalog, and you can also state it with `inputs` in the configuration; see [Configuration](config.md).
+- The drawers for questions and confirmations and the input history search accept text only. A command run with `!` cannot carry files or images.
+- In [rescue mode](rescue.md) images are kept in memory only and are not written to disk.
 
 ## Icons
 

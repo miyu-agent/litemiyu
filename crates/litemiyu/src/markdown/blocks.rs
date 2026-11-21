@@ -35,21 +35,13 @@ impl Renderer<'_> {
         }
     }
 
-    /// 块级公式：先把前面收着的字排出去，自己占一块，写成 Unicode：有分式的上下摞（`stack.rs`），
+    /// 块级公式：先把前面收着的字排出去，自己占一块，写成 Unicode：分式上下摞、环境分行分列（`stack.rs`），
     /// 摞出来比正文宽的照一行写（折开就对不齐了）。
     pub(super) fn display_math(&mut self, tex: &str) {
         self.flush();
-        let lines = super::stack::stacked(tex, self.math.get());
         let room = usize::from(self.room());
-        let fits = lines
-            .iter()
-            .all(|l| unicode_width::UnicodeWidthStr::width(l.as_str()) <= room);
-        let text = if lines.len() > 1 && fits {
-            lines.join("\n")
-        } else {
-            math::unicode(tex, self.math.get())
-        };
-        self.emit(vec![Piece::new(text, theme::md_math())], true);
+        let lines = super::stack::stacked(tex, self.math.get(), room);
+        self.emit(vec![Piece::new(lines.join("\n"), theme::md_math())], true);
     }
 
     /// 行内公式：转成 Unicode，公式色。

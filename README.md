@@ -166,7 +166,7 @@ These pages cover installation and basic use.
 - [Quick start](docs/en/guide/quickstart.md)
 - [Full documentation](docs/README.md)
 
-Release packages have not been published yet. To use LiteMiyu now, build it from source as described in [Install](docs/en/guide/install.md#building-from-source).
+The packages published so far are pre-releases. Download one from the [releases page](https://github.com/miyu-agent/litemiyu/releases) and install it as described in [Install](docs/en/guide/install.md#download-a-release-package-linux-macos).
 
 ## License
 

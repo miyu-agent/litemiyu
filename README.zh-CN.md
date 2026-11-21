@@ -166,7 +166,7 @@ CPU 和硬盘：
 - [快速上手](docs/zh/guide/quickstart.md)
 - [完整文档](docs/README.md)
 
-发行包还没有公开发布。现在想使用的话，请按照[安装](docs/zh/guide/install.md#从源码编译)里的说明从源码编译。
+目前公开发布的是预发布版，可以在[发行版页面](https://github.com/miyu-agent/litemiyu/releases)下载，安装方法请阅读[安装](docs/zh/guide/install.md#下载发行包linuxmacos)。
 
 ## 许可证
 

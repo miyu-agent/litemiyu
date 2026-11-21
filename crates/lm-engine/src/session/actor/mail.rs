@@ -99,6 +99,25 @@ impl Actor {
                 tokio::spawn(async move { answer(reply, reading.await) });
                 Mail::Done
             }
+            // 头附的图片（LM-28，`handle/attach.rs`）：读文件、存 blob 另起一个任务，不占 actor。
+            Message::Attach {
+                session,
+                items,
+                reply,
+            } => {
+                let (blobs, dir) = self.tools.attach_place(&session);
+                let blind = self.model.limits().blind;
+                tokio::spawn(async move {
+                    let stored = crate::session::blocking::blocking(move || {
+                        crate::session::handle::attach::store(&blobs, dir.as_deref(), items)
+                    });
+                    let attached = stored
+                        .await
+                        .map(|blocks| crate::session::handle::attach::Attached { blocks, blind });
+                    answer(reply, attached);
+                });
+                Mail::Done
+            }
             // 人开、停循环（L5 四，`looping.rs`）：不进内核，当场办完。
             Message::Loop(order, reply) => self.loop_order(order, reply),
             Message::Window(window) => {

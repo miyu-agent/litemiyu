@@ -84,10 +84,14 @@ fn mouse_copy_expands_chips_once_across_wraps() {
         Chip {
             label: "[已粘贴 14 行]".into(),
             full: "第一段\n原文".into(),
+            image: false,
+            file: None,
         },
         Chip {
             label: "[已粘贴 14 行]".into(),
             full: "第二段".into(),
+            image: false,
+            file: None,
         },
     ];
     for width in [1, 2, 6, 60] {
@@ -133,6 +137,8 @@ fn mouse_copy_expands_file_paths_but_not_literal_labels() {
     t.entries[0].pasted = vec![Chip {
         label: "[文件 1]".into(),
         full: "/tmp/中文文件.txt".into(),
+        image: false,
+        file: None,
     }];
     let rows = super::entry_rows(0, &t.entries[0], &f.ctx());
     let mut view = BodyView::default();
@@ -154,10 +160,14 @@ fn mouse_copy_keeps_attachment_labels_and_separates_entries() {
             Chip {
                 label: "[已粘贴 14 行]".into(),
                 full: full.into(),
+                image: false,
+                file: None,
             },
             Chip {
                 label: "[图片 1]".into(),
                 full: "[图片 1]".into(),
+                image: false,
+                file: None,
             },
         ];
     }
@@ -179,6 +189,8 @@ fn mouse_copy_preserves_whitespace_inside_expanded_original() {
     t.entries[0].pasted = vec![Chip {
         label: "[已粘贴 14 行]".into(),
         full: full.into(),
+        image: false,
+        file: None,
     }];
     for width in [2, 60] {
         let mut ctx = f.ctx();

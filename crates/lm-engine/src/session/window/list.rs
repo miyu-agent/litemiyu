@@ -101,6 +101,62 @@ fn one(dir: &Path, id: SessionId) -> Option<Listed> {
     })
 }
 
+/// 照编号在会话目录里找到的一个会话（`-s <编号>`，LM-25）：主会话、子会话都找得到，不经列会话的那一份。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// 会话编号。
+    pub id: SessionId,
+    /// 父会话：主会话没有。
+    pub parent: Option<SessionId>,
+    /// 这一刻打不开它的原因：拿着锁的那个会话。它自己有窗口开着的是它自己；它上面哪一层（父会话、父会话的父会话……）有窗口
+    /// 开着的是那一层（子会话跟着主会话在那个窗口的进程里，那边随时可能叫起它、往它的日志里写）。都没有的是 `None`。
+    pub held: Option<SessionId>,
+}
+
+/// 从子会话往上找父会话最多找这么多层：派子代理的深度上限远比它小，只为日志被改坏成一圈时停得下来。
+const ANCESTORS: usize = 64;
+
+/// 数据根 `paths` 下编号是 `id` 的会话（LM-25）：只读它日志的第一条认是不是会话、父会话是谁，再照文件锁看它自己、它上面各层
+/// 有没有窗口开着。编号写得不对、没有这个目录、第一条不是造会话那一条的是 `None`。碰磁盘，在阻塞线程里调。
+#[must_use]
+pub fn find(paths: &Paths, id: &str) -> Option<Found> {
+    let id = SessionId::parse(id).ok()?;
+    let dir = paths.session(&id);
+    let parent = parent_of(&dir)?;
+    let held = match lock::held_by_other(&dir, LOCK) {
+        true => Some(id.clone()),
+        false => held_above(paths, parent.clone()),
+    };
+    Some(Found { id, parent, held })
+}
+
+/// 会话目录 `dir` 里那个会话的父会话：主会话是 `Some(None)`；不是会话的目录（第一条读不出、不是造会话那一条）是 `None`。
+fn parent_of(dir: &Path) -> Option<Option<SessionId>> {
+    match crate::store::log::first_event(dir).ok()?.body {
+        lm_kernel::kernel::event::Body::SessionCreated(created) => Some(created.parent),
+        _ => None,
+    }
+}
+
+/// 从父会话 `parent` 往上各层里，头一个有窗口开着的（[`Found::held`]）。哪一层的目录不在了、读不出来的到那里为止。
+fn held_above(paths: &Paths, parent: Option<SessionId>) -> Option<SessionId> {
+    let mut next = parent;
+    for _ in 0..ANCESTORS {
+        let session = next?;
+        let dir = paths.session(&session);
+        if lock::held_by_other(&dir, LOCK) {
+            return Some(session);
+        }
+        next = parent_of(&dir).flatten();
+    }
+    None
+}
+
+/// 会话目录 `dir` 里那个会话上面各层有没有窗口开着（界面直接载入子会话时查，`open/load.rs`）：主会话、不是会话的目录没有上面。
+pub(crate) fn parent_open(paths: &Paths, dir: &Path) -> bool {
+    parent_of(dir).is_some_and(|parent| held_above(paths, parent).is_some())
+}
+
 /// 日志最后一段的修改时刻：段名是补零的序号，名字最大的就是最后一段。
 fn newest_segment(dir: &Path) -> Option<Timestamp> {
     let newest = std::fs::read_dir(dir)

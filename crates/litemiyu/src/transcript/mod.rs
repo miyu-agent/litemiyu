@@ -150,6 +150,8 @@ pub struct Transcript {
     returned: Vec<(String, Vec<Chip>)>,
     /// 这一轮是排着的话开的：那几句照排着时的样子，一句一条（`queue.rs` 的 `takeback`）。
     opened_by: Vec<(String, Vec<Chip>)>,
+    /// 放掉的段里你说的话带着几张图片（`chips.rs` 的 `image_count`）。
+    shed_images: usize,
     /// 下一条正文的编号。
     next_id: u64,
     /// 收起过几段（[`Transcript::folds`]）。
@@ -353,6 +355,7 @@ impl Transcript {
             | Update::JobOutput { .. }
             | Update::StopRefused { .. }
             | Update::Ignored(_)
+            | Update::ImagesUnseen
             | Update::ReadBack { .. }
             | Update::Spoken { .. }
             | Update::Changes { .. }
@@ -400,6 +403,7 @@ impl Transcript {
             } => self.model_set(reference, replaced, texts),
             Push::EffortSet(level) => self.own_effort_set(level),
             Push::Said { seq, text } => self.said(seq, text),
+            Push::Images { seq, files } => self.images(seq, files, &texts.image_label),
             Push::BlockStart { index, block } => {
                 self.spoke = true;
                 self.retry = None;

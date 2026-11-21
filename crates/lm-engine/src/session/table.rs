@@ -5,8 +5,8 @@
 //! 主会话的把手，表跟着没了，子会话的把手跟着放下，它们的 actor 跟着退出；主会话的 actor 照旧在收件箱关了时退出。表要找
 //! 主会话（子会话向上回报、留言给父）时照弱的把手找，主会话没了的就是没了。
 //!
-//! 子会话在表里照编号找：一个会话只起一个 actor。表里没有的（父会话载入以后叫起的、停了的），照会话目录载入它。和 Miyu
-//! 不同：没有闲退、没有会话列表的推送、不删子会话。
+//! 子会话在表里照编号找：一个会话只起一个 actor。表里没有的（父会话载入以后叫起的、停了的），照会话目录载入它；别的窗口
+//! 直接开着它的（LM-25，`window.rs`）不载入。和 Miyu 不同：没有闲退、没有会话列表的推送、不删子会话。
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -189,6 +189,14 @@ impl Table {
         let mut children = self.children.lock().await;
         if let Some(handle) = children.get(session) {
             return Ok(handle.clone());
+        }
+        // 别的窗口（或者这个进程里的界面）直接开着这个子会话（`-s <子会话编号>`，LM-25）：它的日志那边在写，这里不再起
+        // 一个 actor，照实交回出错。
+        let dir = self.kit.root.session(session);
+        if crate::session::blocking::blocking(move || crate::session::window::open_elsewhere(&dir))
+            .await
+        {
+            return Err(format!("session {session} is open in another window"));
         }
         let handle = crate::session::open::load_child(self, session)
             .await

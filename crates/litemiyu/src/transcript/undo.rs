@@ -40,14 +40,22 @@ impl Transcript {
         self.undos.cause = cause;
         self.hide(turns, true);
         self.undos.lines += 1;
-        let said = self
+        let (said, images) = self
             .entries
             .iter()
             .find(|e| e.kind == Kind::User && e.turn.is_some_and(|t| turns.contains(&t)))
-            .map(|e| e.text.clone())
+            .map(|e| {
+                let images = e.pasted.iter().filter(|c| c.image).cloned().collect();
+                (e.text.clone(), images)
+            })
             .unwrap_or_default();
         let said = self.undos.said.entry(seq).or_insert(said).clone();
         self.note(Kind::Undo, said);
+        // 那句话带的图片块记在说明那一行上：放回输入框时照它接回图片（`app/undo.rs`）。
+        if let Some(last) = self.entries.last_mut() {
+            let images: Vec<super::Chip> = images;
+            last.pasted = images;
+        }
         if let Some(undid) = self.undos.pending.take().filter(|u| !u.none()) {
             self.undos.undid.insert(seq, undid);
         }

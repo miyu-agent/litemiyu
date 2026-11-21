@@ -128,7 +128,12 @@ fn commands_lines_pastes_and_hits_are_marked() {
     let pasted = Sent {
         draft: Draft::from_pasted(
             &format!("{label} 看看报错"),
-            &[(label.to_string(), "很长的报错".to_string())],
+            &[crate::input::Piece {
+                label: label.to_string(),
+                full: "很长的报错".to_string(),
+                image: false,
+                file: None,
+            }],
         ),
         at: now,
     };

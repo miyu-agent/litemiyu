@@ -20,6 +20,8 @@ fn chip(label: &str, full: &str, _kind: Option<&str>) -> Chip {
     Chip {
         label: label.into(),
         full: full.into(),
+        image: false,
+        file: None,
     }
 }
 

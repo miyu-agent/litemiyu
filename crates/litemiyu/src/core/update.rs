@@ -141,6 +141,8 @@ pub enum Update {
     /// 被忽略的几样（`app/checkup.rs`）：第一句话发出去以后，读配置、找技能、读 MCP 服务时记下的，只有查出了才交，一次运行
     /// 只交一次（LM-3补）。
     Ignored(lm_engine::checkup::Ignored),
+    /// 刚发出去的那句话附了图片，而这个会话这时的模型看不了图（LM-28，`lm_engine::session::Attached` 的 `blind`）：界面提示一句。
+    ImagesUnseen,
     /// 停不了这个任务（[`super::Command::StopJob`]）：原因码（`job_ended` 已经结束了，`unknown_job`）。
     StopRefused {
         /// 原因码。

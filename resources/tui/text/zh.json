@@ -67,7 +67,7 @@
   "omitted": "已省略 {count} 行",
   "shell": {
     "placeholder": "输入要跑的命令",
-    "no_attachments": "跑命令不能带附件",
+    "no_attachments": "运行命令时不能附带文件或图片",
     "running": "运行中",
     "exited": "退出码 {code} · {elapsed}",
     "signal": "信号 {signal} · {elapsed}",
@@ -168,6 +168,9 @@
     ]
   },
   "refusal_hints": {
+    "attachment_unreadable": "有一张图片的文件已经不存在或者无法读取，这句话没有发送：请删除那个图片块，或者重新粘贴",
+    "attachment_too_big": "有一张图片超过了 5 MB 或者有一边超过 8000 像素，这句话没有发送",
+    "attachment_not_image": "有一个图片块的文件不是支持的图片（PNG、JPEG、GIF、WebP），这句话没有发送",
     "path_unreadable": "目录不存在或无法读取",
     "not_a_directory": "不是目录",
     "path_forbidden": "该目录不能用作工作区",
@@ -245,7 +248,12 @@
   },
   "file_block": {
     "file": "[{name}]",
-    "folder": "[{name}/]"
+    "folder": "[{name}/]",
+    "too_big": "剪贴板里的图片超过了 5 MB，无法发送",
+    "too_wide": "剪贴板里的图片有一边超过了 8000 像素，无法发送",
+    "unstaged": "图片无法暂存到缓存目录（{reason}），没有粘贴",
+    "file_too_big": "图片 {name} 超过了 5 MB 或者有一边超过 8000 像素，已改为只发送文件路径",
+    "unseen": "当前模型不支持图片输入：已配置看图模型时由它转述图片，否则模型只会收到图片的文件名和路径"
   },
   "compaction": {
     "triggered": "已触发上下文压缩",
@@ -447,7 +455,7 @@
       ],
       [
         "Ctrl+V",
-        "粘贴"
+        "粘贴；剪贴板中的图片作为附件"
       ],
       [
         "↓（输入框为空时）",
@@ -525,7 +533,11 @@
     "denied_with": "不允许 · {reason}",
     "cancel_hint": "再按一次 Esc 取消"
   },
-  "clipboard_unreadable": "无法读取剪贴板：请使用终端的粘贴（kitty 为 Ctrl+Shift+V）",
+  "image_label": "[图片 {n}]",
+  "clipboard_unreadable": "读取剪贴板的命令执行失败或者超时了：请使用终端的粘贴（kitty 为 Ctrl+Shift+V）",
+  "clipboard_missing": "没有找到读取剪贴板的命令（Wayland 需要 wl-clipboard，X11 需要 xclip 或 xsel）：请使用终端的粘贴（kitty 为 Ctrl+Shift+V）",
+  "clipboard_not_text": "剪贴板里的内容既不是文字，也不是支持的图片（PNG、JPEG、GIF、WebP），无法粘贴",
+  "clipboard_too_big": "剪贴板里的内容超过了 16 MB，无法粘贴",
   "clipboard_text_only": "这里只能粘贴文字",
   "clipboard_empty": "剪贴板为空",
   "paste_label": "[已粘贴 {lines} 行]",
@@ -612,7 +624,7 @@
       "  litemiyu            打开对话（全部功能）",
       "  litemiyu config     打开配置界面",
       "  litemiyu --bare     第一个会话为无功能会话：不提供工具，不注入任何内容",
-      "  litemiyu --rescue   应急模式：不保存任何内容到磁盘（包括会话日志、配置、\n                      输入历史），只提供文件、命令和定时触发工具；\n                      关闭后会话不保留",
+      "  litemiyu --rescue   应急模式：不保存任何内容到磁盘（包括会话日志、配置、\n                      输入历史），只提供文件、命令、定时触发和提问工具；\n                      关闭后会话不保留",
       "  litemiyu --version  显示版本后退出（也可以写 -V）",
       "",
       "应急模式的供应商（命令行选项覆盖环境变量，两者都覆盖配置；\n都未提供时使用配置中的 models.chat）：",

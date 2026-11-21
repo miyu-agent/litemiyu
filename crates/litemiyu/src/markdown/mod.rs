@@ -501,6 +501,8 @@ impl Renderer<'_> {
 }
 
 #[cfg(test)]
+mod formulas;
+#[cfg(test)]
 mod speed;
 #[cfg(test)]
 mod tests;

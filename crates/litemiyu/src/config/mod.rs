@@ -77,8 +77,16 @@ texts! {
         pub help: crate::ui::help::Texts,
         /// 确认和提问的抽屉上的字。
         pub drawer: crate::drawer::Texts,
-        /// `Ctrl+V` 读不到剪贴板时的提示。
+        /// 图片块上写的（Miyu 终端 `attach.labels.image`，LM-28）：`{n}` 这是会话里的第几张。正文里你说的话带的图片也照它认。
+        pub image_label: String,
+        /// `Ctrl+V` 时剪贴板命令失败、超时的提示。
         pub clipboard_unreadable: String,
+        /// `Ctrl+V` 时这台机器上一个剪贴板命令都没装的提示。
+        pub clipboard_missing: String,
+        /// 输入框里 `Ctrl+V`，剪贴板里的既不是字、也不是认得的图片时的提示。
+        pub clipboard_not_text: String,
+        /// `Ctrl+V` 时剪贴板里的东西超过一次读的上限的提示。
+        pub clipboard_too_big: String,
         /// 抽屉、历史搜索里读剪贴板读不成字（多半放着图片）：这里只收字。
         pub clipboard_text_only: String,
         /// `Ctrl+V` 读到空剪贴板时的提示。

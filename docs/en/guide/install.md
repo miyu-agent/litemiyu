@@ -4,7 +4,7 @@
 
 This page covers installing, upgrading and uninstalling LiteMiyu. If you just want to get going, [Quick start](quickstart.md) is enough.
 
-> Release packages are not published yet. The "Arch Linux" and "Download a release package" sections describe installation once they are; replace `<version>` with the version on the releases page, for example `2026.11.0`. The method that works today is [Building from source](#building-from-source).
+> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In "Download a release package", replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases). The AUR package will be provided once the first stable version is released; until then, [download a release package](#download-a-release-package-linux-macos) or [build from source](#building-from-source).
 
 ## Choose a method
 
@@ -85,7 +85,7 @@ install -m 755 target/release/litemiyu ~/.local/bin/litemiyu
 
 The built program is `target/release/litemiyu`; the last line puts it into `~/.local/bin`.
 
-> The source builds on BSD, but that is not verified in CI.
+> The source contains code paths for BSD, but it has not been built or run on BSD. If you hit a problem, please open an issue.
 
 ## Check the installation
 

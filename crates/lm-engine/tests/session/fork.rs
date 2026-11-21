@@ -212,6 +212,70 @@ async fn forked_after(
     (handle, log)
 }
 
+/// 主会话那句话带着图片（LM-28）：fork 的子代理带着主会话的对话，那张图跟着进它的请求（blob 在数据根里是同一份，子会话
+/// 取得出）；不带 fork 的只有交代，没有图。
+#[tokio::test]
+async fn a_fork_carries_the_pictures_of_the_conversation() {
+    use lm_engine::session::{Attach, AttachSource};
+    use lm_kernel::kernel::block::{Block, Text};
+
+    let home = Home::outside_temp();
+    let script = Script::new([]).answers(answer).recording();
+    std::fs::create_dir_all(home.scratch.0.join("work")).expect("建得了");
+    let handle = home.create_as(&script, &base_system(), full(&home)).await;
+    let mut shot = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+    shot.extend_from_slice(&[0, 0, 0, 33, 0, 0, 0, 44, 8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    let staged = home.scratch.0.join("shot.png");
+    std::fs::write(&staged, &shot).expect("写得了");
+    let item = Attach {
+        name: "shot.png".into(),
+        source: AttachSource::File(staged),
+        keep: true,
+    };
+    let mut blocks = vec![Block::Text(Text {
+        text: "第一句：记住 ALPHA [图片 1]".into(),
+    })];
+    blocks.extend(
+        handle
+            .attach(vec![item])
+            .await
+            .expect("会话在跑")
+            .expect("附得上")
+            .blocks,
+    );
+    let mut pushes = watch(&handle).await;
+    let send = Command::Send {
+        blocks,
+        urgent: false,
+    };
+    ask(&handle, "cmd-1", send).await.expect("会话在跑");
+    until_turn_ends(&mut pushes).await;
+    talk(&handle, "cmd-2", "派两个子代理").await;
+    until_logged(&home, handle.id(), settled).await;
+
+    let sizes = |request: &Request| -> Vec<(u32, u32)> {
+        request
+            .messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::User { blocks } => Some(blocks),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|block| match block {
+                Block::Image(image) => Some((image.width, image.height)),
+                _ => None,
+            })
+            .collect()
+    };
+    let forks = of_fork(&script);
+    let first = forks.first().expect("fork 的发过请求");
+    assert_eq!(sizes(first), [(33, 44)], "fork 的带着主会话那句话里的图");
+    let plains = of_plain(&script);
+    let plain = plains.first().expect("普通子代理发过请求");
+    assert!(sizes(plain).is_empty(), "不带 fork 的只有交代");
+}
+
 /// 改前红第一条、第二条：fork 的第一轮请求里带着主会话到派它那一步为止的对话，system、工具面和主会话的一样，交代前面接着外壳；
 /// 不带 fork 的只有交代。子会话的头几条照 Miyu：带 `forked` 的 `session.created`（从派它的那条回复分叉、`within` 写着那一轮、
 /// 快照就是主会话那一份、第 1 层），序号接着分叉点；回合开始不换快照。
@@ -545,4 +609,173 @@ async fn a_resting_fork_shelves_its_base_and_reads_it_back() {
         "{text}"
     );
     stop(&reopened).await;
+}
+
+/// 关掉一个窗口里的会话：有计划地停下，等它的 actor 退出（推送断了），锁跟着放下。
+async fn close(handle: lm_engine::session::Handle) {
+    let mut pushes = watch(&handle).await;
+    stop(&handle).await;
+    drop(handle);
+    while within("等它退出", pushes.next()).await.is_ok() {}
+}
+
+/// 试着直接载入 `session`（界面的 `-s <编号>`）。
+async fn try_load(
+    home: &Home,
+    session: &SessionId,
+    script: &Script,
+) -> Result<lm_engine::session::Handle, lm_engine::session::LoadError> {
+    within(
+        "载入",
+        lm_engine::session::load(lm_engine::session::Load {
+            root: &home.root,
+            id: session.clone(),
+            place: lm_engine::session::Workplace::Given(environment()),
+            models: script,
+            tools: std::sync::Arc::new(base_system()),
+            home: Some(&home.home),
+            configs: home.configs.clone(),
+        }),
+    )
+    .await
+}
+
+/// LM-25：子会话照编号在会话目录里找得到（列会话不列它）；主会话有窗口开着时，直接载入它派的子会话载入不了（fork 的、普通的
+/// 都一样），找到的那一份写着是主会话拿着锁；主会话关了以后两种都打得开，接着说话请求里带着各自应有的上文。
+#[tokio::test]
+async fn a_child_is_found_by_its_id_and_opens_only_while_its_parent_is_closed() {
+    use lm_engine::session::{LoadError, find_session, list_sessions};
+    let home = Home::outside_temp();
+    let script = Script::new([]).answers(answer).recording();
+    let (handle, log) = forked_once(&home, &script).await;
+    let (fork, plain) = children(&log);
+    let main = handle.id().clone();
+    let held = |session: &SessionId| {
+        let found = find_session(&home.root, session.as_str()).expect("照编号找得到");
+        assert_eq!(&found.id, session);
+        (found.parent, found.held)
+    };
+    assert_eq!(held(&main), (None, Some(main.clone())), "主会话自己开着");
+    for child in [&fork, &plain] {
+        assert_eq!(
+            held(child),
+            (Some(main.clone()), Some(main.clone())),
+            "子会话：拿着锁的是主会话"
+        );
+        assert!(
+            matches!(try_load(&home, child, &script).await, Err(LoadError::Taken)),
+            "主会话开着，子会话直接载入不了"
+        );
+        assert_eq!(held(child).1, Some(main.clone()), "试过以后没留下锁");
+    }
+    let listed = list_sessions(&home.root).expect("列得出");
+    assert_eq!(listed.len(), 1, "列会话只列主会话：{listed:?}");
+    assert!(find_session(&home.root, "../outside").is_none(), "不是编号");
+    assert!(
+        find_session(&home.root, "00000000-0000-0000-0000-000000000000").is_none(),
+        "没有这个会话"
+    );
+    close(handle).await;
+    assert_eq!(held(&main), (None, None), "关了");
+    assert_eq!(held(&fork).1, None);
+
+    // 普通子会话：请求里是它自己的交代和它答过的，没有主会话的对话。
+    let reopened = try_load(&home, &plain, &script)
+        .await
+        .expect("主会话关了，打得开");
+    assert_eq!(held(&plain).1, Some(plain.clone()), "它自己开着");
+    talk(&reopened, "cmd-p1", "接着做").await;
+    let last = of_plain(&script).last().cloned().expect("又请求了一次");
+    let text = all(&last);
+    assert!(
+        text.contains("TASK-P") && text.contains("PLAIN-REPORT") && text.contains("接着做"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("第一句：记住 ALPHA"),
+        "没有主会话的对话：{text}"
+    );
+    close(reopened).await;
+
+    // fork 子会话：请求里带着主会话到分叉点为止的对话、它自己做的、新说的。
+    let reopened = try_load(&home, &fork, &script)
+        .await
+        .expect("主会话关了，打得开");
+    talk(&reopened, "cmd-f1", "接着做").await;
+    let text = all(of_fork(&script).last().expect("又请求了一次"));
+    assert!(
+        text.contains("第一句：记住 ALPHA")
+            && text.contains("FORK-INNER")
+            && text.contains("FORK-REPORT")
+            && text.contains("接着做"),
+        "{text}"
+    );
+    close(reopened).await;
+    let listed = list_sessions(&home.root).expect("列得出");
+    assert_eq!(listed.len(), 1, "直接开过的子会话照旧不进列表：{listed:?}");
+    assert_eq!(listed[0].id, main);
+}
+
+/// LM-25：子会话在别处直接开着时，主会话重开以后给它留言不再起一个 actor 去写它的日志：`send_message` 的结果照实说没送到，
+/// 子会话的日志一条没多。
+#[tokio::test]
+async fn a_parent_does_not_load_a_child_that_is_open_directly() {
+    let home = Home::outside_temp();
+    let script = Script::new([]).answers(answer).recording();
+    let (handle, log) = forked_once(&home, &script).await;
+    let (_, plain) = children(&log);
+    let job = started(&log)
+        .into_iter()
+        .find(|row| row.2 == plain)
+        .map(|row| row.1)
+        .expect("派过它");
+    let main = handle.id().clone();
+    close(handle).await;
+
+    let direct = try_load(&home, &plain, &script)
+        .await
+        .expect("主会话关了，打得开");
+    let before = home.log(&plain).len();
+    let message = serde_json::json!({ "to": job.to_string(), "message": "还在吗" }).to_string();
+    let parent_script = Script::new([
+        Play::calls(&[("send_message", &message)]),
+        Play::Says("留不了言。"),
+    ]);
+    let parent = home.load_with(&main, &parent_script, &base_system()).await;
+    talk(&parent, "cmd-9", "给它留个言").await;
+    let parent_log = home.log(&main);
+    let last = results(&parent_log).last().copied().expect("调了工具");
+    let said = format!("{:?}", last.blocks);
+    // 给模型看的是现成的那一句（`send_message` 不把原因写给她）；原因 `session … is open in another window` 只在引擎里。
+    assert!(
+        said.contains("The message could not be delivered."),
+        "留言没送到，照实说：{said}"
+    );
+    assert_eq!(home.log(&plain).len(), before, "子会话的日志一条没多");
+    close(parent).await;
+
+    // 子会话还直接开着：删主会话会连它一起删，所以不删，照「别的窗口开着」报；关了以后删得了。
+    let remove = || {
+        let (root, id) = (home.root.clone(), main.to_string());
+        tokio::task::spawn_blocking(move || lm_engine::session::remove_session(&root, &id))
+    };
+    // 主会话刚关：等它自己的锁放下以后，拦着的只剩子会话那一把。
+    assert!(
+        lm_engine::session::find_session(&home.root, main.as_str())
+            .expect("找得到")
+            .held
+            .is_none(),
+        "主会话关了"
+    );
+    assert!(
+        matches!(
+            remove().await.expect("没 panic"),
+            Err(lm_engine::session::NotRemoved::Open)
+        ),
+        "子会话开着，主会话不删"
+    );
+    assert!(home.root.session(&main).exists() && home.root.session(&plain).exists());
+    close(direct).await;
+    remove().await.expect("没 panic").expect("都关了，删得了");
+    assert!(!home.root.session(&main).exists() && !home.root.session(&plain).exists());
 }

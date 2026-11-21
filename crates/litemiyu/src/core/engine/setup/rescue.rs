@@ -1,9 +1,11 @@
 //! 应急模式造的几样（设计第五节第 16 条，`crate::rescue`）：配置照进界面以前读好的那一份；工具只带文件和命令那几件；
 //! 会话照 `lm_engine::session::create_rescue` 开，什么都不写盘。
 //!
-//! 全屏界面另有两样（`/model`、`/loop` 要的）：模型目录只读缓存里现成的（`lm_engine::models::read_only`：不联网、不写
-//! 缓存，没有的照没有目录办）；工具加上循环的 `schedule_wakeup`（循环和定时触发只是会话里的一个定时器，不写盘）。没人看着的
-//! 一次运行（`litemiyu ask --rescue`）没有这两样：没有目录（`lm_engine::models::without_catalog`），工具只有那五件。
+//! 全屏界面另有三样：模型目录只读缓存里现成的（`/model` 要的，`lm_engine::models::read_only`：不联网、不写缓存，没有的照
+//! 没有目录办）；工具加上循环的 `schedule_wakeup`（`/loop` 要的，循环和定时触发只是会话里的一个定时器，不写盘）；工具加上
+//! 提问的 `ask_user`（LM-25：题目和回答只记在内存里的会话日志上，界面那一头只画抽屉，不写盘）。没人看着的一次运行
+//! （`litemiyu ask --rescue`）没有这三样：没有目录（`lm_engine::models::without_catalog`），工具只有那五件，没有人能回答
+//! 提问。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,9 +15,12 @@ use lm_engine::tool::Catalog;
 use super::Ready;
 use crate::rescue::Prepared;
 
-/// 带的工具（基础系统里文件和命令的那几件）：读、写、改、跑命令、看后台命令。没带的：`ask_user`、`session_usage`、
-/// `history`、`sessions`、`send_message`、`subagent`，MCP。
+/// 带的工具（基础系统里文件和命令的那几件）：读、写、改、跑命令、看后台命令。没带的：`session_usage`、`history`、
+/// `sessions`、`send_message`、`subagent`，MCP。
 pub(super) const TOOLS: &[&str] = &["read", "write", "edit", "shell", "jobs"];
+
+/// 有人看着的全屏界面另带的：提问的 `ask_user`（LM-25）。
+const ATTENDED_TOOLS: &[&str] = &[lm_engine::tool::ASK_USER];
 
 impl Ready {
     /// 照应急模式备好的造；`unattended` 是没人看着的一次运行（`litemiyu ask --rescue`）。
@@ -33,7 +38,10 @@ impl Ready {
             cache: paths.model_cache(),
         };
         let mut tools = lm_engine::basesystem::tools().map_err(|error| error.to_string())?;
-        tools.retain(|tool| TOOLS.contains(&tool.spec().name.as_str()));
+        tools.retain(|tool| {
+            let name = tool.spec().name.as_str();
+            TOOLS.contains(&name) || (!unattended && ATTENDED_TOOLS.contains(&name))
+        });
         if unattended {
             lm_engine::models::without_catalog(&routes.data);
         } else {

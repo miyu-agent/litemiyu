@@ -157,6 +157,20 @@ impl Tools {
         Arc::clone(&self.unsynced)
     }
 
+    /// 头附的图片存到哪（LM-28，`handle/attach.rs`）：blob，和会话 `session` 的附件目录；应急模式（blob 只在内存里）没有目录。
+    pub(crate) fn attach_place(
+        &self,
+        session: &lm_kernel::kernel::id::SessionId,
+    ) -> (Blobs, Option<PathBuf>) {
+        let dir = (!self.blobs.is_in_memory()).then(|| {
+            self.data_root
+                .join("sessions")
+                .join(session.as_str())
+                .join("attachments")
+        });
+        (self.blobs.clone(), dir)
+    }
+
     /// 这个会话日志的只读入口（施工 3-8 六补）：订阅时交给补发的那一截，由拿着它的一方去读。
     pub(crate) fn log(&self) -> Log {
         self.log.clone()

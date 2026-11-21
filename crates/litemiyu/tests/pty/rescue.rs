@@ -16,8 +16,16 @@ use super::support::{Options, Served, Session, served};
 /// 假 key：搜它在不在。
 pub(super) const KEY: &str = "sk-FAKE-rescue-pty-not-real";
 
-/// 带的工具（`core/engine/setup/rescue.rs` 的 `TOOLS`）。
-const TOOLS: [&str; 6] = ["edit", "jobs", "read", "schedule_wakeup", "shell", "write"];
+/// 全屏界面带的工具（`core/engine/setup/rescue.rs` 的 `TOOLS`，加上 `schedule_wakeup`、`ask_user`）。
+const TOOLS: [&str; 7] = [
+    "ask_user",
+    "edit",
+    "jobs",
+    "read",
+    "schedule_wakeup",
+    "shell",
+    "write",
+];
 
 /// 树里的一项（[`Root::bytes`]）：相对根的路径、大小（目录记 0）、改动时间、内容（目录、读不了的没有）。
 #[derive(Debug, PartialEq, Eq)]

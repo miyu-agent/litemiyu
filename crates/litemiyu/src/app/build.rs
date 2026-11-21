@@ -40,6 +40,7 @@ impl App {
                 notice: None,
                 focus: crate::focus::Focus::Input,
                 drafts: Default::default(),
+                staging: None,
             },
             boxes: Default::default(),
             media: super::media::Media::new(md_keep),

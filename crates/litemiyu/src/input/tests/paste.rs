@@ -180,7 +180,12 @@ fn a_returned_message_comes_back_with_its_blocks() {
     // 被退回的排队消息：正文里记着的样子和原文，放回输入框还是一块。
     let draft = crate::input::Draft::from_pasted(
         "看看：[已粘贴 2 行]",
-        &[("[已粘贴 2 行]".into(), "甲\n乙".into())],
+        &[crate::input::Piece {
+            label: "[已粘贴 2 行]".into(),
+            full: "甲\n乙".into(),
+            image: false,
+            file: None,
+        }],
     );
     let mut i = folding();
     i.editor.set_draft(draft);
