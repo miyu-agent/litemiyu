@@ -10,8 +10,6 @@ This page gets LiteMiyu installed, walks you through the first-run setup, sends 
 
 LiteMiyu is a single program file, `litemiyu`. Once it is on your `PATH`, it is installed. It runs on Linux, macOS and BSD; on Windows, use the Linux build inside WSL2.
 
-> Release packages are not published yet. The steps below describe installation once they are; to use LiteMiyu today, see [Building from source](install.md#building-from-source).
-
 - Arch Linux: install from the AUR with `paru -S litemiyu-bin`. This is the recommended way.
 - Other Linux distributions and macOS (Apple silicon): download the archive for your system from the [releases page](https://github.com/miyu-agent/litemiyu/releases), unpack it, and put the `litemiyu` inside into `~/.local/bin`.
 - Intel Macs and BSD: there is no release package, so build from source.
