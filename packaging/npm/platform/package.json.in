@@ -1,0 +1,25 @@
+{
+  "name": "@miyu-agent/litemiyu-@NPM_OS@-@NPM_CPU@",
+  "version": "@VERSION@",
+  "description": "The LiteMiyu program for @NPM_OS@ @NPM_CPU@. Install the litemiyu package instead of this one.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/miyu-agent/litemiyu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miyu-agent/litemiyu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/miyu-agent/litemiyu/issues"
+  },
+  "files": [
+    "bin/litemiyu",
+    "THIRD-PARTY-LICENSES.txt"
+  ],
+  "os": [
+    "@NPM_OS@"
+  ],
+  "cpu": [
+    "@NPM_CPU@"
+  ],
+  "preferUnplugged": true
+}

@@ -9,7 +9,10 @@
 //! - `cargo xtask notices`：写第三方许可证清单 `THIRD-PARTY-LICENSES.txt`（`notices.rs`）；`check` 查它是最新的、依赖的许可证
 //!   都能和 AGPL 合在一起发（`licenses.rs`）；
 //! - `cargo xtask dist`、`cargo xtask dist-check <压缩包>`（都认 `--target`、`--pie`/`--no-pie`，默认是这台机器对应的发行目标，LM-7）：
-//!   打发行包、查包（`dist.rs`）；`cargo xtask packaging <标签> --sums <SHA256SUMS>`：照一次发布填 AUR 的 PKGBUILD（`packaging.rs`）。
+//!   打发行包、查包（`dist.rs`）；`cargo xtask packaging <标签> --sums <SHA256SUMS> [--archives <目录>]`：照一次发布填 AUR 的 PKGBUILD、Homebrew 的配方，
+//!   给了压缩包的另出 npm 的包（`packaging.rs`）。
+//! - `cargo xtask pkg <压缩包> --format deb|rpm|pacman [--out <目录>]`、`cargo xtask pkg-check <包> --archive <压缩包>`：从查过的
+//!   Linux 压缩包出系统包、查系统包（`pkg.rs`，LM-35），不重编。
 //!   发版的做法见 `.github/workflows/release.yml` 开头的注释。
 
 use std::path::{Path, PathBuf};
@@ -22,6 +25,7 @@ mod dist;
 mod licenses;
 mod notices;
 mod packaging;
+mod pkg;
 
 /// 红线（`docs/00-设计.md` 第一节）。现在量得了的五条；长会话那一条（红线 5）另有 `bench/history.py`。
 mod limits {
@@ -61,8 +65,10 @@ fn main() -> ExitCode {
             _ => Err("用法：cargo xtask dist-check <压缩包> [--target <三元组>]".to_owned()),
         }),
         Some("packaging") => packaging::run(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("pkg") => pkg::run(&args),
+        Some("pkg-check") => pkg::check(&args),
         _ => Err(
-            "usage: cargo xtask <check|measure|notices|dist [--out <目录>]|dist-check <压缩包>|packaging <标签> --sums <SHA256SUMS> [--out <目录>]>；measure、dist、dist-check 另认 --target <三元组>、--pie、--no-pie"
+            "usage: cargo xtask <check|measure|notices|dist [--out <目录>]|dist-check <压缩包>|packaging <标签> --sums <SHA256SUMS> [--archives <目录>] [--out <目录>]|pkg <压缩包> --format deb|rpm|pacman [--out <目录>]|pkg-check <包> --archive <压缩包>>；measure、dist、dist-check 另认 --target <三元组>、--pie、--no-pie"
                 .to_owned(),
         ),
     };

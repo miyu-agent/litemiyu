@@ -29,7 +29,7 @@ use crate::build::{Build, RELEASES};
 use crate::{cargo, limits, notices, root};
 
 /// 包里除了那一层目录以外的文件，照名字排。
-const FILES: [&str; 3] = ["LICENSE", "THIRD-PARTY-LICENSES.txt", "litemiyu"];
+pub const FILES: [&str; 3] = ["LICENSE", "THIRD-PARTY-LICENSES.txt", "litemiyu"];
 
 /// macOS 上程序只许链的库（`otool -L`，LM-7）：路径，谁带进来的。都是系统自带的，不随包发。
 pub const MACOS_LIBRARIES: [(&str, &str); 4] = [
@@ -306,7 +306,7 @@ fn tar() -> &'static str {
 }
 
 /// 文件的 SHA-256（小写十六进制）：Linux 用 `sha256sum`，macOS 用自带的 `shasum -a 256`，两个印的样子一样。
-fn sha256(path: &Path) -> Result<String, String> {
+pub fn sha256(path: &Path) -> Result<String, String> {
     let printed = if cfg!(target_os = "macos") {
         tool("shasum", &["-a", "256", &text(path)?])?
     } else {
@@ -681,7 +681,7 @@ fn tool(program: &str, args: &[&str]) -> Result<String, String> {
 }
 
 /// 路径交给外面的工具：要是 UTF-8。
-fn text(path: &Path) -> Result<String, String> {
+pub fn text(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| format!("{} 不是 UTF-8", path.display()))

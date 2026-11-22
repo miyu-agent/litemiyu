@@ -1,0 +1,9 @@
+# @miyu-agent/litemiyu-@NPM_OS@-@NPM_CPU@
+
+This package holds the [LiteMiyu](https://github.com/miyu-agent/litemiyu) program for @NPM_OS@ @NPM_CPU@. It is the same file as the one in `litemiyu-@VERSION@-@PLATFORM@.tar.gz` on the [GitHub Release](https://github.com/miyu-agent/litemiyu/releases/tag/v@VERSION@).
+
+Do not install this package directly. Install [`litemiyu`](https://www.npmjs.com/package/litemiyu), which picks the right package for your machine:
+
+```bash
+npm install -g litemiyu
+```

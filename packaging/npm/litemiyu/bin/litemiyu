@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+'use strict';
+
+// Starts the program from the platform package. Installation normally replaces this file with a hard
+// link to the program itself (see install.js); this script is what runs when that did not happen.
+
+const { program } = require('../lib/platform.js');
+
+let file;
+try {
+  file = program();
+} catch (error) {
+  console.error(`litemiyu: ${error.message}`);
+  process.exit(1);
+}
+const args = process.argv.slice(2);
+
+// Where Node.js can replace itself with the program, do that: nothing of Node.js stays in memory.
+if (typeof process.execve === 'function') {
+  try {
+    process.execve(file, [file, ...args], process.env);
+  } catch {
+    // Fall through to starting it as a child.
+  }
+}
+
+const done = require('child_process').spawnSync(file, args, { stdio: 'inherit' });
+if (done.error) {
+  console.error(`litemiyu: cannot start ${file}: ${done.error.message}`);
+  process.exit(1);
+}
+if (done.signal) {
+  process.kill(process.pid, done.signal);
+}
+process.exit(done.status === null ? 1 : done.status);

@@ -1,0 +1,37 @@
+{
+  "name": "litemiyu",
+  "version": "@VERSION@",
+  "description": "Single-process agent harness for the terminal, one static program",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/miyu-agent/litemiyu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miyu-agent/litemiyu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/miyu-agent/litemiyu/issues"
+  },
+  "bin": {
+    "litemiyu": "bin/litemiyu"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/litemiyu",
+    "lib/platform.js",
+    "install.js"
+  ],
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "optionalDependencies": {
+    "@miyu-agent/litemiyu-linux-x64": "@VERSION@",
+    "@miyu-agent/litemiyu-linux-arm64": "@VERSION@",
+    "@miyu-agent/litemiyu-darwin-arm64": "@VERSION@"
+  }
+}

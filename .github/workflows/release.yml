@@ -12,8 +12,13 @@
 # 不出一份没排过的。链接器是工具链自带的 rust-lld（`-fuse-ld=lld`，order.py 找工具链里的 gcc-ld/ld.lld），不另装。
 # macOS 那一份不排函数（qemu 用户态只模拟 Linux 的程序，链接器是苹果的 ld），照平常的 release 编（`xtask dist` 自己分）。
 #
-# 不推标签也能演练到出包、查包：手动触发（workflow_dispatch，工作流要先在 main 上）时，三份照样编、打、查、写 SHA256SUMS，传成这一趟
-# 的产物（留 3 天）；建草稿 Release、构建出处证明只在推 `v*` 标签时做。版本照 Cargo.toml（不查年.月.序号的写法）。LM-7 在分支上演练时
+# 系统包（LM-35）：Linux 两个目标查过压缩包以后，各从压缩包出 deb、rpm、pacman 三种包（`cargo xtask pkg`，不重编，包里的程序和
+# 压缩包里的一字不差），各打两次比可重现，各自查（`cargo xtask pkg-check`）。macOS 只有压缩包。一共九个文件，加 SHA256SUMS。
+# pacman 的包照格式自己打，不用 makepkg：机器是 Ubuntu；Docker Hub 上的 archlinux 镜像只有 x86_64，aarch64 的机器上起不来，
+# 而且那是 GitHub 以外的人发的镜像（不是 action，但同样是外来的东西），这里不用容器。
+#
+# 不推标签也能演练到出包、查包：手动触发（workflow_dispatch，工作流要先在 main 上）时，三份照样编、打、查，系统包照样出、查，写
+# SHA256SUMS，传成这一趟的产物（留 3 天）；建草稿 Release、构建出处证明只在推 `v*` 标签时做。版本照 Cargo.toml（不查年.月.序号的写法）。LM-7 在分支上演练时
 # 临时加过分支的 push 触发，合之前收回了。
 #
 # 不用任何密钥：只用 Actions 自带的 github.token（建草稿 Release）和 id-token（构建出处证明）。Miyu 用发版钥匙签 SHA256SUMS
@@ -91,15 +96,20 @@ jobs:
           cargo metadata --format-version 1 > /dev/null
       # Linux：排函数要 qemu 的用户态模拟器（qemu-x86_64、qemu-aarch64）记轨迹；ring 的 C、汇编用 musl-gcc 编（musl-tools）；
       # 排只读数据要 gdb（bench/rodata.py：在 gdb 里起程序，记下启动时读到哪些只读数据）。
-      # python3、binutils（strip、readelf、nm）、GNU tar、gzip 机器上本来就有。
-      - name: 装排函数要的模拟器、musl-gcc 和 gdb
+      # python3、binutils（strip、readelf、nm）、GNU tar、gzip、dpkg-deb 机器上本来就有。
+      # 出系统包（LM-35）另要：rpm（rpmbuild 打 rpm、rpm 查 rpm）、libarchive-tools（bsdtar：打 pacman 的包、生成 .MTREE、
+      # 解开 rpm 和 pacman 的包查）、zstd（压 pacman 的包）。都是 Ubuntu 自己的包。
+      - name: 装排函数要的模拟器、musl-gcc、gdb 和出系统包要的工具
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user musl-tools gdb
+          sudo apt-get install -y --no-install-recommends qemu-user musl-tools gdb rpm libarchive-tools zstd
           "qemu-$(uname -m)" --version
           gdb --version | head -n 1
+          rpmbuild --version
+          bsdtar --version
+          dpkg-deb --version | head -n 1
       # macOS：打包、看包用 GNU tar（gtar，机器上本来就有，xtask 照它；自带的 bsdtar 不认 --sort、--mtime），先确认在。
       - name: 有 gtar
         if: runner.os == 'macOS'
@@ -116,14 +126,50 @@ jobs:
           found=(target/dist/litemiyu-*-"${{ matrix.platform }}".tar.gz)
           [ "${#found[@]}" -eq 1 ] || { echo "::error::target/dist/ 里该有 1 个压缩包，有 ${#found[@]} 个：${found[*]}"; exit 1; }
           cargo xtask dist-check "${found[0]}" --target "${{ matrix.target }}"
+      # 系统包（LM-35）：查过的压缩包出 deb、rpm、pacman 三种包，不重编（包里的程序就是压缩包里的那一份）。时刻照这个提交的
+      # 时刻（SOURCE_DATE_EPOCH）。可重现：每种打两次，第二次打在 target/pkg-again/，逐字节比，不一样的这一趟不发。
+      - name: 出系统包
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          archive=(target/dist/litemiyu-*-"${{ matrix.platform }}".tar.gz)
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          for format in deb rpm pacman; do
+            cargo xtask pkg "${archive[0]}" --format "${format}" --out target/dist
+            cargo xtask pkg "${archive[0]}" --format "${format}" --out target/pkg-again
+          done
+          for again in target/pkg-again/*; do
+            cmp "${again}" "target/dist/$(basename "${again}")" || { echo "::error::$(basename "${again}") 打两次不一样"; exit 1; }
+          done
+          echo "三种包各打两次，逐字节相同"
+      # 查系统包：文件名、元数据（名字、版本、架构、没有依赖）、文件清单和权限、程序和压缩包里的一字不差（xtask/src/pkg.rs）。
+      - name: 查系统包
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archive=(target/dist/litemiyu-*-"${{ matrix.platform }}".tar.gz)
+          packages=(target/dist/*.deb target/dist/*.rpm target/dist/*.pkg.tar.zst)
+          [ "${#packages[@]}" -eq 3 ] || { echo "::error::target/dist/ 里该有 3 个系统包，有 ${#packages[@]} 个：${packages[*]}"; exit 1; }
+          for package in "${packages[@]}"; do
+            cargo xtask pkg-check "${package}" --archive "${archive[0]}"
+          done
+      # macOS 只有压缩包：系统包的几个式样在那里匹配不上，照 if-no-files-found 只要压缩包在就不报错；九个文件齐不齐在 sums 查。
       - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.platform }}
-          path: target/dist/litemiyu-*-${{ matrix.platform }}.tar.gz
+          path: |
+            target/dist/litemiyu-*-${{ matrix.platform }}.tar.gz
+            target/dist/*.deb
+            target/dist/*.rpm
+            target/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 3
 
   # 三份都查过了才走到这里：写 SHA256SUMS（`sha256sum` 的格式，`<哈希>  <文件名>`，照文件名排）。演练也写、也传，看得到这一步成不成。
+  # 要九个文件，名字逐个对（LM-35）：三个压缩包，加 Linux 两个架构各一个 deb、rpm、pacman 的包。版本从 macOS 那个压缩包的名字取；
+  # deb、rpm 的文件名里照发版标签写（GitHub 的 Release 会把 `~` 换成 `.`），pacman 的照 pkgver 写（`-rc.` 换成 `rc`，同 AUR）。
   sums:
     needs: dist
     runs-on: ubuntu-24.04
@@ -138,12 +184,30 @@ jobs:
         working-directory: dist
         run: |
           set -euo pipefail
-          ls -1 litemiyu-*.tar.gz | sort > files
-          want="linux-aarch64 linux-x86_64 macos-aarch64"
-          got=$(sed -E 's/^litemiyu-.*-((linux|macos)-(x86_64|aarch64))\.tar\.gz$/\1/' files | sort | tr '\n' ' ' | sed 's/ $//')
-          [ "${got}" = "${want}" ] || { echo "::error::要三个压缩包（${want}），拿到的是：$(tr '\n' ' ' < files)"; exit 1; }
-          xargs sha256sum < files > SHA256SUMS
-          rm files
+          shopt -s nullglob
+          mac=(litemiyu-*-macos-aarch64.tar.gz)
+          [ "${#mac[@]}" -eq 1 ] || { echo "::error::该有 1 个 macOS 的压缩包，有 ${#mac[@]} 个：${mac[*]}"; exit 1; }
+          version="${mac[0]#litemiyu-}"
+          version="${version%-macos-aarch64.tar.gz}"
+          pkgver="${version/-rc./rc}"
+          printf '%s\n' \
+            "litemiyu-${version}-linux-aarch64.tar.gz" \
+            "litemiyu-${version}-linux-x86_64.tar.gz" \
+            "litemiyu-${version}-macos-aarch64.tar.gz" \
+            "litemiyu_${version}-1_amd64.deb" \
+            "litemiyu_${version}-1_arm64.deb" \
+            "litemiyu-${version}-1.x86_64.rpm" \
+            "litemiyu-${version}-1.aarch64.rpm" \
+            "litemiyu-${pkgver}-1-x86_64.pkg.tar.zst" \
+            "litemiyu-${pkgver}-1-aarch64.pkg.tar.zst" | LC_ALL=C sort > "${RUNNER_TEMP}/want"
+          # 两份单子写在 dist 外面：写在里面的话会把单子自己也列进去。
+          find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "${RUNNER_TEMP}/files"
+          if ! cmp -s "${RUNNER_TEMP}/want" "${RUNNER_TEMP}/files"; then
+            echo "::error::要这九个文件：$(tr '\n' ' ' < "${RUNNER_TEMP}/want")；拿到的是：$(tr '\n' ' ' < "${RUNNER_TEMP}/files")"
+            diff "${RUNNER_TEMP}/want" "${RUNNER_TEMP}/files" || true
+            exit 1
+          fi
+          xargs sha256sum < "${RUNNER_TEMP}/files" > SHA256SUMS
           sha256sum -c SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@v7
@@ -179,12 +243,15 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum -c SHA256SUMS
-          [ "$(wc -l < SHA256SUMS)" -eq 3 ] || { echo "::error::SHA256SUMS 该有 3 行"; exit 1; }
+          [ "$(wc -l < SHA256SUMS)" -eq 9 ] || { echo "::error::SHA256SUMS 该有 9 行（三个压缩包、六个系统包）"; exit 1; }
       - name: 构建出处证明
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/litemiyu-*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
             dist/SHA256SUMS
       - name: 草稿 Release
         env:
@@ -192,7 +259,10 @@ jobs:
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
-          files=(dist/litemiyu-*.tar.gz dist/SHA256SUMS)
+          files=(dist/litemiyu-*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/SHA256SUMS)
+          [ "${#files[@]}" -eq 10 ] || { echo "::error::要传 10 个文件，有 ${#files[@]} 个：${files[*]}"; exit 1; }
+          version="${tag#v}"
+          pkgver="${version/-rc./rc}"
           prerelease=()
           case "$tag" in *-rc.*) prerelease=(--prerelease);; esac
           {
@@ -201,6 +271,11 @@ jobs:
             echo "核对：\`sha256sum -c SHA256SUMS\`（macOS：\`shasum -a 256 -c SHA256SUMS\`）；构建出处：\`gh attestation verify <文件> -R $GITHUB_REPOSITORY\`。"
             echo "三份：\`linux-x86_64\`、\`linux-aarch64\`（musl 全静态，任何发行版都能跑）、\`macos-aarch64\`（Apple 芯片）。"
             echo "解开以后把 \`litemiyu\` 放进 PATH；Arch 上也可以装 AUR 的 \`litemiyu\`。"
+            echo
+            echo "系统包（Linux x86_64、aarch64 各一个；里面的程序和压缩包里的一字不差，装在 \`/usr/bin/litemiyu\`，没有依赖，包本身没有签名，先照 SHA256SUMS 核对）："
+            echo "- Debian、Ubuntu：\`sudo apt install ./litemiyu_${version}-1_amd64.deb\`（aarch64 是 \`_arm64.deb\`）；卸载 \`sudo apt remove litemiyu\`。"
+            echo "- Fedora、RHEL：\`sudo dnf install ./litemiyu-${version}-1.x86_64.rpm\`（aarch64 是 \`.aarch64.rpm\`）；openSUSE：\`sudo zypper install --allow-unsigned-rpm ./litemiyu-${version}-1.x86_64.rpm\`。"
+            echo "- Arch Linux、Arch Linux ARM：\`sudo pacman -U litemiyu-${pkgver}-1-x86_64.pkg.tar.zst\`（aarch64 是 \`-aarch64.pkg.tar.zst\`）。"
             echo
             echo '```'
             cat dist/SHA256SUMS

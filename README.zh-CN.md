@@ -166,7 +166,7 @@ CPU 和硬盘：
 - [快速上手](docs/zh/guide/quickstart.md)
 - [完整文档](docs/README.md)
 
-目前公开发布的是预发布版，可以在[发行版页面](https://github.com/miyu-agent/litemiyu/releases)下载，安装方法请阅读[安装](docs/zh/guide/install.md#下载发行包linuxmacos)。
+目前公开发布的是预发布版。[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上有每个系统的压缩包，Linux 另有 deb、rpm 和 Arch 的包，安装方法请阅读[安装](docs/zh/guide/install.md)。
 
 ## 许可证
 

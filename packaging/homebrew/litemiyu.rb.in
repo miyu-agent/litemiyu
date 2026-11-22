@@ -1,0 +1,41 @@
+# LiteMiyu 的 Homebrew 配方：装 GitHub Release 上的 litemiyu-<版本>-<平台>.tar.gz 里的那一个程序。这个文件是模板，由
+# `cargo xtask packaging <标签> --sums <SHA256SUMS>` 填好版本、哈希再发；别手改填出来的那份。
+#
+# 程序是发版时排过函数、去了符号的那一份（`cargo xtask dist`），装上的和发行包里的一字不差。macOS 只有 Apple 芯片的；
+# Linux 上的 Homebrew 装 musl 全静态的那一份（x86_64、aarch64），不要任何共享库。
+class Litemiyu < Formula
+  desc "Single-process agent harness for the terminal, one static program"
+  homepage "https://github.com/miyu-agent/litemiyu"
+  version "@VERSION@"
+  license "AGPL-3.0-or-later"
+
+  on_macos do
+    depends_on arch: :arm64
+
+    on_arm do
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-macos-aarch64.tar.gz"
+      sha256 "@SHA256_MACOS_AARCH64@"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-linux-x86_64.tar.gz"
+      sha256 "@SHA256_LINUX_X86_64@"
+    end
+
+    on_arm do
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-linux-aarch64.tar.gz"
+      sha256 "@SHA256_LINUX_AARCH64@"
+    end
+  end
+
+  def install
+    bin.install "litemiyu"
+    prefix.install "THIRD-PARTY-LICENSES.txt"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/litemiyu --version")
+  end
+end

@@ -4,11 +4,11 @@
 
 This page covers installing, upgrading and uninstalling LiteMiyu. If you just want to get going, [Quick start](quickstart.md) is enough.
 
-> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In "Download a release package", replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases). The AUR package will be provided once the first stable version is released; until then, [download a release package](#download-a-release-package-linux-macos) or [build from source](#building-from-source).
+> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In the commands below, replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases). The AUR package will be provided once the first stable version is released; until then, install the [Arch package](#arch-package-arch-linux-arch-linux-arm) on Arch Linux.
 
 ## Choose a method
 
-All of LiteMiyu is one file, `litemiyu`. It ships no other resource files and needs no administrator rights. There are three release packages:
+All of LiteMiyu is one file, `litemiyu`. It ships no other resource files. There are three archives; unpack one into your own directory and it is ready to use, with no administrator rights needed:
 
 | System | Archive | Notes |
 |---|---|---|
@@ -16,18 +16,114 @@ All of LiteMiyu is one file, `litemiyu`. It ships no other resource files and ne
 | Linux aarch64 | `litemiyu-<version>-linux-aarch64.tar.gz` | Same as above; for example 64-bit Raspberry Pi 4 and 5, and ARM servers |
 | macOS (Apple silicon) | `litemiyu-<version>-macos-aarch64.tar.gz` | Links only against system libraries |
 
+Each of the two Linux builds also comes as three system packages. The program inside a system package is byte for byte the one in the archive. It is installed at `/usr/bin/litemiyu` and depends on no other package; installing, upgrading and removing it go through the system's package manager and need administrator rights:
+
+| System package | For | x86_64 file | aarch64 file |
+|---|---|---|---|
+| deb | Debian, Ubuntu | `litemiyu_<version>-1_amd64.deb` | `litemiyu_<version>-1_arm64.deb` |
+| rpm | Fedora, RHEL, openSUSE | `litemiyu-<version>-1.x86_64.rpm` | `litemiyu-<version>-1.aarch64.rpm` |
+| Arch package | Arch Linux, Arch Linux ARM | `litemiyu-<pkgver>-1-x86_64.pkg.tar.zst` | `litemiyu-<pkgver>-1-aarch64.pkg.tar.zst` |
+
+In the file name of the Arch package, a pre-release version is written like `2026.11.0rc1` (`<pkgver>`); for a stable version it is the same as `<version>`.
+
 The recommended method for each system:
 
 | System | Recommended |
 |---|---|
-| Arch Linux, Arch Linux ARM | [AUR](#arch-linux-aur) |
+| Debian, Ubuntu | [deb](#deb-debian-ubuntu) |
+| Fedora, RHEL, openSUSE | [rpm](#rpm-fedora-rhel-opensuse) |
+| Arch Linux, Arch Linux ARM | [Arch package](#arch-package-arch-linux-arch-linux-arm); once a stable version is released, the [AUR](#arch-linux-aur) as well |
 | Other Linux distributions, macOS (Apple silicon) | [Download a release package](#download-a-release-package-linux-macos) |
 | Intel Macs, FreeBSD and other BSDs | [Build from source](#building-from-source) |
 | Windows | Install inside WSL2 the same way as on Linux |
 
+## deb (Debian, Ubuntu)
+
+1. Download the package and the checksum file, and verify
+
+    `arch` is `amd64` on an x86_64 machine and `arm64` on an aarch64 machine:
+
+    ```bash
+    version=<version>
+    arch=amd64   # or arm64
+    base=https://github.com/miyu-agent/litemiyu/releases/download/v$version
+    curl -LO "$base/litemiyu_${version}-1_${arch}.deb"
+    curl -LO "$base/SHA256SUMS"
+    grep " litemiyu_${version}-1_${arch}.deb\$" SHA256SUMS | sha256sum -c -
+    ```
+
+2. Install
+
+    ```bash
+    sudo apt install "./litemiyu_${version}-1_${arch}.deb"
+    ```
+
+    The `./` in front of the file name is required; without it, `apt` looks for a package of that name in the repositories.
+
+- Upgrade: download the package of the new version and install it with the same `sudo apt install` command; it replaces the old version.
+- Uninstall: `sudo apt remove litemiyu`.
+
+The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/share/doc/litemiyu/`.
+
+## rpm (Fedora, RHEL, openSUSE)
+
+1. Download the package and the checksum file, and verify
+
+    `arch` is `x86_64` or `aarch64`:
+
+    ```bash
+    version=<version>
+    arch=x86_64   # or aarch64
+    base=https://github.com/miyu-agent/litemiyu/releases/download/v$version
+    curl -LO "$base/litemiyu-${version}-1.${arch}.rpm"
+    curl -LO "$base/SHA256SUMS"
+    grep " litemiyu-${version}-1.${arch}.rpm\$" SHA256SUMS | sha256sum -c -
+    ```
+
+2. Install
+
+    ```bash
+    sudo dnf install "./litemiyu-${version}-1.${arch}.rpm"                              # Fedora, RHEL
+    sudo zypper install --allow-unsigned-rpm "./litemiyu-${version}-1.${arch}.rpm"     # openSUSE
+    ```
+
+    The package is not signed, so openSUSE needs `--allow-unsigned-rpm`. The checksum in the previous step guarantees that the package is intact.
+
+- Upgrade: download the package of the new version and install it with the same command; it replaces the old version.
+- Uninstall: `sudo dnf remove litemiyu` (Fedora, RHEL) or `sudo zypper remove litemiyu` (openSUSE).
+
+The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/share/licenses/litemiyu/`.
+
+## Arch package (Arch Linux, Arch Linux ARM)
+
+1. Download the package and the checksum file, and verify
+
+    The version in the file name is the `pkgver`. For a pre-release, the `pkgver` drops the `-` and the `.` from `-rc.`, so `2026.11.0-rc.1` becomes `2026.11.0rc1`; the second line does this conversion:
+
+    ```bash
+    version=<version>
+    pkgver=${version/-rc./rc}
+    arch=x86_64   # or aarch64
+    base=https://github.com/miyu-agent/litemiyu/releases/download/v$version
+    curl -LO "$base/litemiyu-${pkgver}-1-${arch}.pkg.tar.zst"
+    curl -LO "$base/SHA256SUMS"
+    grep " litemiyu-${pkgver}-1-${arch}.pkg.tar.zst\$" SHA256SUMS | sha256sum -c -
+    ```
+
+2. Install
+
+    ```bash
+    sudo pacman -U "litemiyu-${pkgver}-1-${arch}.pkg.tar.zst"
+    ```
+
+- Upgrade: the package is not in any repository, so `pacman -Syu` does not upgrade it. Download the package of the new version and install it with the same `sudo pacman -U` command.
+- Uninstall: `sudo pacman -R litemiyu`.
+
+The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/share/licenses/litemiyu/`.
+
 ## Arch Linux (AUR)
 
-Installing from the AUR is recommended, because upgrades then come with your system updates:
+The AUR package will be provided once a stable version is released. If you install from the AUR, upgrades come with your system updates:
 
 ```bash
 paru -S litemiyu   # or: yay -S litemiyu
@@ -99,24 +195,29 @@ If it prints `litemiyu <version>`, the installation worked. This command reads n
 
 LiteMiyu has no automatic updates and no upgrade command. Upgrading means replacing that one program file:
 
+- deb, rpm, Arch package: download the package of the new version and install it again with the command you used to install it; see the sections above.
 - AUR: it follows your system updates, for example `paru -Syu`.
 - Release package: download the new version and overwrite `~/.local/bin/litemiyu` with `install`, as in step 3 above.
 - Source: run `git pull`, then `cargo build --release -p litemiyu` again, and overwrite the file once more.
 
 Your configuration and sessions need no attention. Running windows are not affected; they use the new version after you close and reopen them.
 
+If you once put the program into `~/.local/bin` by hand, delete `~/.local/bin/litemiyu` after switching to a system package; `~/.local/bin` usually comes before `/usr/bin` on your `PATH`, so otherwise the old copy keeps running.
+
 ## Uninstall
 
 1. Remove the program
 
     ```bash
-    paru -R litemiyu             # installed from the AUR
-    rm ~/.local/bin/litemiyu     # installed by hand
+    sudo apt remove litemiyu      # installed from the deb
+    sudo dnf remove litemiyu      # installed from the rpm (on openSUSE: sudo zypper remove litemiyu)
+    sudo pacman -R litemiyu       # installed from the Arch package or the AUR
+    rm ~/.local/bin/litemiyu      # installed by hand
     ```
 
 2. Optional: remove your data
 
-    Removing only the program keeps your configuration and sessions, so you can pick up where you left off after reinstalling. To remove everything, also delete these four directories:
+    Removing only the program keeps your configuration and sessions, so you can pick up where you left off after reinstalling. Removing a system package does not delete them either. To remove everything, also delete these four directories:
 
     ```bash
     rm -r ~/.config/litemiyu ~/.local/share/litemiyu ~/.cache/litemiyu ~/.local/state/litemiyu
