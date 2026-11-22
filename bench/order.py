@@ -29,7 +29,9 @@
 3. 地址照程序的符号表换成函数名，照第一次跑到的先后写成清单：启动那一段跑到的自然排在最前，发话那一段新跑到的排在其后，
    日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，herdr 那一段
    新跑到的最后（前面几段的先后不受后面的影响）；
-4. 带着清单再链一遍。
+4. 量启动时读到哪些只读数据（LM-42，`rodata.py`：在 gdb 里起第 1 步那一份，起来、闲下来，记下读到的输入段），写成链接脚本
+   `hot.ld`：这些输入段挨在一起排在只读数据的最前面。要装 gdb；
+5. 带着清单和 `hot.ld` 再链一遍。
 
 轨迹不落盘（占用 四）：一段剧本的轨迹有 9 GB 上下，模拟器写进临时目录里的一个命名管道，这边边读边认出跑过的地址（重复的
 只记第一次），读完的不留。盘慢的机器写整份轨迹要几分钟（2026-11-16 在一台盘慢的机器上量：写内存盘 67 秒、写磁盘 202 秒），也不占几个
@@ -46,7 +48,8 @@ x86_64-unknown-linux-gnu 默认用的就是它），不另装 lld。`--no-pie` �
 
 用法：order.py <crate 目录> <程序名> [--target <三元组>] [--no-pie] [--typed <敲的字>] [--settle <秒>] [--said <说的话，空的不说>]
       [--daily new,continue] [--no-https] [--no-herdr] [--no-catalog]
-产物：<crate 目录>/target-ordered/<三元组>/release/<程序名>，清单在 <crate 目录>/target-ordered/order.txt；
+产物：<crate 目录>/target-ordered/<三元组>/release/<程序名>，清单在 <crate 目录>/target-ordered/order.txt，只读数据的排法在
+旁边的 hot.ld，链接地图在 link.map；
 设了 LITEMIYU_ORDER_TARGET 就编在它指的目录里。
 """
 
@@ -63,6 +66,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_model  # noqa: E402
 import pty_run  # noqa: E402
+import rodata  # noqa: E402
 
 TRIPLE = "x86_64-unknown-linux-gnu"
 NO_UNWIND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no-unwind.ld")
@@ -232,6 +236,32 @@ def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=T
     return runs
 
 
+def read_data(binary, map_file, catalog):
+    """量启动时读到哪些只读输入段（`rodata.py`），交回 (名字照先后, 每次的说明)。同一个数据目录起两次、各闲下来：第一次是
+    新的数据目录（有配置，缓存里放不放目录同排函数的第一段），第二次是日常起来的样子（有上一次留下的东西）；再用一个没有配置
+    的数据目录起一次（引导）。不说话：说话那一段读到的只读数据占了整段的大半（2026-11-22 量的：排不排都是 760 kB 上下），
+    被拦着走又慢。"""
+    text = fake_model.generated() if catalog else None
+    host = fake_model.REMOTE if catalog else "127.0.0.1"
+    runs, notes = [], []
+    with tempfile.TemporaryDirectory(prefix="litemiyu-order-") as root:
+        env = scratch(root, fake_model.start(host), catalog=text)
+        for _ in range(2):
+            names, note = rodata.read(binary, map_file, env)
+            if len(names) < rodata.FEWEST:
+                raise SystemExit(f"量只读数据只读到 {len(names)} 个输入段：没量成")
+            runs.append(names)
+            notes.append(note)
+        # 第一次打开、还没有配置（引导那几屏）：读到的字和上面两次不一样，新读到的排在后面，不影响上面两次的先后。
+        fresh = os.path.join(root, "fresh")
+        home = os.path.join(fresh, "home")
+        os.makedirs(home)
+        names, note = rodata.read(binary, map_file, {"LITEMIYU_HOME": os.path.join(fresh, "data"), "HOME": home})
+        runs.append(names)
+        notes.append(note)
+    return rodata.merge(runs), notes
+
+
 class Reader:
     """在自己的线程里读模拟器写进管道 `pipe` 的轨迹：认出每一块的地址，照第一次跑到的先后记下，各跑过几次。"""
 
@@ -390,6 +420,8 @@ def main():
     # 工作区里的 crate 编进工作区自己的 target 下面；单独的空壳编在它自己旁边。
     ordered_dir = os.environ.get("LITEMIYU_ORDER_TARGET") or os.path.join(crate, "target-ordered")
     order_file = os.path.join(ordered_dir, "order.txt")
+    map_file = os.path.join(ordered_dir, "link.map")
+    hot_file = os.path.join(ordered_dir, "hot.ld")
     # 重定位打包（RELR）：重定位表小一截，启动时少读进来约 90 kB（L0 在空壳上量的）。要 glibc 2.36 以上。
     # 一模一样的函数只留一份（链接器 lld 的 ICF，瘦身 一）：泛型展开出的同样的机器码不少，程序小 130 kB。
     # `--icf=safe` 一样也合不了（rustc 不写哪些地址被拿来比过），所以用 all：Rust 不保证函数的地址各不相同；
@@ -400,6 +432,8 @@ def main():
         f"-C link-arg=-Wl,--symbol-ordering-file={order_file} -C link-arg=-Wl,--no-warn-symbol-ordering"
         " -C link-arg=-Wl,-z,pack-relative-relocs -C link-arg=-Wl,--icf=all"
         f" -C link-arg=-Wl,-T,{NO_UNWIND}"
+        # 启动时读到的只读数据排到一起（LM-42，`rodata.py`）：链接地图用来认输入段，`hot.ld` 是量出来的排法。
+        f" -C link-arg=-Wl,-Map={map_file} -C link-arg=-Wl,-T,{hot_file}"
     ) + remap() + lld(crate, args.target)
     if args.no_pie:
         link += " -C relocation-model=static"
@@ -409,6 +443,8 @@ def main():
     os.makedirs(ordered_dir, exist_ok=True)
     with open(order_file, "w") as out:
         out.write("")
+    with open(hot_file, "w") as out:
+        out.write(rodata.script([]))
     final = os.path.join(ordered_dir, triple, "release", args.binary)
     forget(final)
     cargo(crate, ordered_dir, link, triple)
@@ -421,10 +457,14 @@ def main():
     order, blocks = first_touch(runs, table)
     with open(order_file, "w") as out:
         out.write("\n".join(order) + "\n")
+    hot, notes = read_data(final, map_file, not args.no_catalog)
+    with open(hot_file, "w") as out:
+        out.write(rodata.script(hot))
     # 清单不是 cargo 看着的文件：删掉程序让它重链。deps 里那一份也要删，不然 cargo 只是把它再连回来。
     forget(final)
     cargo(crate, ordered_dir, link, triple)
     no_unwind(final)
+    print(f"启动时读到的只读输入段 {len(hot)} 个排到前面（{'；'.join(notes)}）")
     print(f"程序里 {len(table)} 个函数，轨迹里 {blocks} 块落在程序里，跑过 {len(order)} 个函数，照先后排到前面")
     print(final)
 

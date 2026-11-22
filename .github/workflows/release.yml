@@ -89,15 +89,17 @@ jobs:
           now=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
           [ "${now}" = "${wanted}" ] || { echo "::error::工作区版本没改成 ${wanted}，现在是 ${now}"; exit 1; }
           cargo metadata --format-version 1 > /dev/null
-      # Linux：排函数要 qemu 的用户态模拟器（qemu-x86_64、qemu-aarch64）记轨迹；ring 的 C、汇编用 musl-gcc 编（musl-tools）。
+      # Linux：排函数要 qemu 的用户态模拟器（qemu-x86_64、qemu-aarch64）记轨迹；ring 的 C、汇编用 musl-gcc 编（musl-tools）；
+      # 排只读数据要 gdb（bench/rodata.py：在 gdb 里起程序，记下启动时读到哪些只读数据）。
       # python3、binutils（strip、readelf、nm）、GNU tar、gzip 机器上本来就有。
-      - name: 装排函数要的模拟器和 musl-gcc
+      - name: 装排函数要的模拟器、musl-gcc 和 gdb
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user musl-tools
+          sudo apt-get install -y --no-install-recommends qemu-user musl-tools gdb
           "qemu-$(uname -m)" --version
+          gdb --version | head -n 1
       # macOS：打包、看包用 GNU tar（gtar，机器上本来就有，xtask 照它；自带的 bsdtar 不认 --sort、--mtime），先确认在。
       - name: 有 gtar
         if: runner.os == 'macOS'
