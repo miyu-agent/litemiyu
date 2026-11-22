@@ -45,3 +45,60 @@ fn opening_the_model_box_fetches_the_list_in_the_background_once() {
     session.wait_for("only-listed", "照存下的列");
     assert_eq!(listed(&server), 1, "一分钟里不再拉");
 }
+
+/// LM-47（Miyu 核心 FX-18，2026-11-22 项目主人：「有这种配置但是模型已经不存在了的话，不应该再出现在列表里」）：供应商报得出
+/// 自己的列表时以它为准——配置里只写了资料、列表里没有的模型不再列；正在用的（默认的聊天模型）列表里没有也照旧列，右边标上
+/// 「供应商已经没有这个模型」。
+#[test]
+fn models_the_provider_no_longer_lists_are_dropped_unless_in_use() {
+    let server = served_listing(r#"{"data":[{"id":"only-listed"}]}"#, vec![]);
+    let config = format!(
+        "[providers.fake]\ndriver = \"openai-chat\"\nbase_url = \"{}\"\nkey = {{ env = \"LITEMIYU_TEST_KEY\" }}\n\n\
+         [providers.fake.models.\"m1\"]\n\n[providers.fake.models.\"written-only\"]\nwindow = 64000\n\n\
+         [models]\nchat = \"fake/m1\"\n\n[tui]\nkeys = \"arrows\"\n",
+        server.base_url
+    );
+    let session = Session::launch(Some(&config), &[], &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("/model");
+    session.press_enter();
+    session.wait_for("─ 模型", "窗开了");
+    session.wait_until("列到了：照供应商的列表", |s| {
+        let screen = s.screen();
+        screen.contains("only-listed") && !screen.contains("written-only")
+    });
+    let screen = session.screen();
+    assert!(
+        screen.contains("m1") && screen.contains("供应商已经没有这个模型"),
+        "正在用的照旧列、标出来：{screen}"
+    );
+}
+
+/// 报不出列表的供应商（这里 `/models` 回的不是列表）照旧：配置里写的都列。
+#[test]
+fn a_provider_without_a_list_still_shows_what_the_config_names() {
+    let server = served_listing("not a list", vec![]);
+    let config = format!(
+        "[providers.fake]\ndriver = \"openai-chat\"\nbase_url = \"{}\"\nkey = {{ env = \"LITEMIYU_TEST_KEY\" }}\n\n\
+         [providers.fake.models.\"m1\"]\n\n[providers.fake.models.\"written-only\"]\nwindow = 64000\n\n\
+         [models]\nchat = \"fake/m1\"\n\n[tui]\nkeys = \"arrows\"\n",
+        server.base_url
+    );
+    let session = Session::launch(Some(&config), &[], &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("/model");
+    session.press_enter();
+    session.wait_for("─ 模型", "窗开了");
+    session.wait_for("written-only", "配置里写的照旧列");
+    session.wait_until("拉过了", |_| {
+        server
+            .requests()
+            .iter()
+            .any(|r| r.method == "GET" && r.path.ends_with("/models"))
+    });
+    let screen = session.screen();
+    assert!(
+        screen.contains("written-only") && !screen.contains("供应商已经没有这个模型"),
+        "没有列表的照旧：{screen}"
+    );
+}

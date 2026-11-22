@@ -157,6 +157,14 @@ impl Engine {
 }
 
 /// 排出 `/model` 的一行行：每一家的模型，照 Miyu 终端 `core/models.rs` 的 `choices`（LM-8 砍了模型池，原来排在最前的池那几行没了）。
+///
+/// 列哪些（LM-47，Miyu 核心 FX-18，2026-11-22 项目主人：「有这种配置但是模型已经不存在了的话，不应该再出现在列表里」）：
+///
+/// - 供应商报得出自己的模型列表的（手上有它列过的、不是空的），以它的列表为准：配置里只写了资料（窗口、价格这类）、目录里
+///   对上这一家的模型，列表里没有的都不列；目录、配置只用来补窗口、价格这些资料。
+/// - 正在用的（新会话默认的聊天模型、看图的模型）例外：列表里没有也照旧列，标上「供应商已经没有这个模型」
+///   （[`ChoiceState::Gone`]），免得正在用的一下子看不见、不知道该换。
+/// - 报不出列表的（没有 `/models`、没拉到过）照旧：配置里写的、目录里的都列。
 pub fn list(resolved: &Resolved, source: &dyn ConfigSource, data: &ModelData) -> Vec<Choice> {
     let values = resolved.values();
     let mut out = Vec::new();
@@ -172,31 +180,47 @@ pub fn list(resolved: &Resolved, source: &dyn ConfigSource, data: &ModelData) ->
             let Ok(found) = provider::provider(&values, knowledge, &id) else {
                 return;
             };
-            let mut listed: BTreeMap<String, ()> = BTreeMap::new();
-            for model in written_models(&values, &id) {
-                listed.insert(model, ());
-            }
-            if let Some(list) = knowledge.lists.get(&id) {
-                for model in &list.models {
-                    listed.insert(model.id.clone(), ());
+            // 模型 → 供应商已经没有它了（只有正在用的才会这样还列着）。
+            let mut listed: BTreeMap<String, bool> = BTreeMap::new();
+            let offered = knowledge
+                .lists
+                .get(&id)
+                .filter(|list| !list.models.is_empty());
+            match offered {
+                Some(list) => {
+                    for model in &list.models {
+                        listed.insert(model.id.clone(), false);
+                    }
+                    for model in used_models(&values, &id) {
+                        listed.entry(model).or_insert(true);
+                    }
+                }
+                None => {
+                    for model in written_models(&values, &id) {
+                        listed.insert(model, false);
+                    }
+                    for model in used_models(&values, &id) {
+                        listed.insert(model, false);
+                    }
+                    let catalog = found
+                        .recognized
+                        .as_ref()
+                        .zip(knowledge.lookup.as_ref())
+                        .and_then(|(recognized, lookup)| lookup.listing(&recognized.provider));
+                    if let Some(entry) = &catalog {
+                        for model in entry.models.keys() {
+                            listed.insert(model.clone(), false);
+                        }
+                    }
                 }
             }
-            let catalog = found
-                .recognized
-                .as_ref()
-                .zip(knowledge.lookup.as_ref())
-                .and_then(|(recognized, lookup)| lookup.listing(&recognized.provider));
-            if let Some(entry) = &catalog {
-                for model in entry.models.keys() {
-                    listed.insert(model.clone(), ());
-                }
-            }
-            for model in listed.into_keys() {
+            for (model, gone) in listed {
                 let (facts, _) = facts(resolved, knowledge, &found, &model);
                 let reference = format!("{id}/{model}");
-                let state = match no_key {
-                    true => ChoiceState::NoKey,
-                    false => ChoiceState::Ok,
+                let state = match (no_key, gone) {
+                    (true, _) => ChoiceState::NoKey,
+                    (false, true) => ChoiceState::Gone,
+                    (false, false) => ChoiceState::Ok,
                 };
                 out.push(row(&id, &model, &reference, &facts, state));
             }
@@ -240,20 +264,19 @@ fn row(
     }
 }
 
-/// 配置里写了的那一家的模型：`providers.<id>.models.<model>`，和别处引用到它的（主对话、看图的模型）。
+/// 配置里写了资料的那一家的模型：`providers.<id>.models.<model>`。
 fn written_models(values: &lm_kernel::config::Values, id: &str) -> Vec<String> {
-    let mut models =
-        lm_kernel::config::key::names(values.keys(), "providers.<id>.models.<model>", &[id]);
+    lm_kernel::config::key::names(values.keys(), "providers.<id>.models.<model>", &[id])
+}
+
+/// 正在用的那一家的模型：新会话默认的聊天模型、看图的模型引用到它的。
+fn used_models(values: &lm_kernel::config::Values, id: &str) -> Vec<String> {
     let prefix = format!("{id}/");
-    let mut named = |text: &str| {
-        if let Some(model) = text.strip_prefix(&prefix) {
-            models.push(model.to_string());
-        }
-    };
-    for key in ["models.chat", "models.vision"] {
-        if let Some(Value::Text(text)) = values.get(key) {
-            named(text);
-        }
-    }
-    models
+    ["models.chat", "models.vision"]
+        .into_iter()
+        .filter_map(|key| match values.get(key) {
+            Some(Value::Text(text)) => text.strip_prefix(&prefix).map(str::to_string),
+            _ => None,
+        })
+        .collect()
 }

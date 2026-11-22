@@ -94,6 +94,8 @@ Run `/model`, select a model and press `Enter`. The session uses the new model f
 
 > A model chosen with `/model` also becomes the new default, so sessions you start later use it too.
 
+Which models are listed: when a provider can report its own model list, that list decides. Models the provider has removed are no longer shown, even if your configuration still has a context window or price for them; the model catalog only supplies details such as window and price. Models in use (the default chat model and the vision model) are the exception: when the provider no longer lists one of them it is still shown, marked `no longer offered by the provider`, so that you know to switch. When a provider has no model list, or it has not been fetched yet, the list shows what your configuration names and what the catalog has, as before.
+
 Thinking effort is changed with `/effort`; see [Commands](commands.md#effort).
 
 ## Model details

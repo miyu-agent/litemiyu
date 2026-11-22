@@ -129,8 +129,9 @@ impl Build {
         self.target == "aarch64-apple-darwin"
     }
 
-    /// 这一种排不排函数（`bench/order.py`）：Linux 的排（在 QEMU 的用户态模拟器里录轨迹，链接器 lld 照它排）；macOS 不排：
-    /// 没有这套工具（QEMU 用户态只模拟 Linux 的程序，链接器是苹果的 ld），照平常的 release 编（LM-7）。
+    /// 这一种是不是每次编的时候现录轨迹排函数（`bench/order.py`）：Linux 的是（在 QEMU 的用户态模拟器里录轨迹，链接器 lld
+    /// 照它排）；macOS 没有这套工具（QEMU 用户态只模拟 Linux 的程序，链接器是苹果的 ld），照仓库里录好的清单排（LM-48，
+    /// `dist.rs` 的 `plain`）。
     pub fn ordered(&self) -> bool {
         self.is_linux()
     }

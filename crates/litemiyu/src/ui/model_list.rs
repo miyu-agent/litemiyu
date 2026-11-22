@@ -35,6 +35,8 @@ texts! {
         pub empty: String,
         /// 没有 key。
         pub no_key: String,
+        /// 供应商的列表里已经没有、只因为正在用才还列着的模型右边写的（LM-47）。
+        pub gone: String,
         /// 选了没有 key 的。
         pub refuse_no_key: String,
     }
@@ -131,6 +133,7 @@ pub fn lines(
 fn right(choice: &Choice, texts: &Texts) -> Option<Span<'static>> {
     match choice.state {
         ChoiceState::NoKey => Some(Span::styled(texts.no_key.clone(), theme::faint())),
+        ChoiceState::Gone => Some(Span::styled(texts.gone.clone(), theme::faint())),
         ChoiceState::Ok => None,
     }
 }

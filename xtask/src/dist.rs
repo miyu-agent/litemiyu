@@ -4,7 +4,7 @@
 //! 1. 版本照 `Cargo.toml` 的 `[workspace.package] version`；编哪一种照 [`crate::build`]：默认是这台机器对应的发行目标（LM-7：
 //!    Linux x86_64、aarch64 是 musl 全静态，macOS 是 `aarch64-apple-darwin`）。要在那个系统、那个架构的机器上打（查包要跑程序）。
 //! 2. Linux 的照量尺的那一份编（[`crate::shipped`]：`bench/order.py` 排过函数、`strip` 去了符号），不另编一份没排过的；macOS 的
-//!    不排函数（[`Build::ordered`]），照平常的 `cargo build --release` 编（profile 里 `strip = true`），依赖源码路径同样去掉本机前缀。
+//!    照仓库里录好的清单排（LM-48，`bench/macos_order.py`：带符号编一遍、照清单重链、再去符号），依赖源码路径同样去掉本机前缀。
 //! 3. 搭 `<out>/litemiyu-<版本>-<平台>/`：`litemiyu`、`LICENSE`、`THIRD-PARTY-LICENSES.txt`（先查仓库里的清单是照现在的依赖图
 //!    生成的；包里放的是只算这个目标的那一份，[`notices::render_for`]）。平台是 `linux-x86_64`、`linux-aarch64`、`macos-aarch64`。
 //! 4. 打成 `litemiyu-<版本>-<平台>.tar.gz`，里面一层同名目录，照名字排、不带属主和时刻（同 Miyu；GNU tar，macOS 上是 `gtar`）；
@@ -171,23 +171,97 @@ fn ordered(build: &Build, root: &Path) -> Result<String, String> {
     Ok(program)
 }
 
-/// macOS 的：不排函数，照平常的 `cargo build --release` 编（profile 里 `strip = true`，编出来已经去了符号），编在
-/// `target/plain/` 下面，和平常的 `target/release` 分开。依赖源码路径去掉本机前缀（[`remap`]），同 `bench/order.py`。交回程序的路径。
+/// macOS 的：照仓库里录好的清单排函数（LM-48，`bench/macos_order.py`、`bench/macos-order.txt`），编在 `target/plain/` 下面，
+/// 和平常的 `target/release` 分开。Linux 那样每次现录轨迹的工具 macOS 上没有，清单是在一台 Mac 上录好放进仓库的。三步：
+///
+/// 1. 带符号编一遍（`CARGO_PROFILE_RELEASE_STRIP=false`）：清单里写的是解开的函数名，要照这一份的符号表换成符号；
+/// 2. 照换好的清单重链（`-order_file`），核对排上了；
+/// 3. 链完再单独去符号（`strip`）。让 cargo 照 profile 的 `strip = true` 一步做完的话链接器不照清单排（2026-11-22 量到）。
+///
+/// 依赖源码路径去掉本机前缀（[`remap`]），同 `bench/order.py`。交回程序的路径。
 fn plain(build: &Build, root: &Path) -> Result<String, String> {
     let dir = root.join("target/plain");
-    println!("编 {}（不排函数）", build.describe());
-    let status = Command::new(cargo())
-        .args(["build", "--release", "--locked", "--offline", "--quiet"])
-        .args(["--target", &build.target, "-p", "litemiyu"])
-        .current_dir(root)
-        .env("CARGO_TARGET_DIR", &dir)
-        .env("RUSTFLAGS", remap(&cargo_home()))
+    let release = dir.join(&build.target).join("release");
+    let program = release.join("litemiyu");
+    println!("编 {}（照 bench/macos-order.txt 排函数）", build.describe());
+    let cargo_in = |extra: &[&str], tail: &[&str]| -> Result<(), String> {
+        let status = Command::new(cargo())
+            .args(extra)
+            .args(["--release", "--locked", "--offline", "--quiet"])
+            .args(["--target", &build.target, "-p", "litemiyu"])
+            .args(tail)
+            .current_dir(root)
+            .env("CARGO_TARGET_DIR", &dir)
+            .env("CARGO_PROFILE_RELEASE_STRIP", "false")
+            .env("RUSTFLAGS", remap(&cargo_home()))
+            .status()
+            .map_err(|e| format!("cargo 起不来：{e}"))?;
+        match status.success() {
+            true => Ok(()),
+            false => Err(format!(
+                "cargo {} --target {} 没成",
+                extra.join(" "),
+                build.target
+            )),
+        }
+    };
+    cargo_in(&["build"], &[])?;
+    let order = dir.join("macos-order.symbols.txt");
+    let script = root.join("bench/macos_order.py");
+    let tool = |args: &[&std::ffi::OsStr]| -> Result<(), String> {
+        let status = Command::new("python3")
+            .arg(&script)
+            .args(args)
+            .status()
+            .map_err(|e| format!("python3 起不来：{e}"))?;
+        match status.success() {
+            true => Ok(()),
+            false => Err("bench/macos_order.py 没成".to_owned()),
+        }
+    };
+    let listed = root.join("bench/macos-order.txt");
+    tool(&[
+        "write".as_ref(),
+        program.as_os_str(),
+        listed.as_os_str(),
+        order.as_os_str(),
+    ])?;
+    // 清单不是 cargo 看着的文件：删掉程序（连 deps 里的那一份）让它真的重链。
+    forget(&release)?;
+    let link = format!("link-arg=-Wl,-order_file,{}", order.display());
+    cargo_in(&["rustc"], &["--bin", "litemiyu", "--", "-C", &link])?;
+    tool(&["check".as_ref(), program.as_os_str(), order.as_os_str()])?;
+    let status = Command::new("strip")
+        .arg(&program)
         .status()
-        .map_err(|e| format!("cargo build 起不来：{e}"))?;
+        .map_err(|e| format!("strip 起不来：{e}"))?;
     if !status.success() {
-        return Err(format!("cargo build --target {} 没成", build.target));
+        return Err("strip 没成".to_owned());
     }
-    text(&dir.join(&build.target).join("release/litemiyu"))
+    text(&program)
+}
+
+/// 删掉 `release` 目录里编好的 `litemiyu`，连同 `deps/` 里和它是同一个文件的那一份（没有扩展名的 `litemiyu-<哈希>`）：
+/// cargo 下一次才会真的重链（同 `bench/order.py` 的 `forget`）。
+fn forget(release: &Path) -> Result<(), String> {
+    let gone = |path: &Path| match fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("{}：{error}", path.display()))
+        }
+        _ => Ok(()),
+    };
+    gone(&release.join("litemiyu"))?;
+    let Ok(entries) = fs::read_dir(release.join("deps")) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("litemiyu-") && !name.contains('.') {
+            gone(&entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 /// cargo 的家：`CARGO_HOME`，没设的是 `~/.cargo`（同 `bench/order.py`）。
