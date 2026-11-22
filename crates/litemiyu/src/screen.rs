@@ -189,6 +189,40 @@ fn row(bytes: &mut Vec<u8>, y: usize, cells: &[Cell]) -> io::Result<()> {
     Ok(())
 }
 
+/// 一行写成带颜色的字节，不挪光标（shell 集成把行印在光标所在的地方、留在滚动区里，`cli/shellhook/paint.rs`）：宽字只写
+/// 一次，行尾没有底色的空格不写（写满一行终端会自己折行），用过颜色的末尾还原。
+///
+/// # Errors
+///
+/// 往内存里写不会错；照 `write!` 的样子交回。
+pub fn inline_row(bytes: &mut Vec<u8>, cells: &[Cell]) -> io::Result<()> {
+    let end = cells
+        .iter()
+        .rposition(|cell| cell.symbol() != " " || cell.bg != Color::Reset)
+        .map_or(0, |last| last + 1);
+    let plain: Look = (Color::Reset, Color::Reset, Modifier::empty());
+    let mut look = plain;
+    let mut covered = 0usize;
+    for cell in &cells[..end] {
+        if covered > 0 {
+            covered -= 1;
+            continue;
+        }
+        let next = (cell.fg, cell.bg, cell.modifier);
+        if next != look {
+            attributes(bytes, next)?;
+            look = next;
+        }
+        let symbol = cell.symbol();
+        bytes.extend_from_slice(symbol.as_bytes());
+        covered = symbol.width().saturating_sub(1);
+    }
+    if look != plain {
+        bytes.extend_from_slice(RESET);
+    }
+    Ok(())
+}
+
 /// 换成这一格的样子：先全部还原，再一样样设上。
 fn attributes(bytes: &mut Vec<u8>, (fg, bg, modifier): Look) -> io::Result<()> {
     bytes.extend_from_slice(b"\x1b[0");

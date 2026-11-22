@@ -14,6 +14,9 @@ mod wash;
 
 use std::process::ExitCode;
 
+use ending::Ending;
+use out::Output;
+
 use super::misuse;
 use super::parse::{self, Misuse, Parsed};
 use super::spec::{Cmd, Opt};
@@ -177,7 +180,6 @@ fn plan(parsed: &Parsed, words: &Words) -> Result<drive::Plan, Early> {
         }
     };
     Ok(drive::Plan {
-        here: false,
         elsewhere,
         session,
         message,
@@ -269,13 +271,8 @@ fn ready(words: &Words, model: Option<&str>) -> Result<Option<String>, Early> {
 
 pub use follow::Turn;
 
-// shell 集成的 `say` 借用的几样（`cli/shellhook/worker.rs`，施工 SH-1：先用这里现成的文字输出和跑一轮的那一套）。
-pub(super) use drive::{Event, Plan, drive_with};
-pub(super) use ending::Ending;
-pub(super) use follow::{Follow, Out, Sink};
+// shell 集成的 `say` 借用的几样（`cli/shellhook/`）：读那句话、看有没有能用的模型。
 pub(super) use input::{NoMessage, message};
-pub(super) use out::Output;
-pub(super) use text::Text;
 
 /// 有没有能用的模型（同 `ask` 说话以前看的）：没有的话已经说过了，交回退出码。
 pub(super) fn model_ready(words: &Words) -> Result<(), u8> {

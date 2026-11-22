@@ -173,6 +173,11 @@ impl Jobs {
         self.all.iter_mut().find(|job| job.id == id)
     }
 
+    /// 还没结束的任务有几个（后台命令、子代理都算）：shell 集成等它们都报了才算了结（`app/inline.rs`）。
+    pub fn pending(&self) -> usize {
+        self.all.iter().filter(|job| job.ended.is_none()).count()
+    }
+
     /// 在跑的后台命令有几条：底栏的按钮照它。
     pub fn running_commands(&self) -> usize {
         self.all

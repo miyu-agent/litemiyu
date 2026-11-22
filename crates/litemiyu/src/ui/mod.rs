@@ -57,7 +57,7 @@ pub(crate) use settings::draw as draw_settings;
 mod status;
 pub(crate) mod status_box;
 mod timeline;
-pub use timeline::release_on_fold;
+pub use timeline::{release_on_fold, tail_rows};
 mod shell_rows;
 pub(crate) mod sidebar;
 mod undo_rows;

@@ -6,7 +6,9 @@
 //! 占用）。印脚本、判断命令这两样每次 shell 起来、每次回车多行时都要跑，所以不读配置、不读给人看的字，要说话时才读。
 
 mod classify;
+mod inline;
 mod install;
+mod paint;
 mod say;
 mod script;
 mod shells;

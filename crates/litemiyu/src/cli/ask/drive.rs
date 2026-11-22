@@ -19,7 +19,7 @@ use crate::core::{Asking, Command, Core, Push, Update};
 const CLOSING: Duration = Duration::from_secs(30);
 
 /// 主线程等的一样。
-pub(in crate::cli) enum Event {
+pub(super) enum Event {
     /// 引擎交来的（装在盒子里：它比信号大得多）。
     Update(Box<Update>),
     /// 收到的信号：SIGINT 是假，SIGTERM 是真。
@@ -46,26 +46,12 @@ pub struct Plan {
     pub model: Option<String>,
     /// 接着说的那个会话正开在别的窗口里（LM-59）：不打开它，把话交给那个窗口、跟着日志等回答（`remote.rs`）。
     pub elsewhere: bool,
-    /// 接着说的会话换到这个进程现在的目录（shell 集成：人在两句话之间 `cd` 过）。`ask` 不换，照会话记着的。
-    pub here: bool,
 }
 
 /// 照 `plan` 跑，交给 `output`，交回收尾。
 pub fn drive(plan: Plan, words: &Words, output: &mut dyn Output) -> Ending {
-    drive_with(plan, words, output, |_| {})
-}
-
-/// 同 [`drive`]；`wire` 拿到主线程等的那个口子，可以另外往里交信号（shell 集成：终端在原始模式里，`Ctrl+C` 是从前台
-/// 那个进程转交来的一个字节，不是信号）。
-pub(in crate::cli) fn drive_with(
-    plan: Plan,
-    words: &Words,
-    output: &mut dyn Output,
-    wire: impl FnOnce(&mpsc::Sender<Event>),
-) -> Ending {
     let (tx, rx) = mpsc::channel();
     signals(&tx);
-    wire(&tx);
     let mut core = Core::new(move |update| tx.send(Event::Update(Box::new(update))).is_ok());
     if let Some(preset) = plan.preset {
         core.first_preset(preset);
@@ -93,14 +79,7 @@ pub(in crate::cli) fn drive_with(
         text: plan.message,
         images: Vec::new(),
     };
-    let here = plan.here && !new;
-    let ended = run.go(
-        plan.session,
-        (command, plan.model, here),
-        words,
-        output,
-        new,
-    );
+    let ended = run.go(plan.session, (command, plan.model), words, output, new);
     run.close();
     output.finish(&ended, &run.follow, run.session.as_deref());
     ended
@@ -125,7 +104,7 @@ impl Run {
     fn go(
         &mut self,
         session: Option<String>,
-        (command, model, here): (Command, Option<String>, bool),
+        (command, model): (Command, Option<String>),
         words: &Words,
         output: &mut dyn Output,
         new: bool,
@@ -138,9 +117,6 @@ impl Run {
         }
         if let Some(model) = model {
             self.core.send(Command::Configure(model));
-        }
-        if here {
-            self.core.send(Command::Workspace);
         }
         self.core.send(command);
         if let Err(early) = self.follow_until_done(words, output, new) {

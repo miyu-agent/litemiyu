@@ -23,6 +23,26 @@ struct Said {
     code: Option<i32>,
     /// 终端上印出来的。
     shown: String,
+    /// 终端收到的原样的字节。
+    raw: Vec<u8>,
+}
+
+impl Said {
+    /// 终端照收到的字节画完以后，从上到下的每一行（行尾的空格去掉，末尾的空行去掉）。模拟的终端开得很高，什么都不会
+    /// 滚出去：程序以为的高度是伪终端的那个，它往上回、往下清都是相对光标的，画出来和真终端的滚动历史加屏幕一样。
+    fn lines(&self, cols: u16) -> Vec<String> {
+        let mut terminal = vt100::Parser::new(1000, cols, 0);
+        terminal.process(&self.raw);
+        let text = terminal.screen().contents();
+        let mut lines: Vec<String> = text
+            .lines()
+            .map(|line| line.trim_end().to_string())
+            .collect();
+        while lines.last().is_some_and(String::is_empty) {
+            lines.pop();
+        }
+        lines
+    }
 }
 
 /// 在伪终端里说一句：`cwd` 里跑，`extra` 是 `say` 后面另加的参数，`hook` 是脚本带的指纹（`None` 不带）；`during` 在程序
@@ -30,14 +50,26 @@ struct Said {
 fn say(
     home: &Home,
     cwd: &Path,
+    what: (&str, &str, Option<&str>),
+    extra: &[&str],
+    during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
+) -> Said {
+    say_sized(home, cwd, (40, 120), what, extra, during)
+}
+
+/// 同 [`say`]，伪终端开成 `rows` 行、`cols` 列。
+fn say_sized(
+    home: &Home,
+    cwd: &Path,
+    (rows, cols): (u16, u16),
     (message, token, hook): (&str, &str, Option<&str>),
     extra: &[&str],
     during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
 ) -> Said {
     let pty = native_pty_system()
         .openpty(PtySize {
-            rows: 40,
-            cols: 120,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         })
@@ -89,10 +121,21 @@ fn say(
     drop(writer);
     drop(pty.master);
     screen.join().expect("读完了");
+    let raw = seen.lock().expect("锁得上").clone();
     Said {
         code,
         shown: shown(),
+        raw,
     }
+}
+
+/// 回答中间的几段（照 `says` 的写法，不带收尾的那两条）。
+fn says_part(pieces: &[&str]) -> String {
+    let whole = says(pieces);
+    let end = whole
+        .rfind("data: {\"choices\":[{\"index\":0,\"delta\":{},")
+        .expect("有收尾的那一条");
+    whole[..end].to_string()
 }
 
 /// 什么都不敲。
@@ -280,4 +323,77 @@ fn an_old_script_is_told_to_reopen_the_terminal_and_blank_input_is_nothing() {
     let out = home.run(&["shellhook", "worker"], Input::Null);
     assert_eq!(out.code, Some(2), "{out:?}");
     assert_eq!(home.sessions().len(), 1);
+}
+
+#[test]
+fn a_long_answer_scrolls_into_the_history_whole_and_only_once() {
+    // 坑 P3、P4、P17：回答比终端高得多（伪终端只有 12 行），一小段一小段地到。定下来的印进滚动历史、活动区只留还会变的；
+    // 表头要等下一行到了才认得出是表格、代码写到一半只到了缩进的那一行——这些还没写完的块不能先印（2026-11-23 在真终端
+    // 里看到过：表头多印了一行原文、表格少了上边框、代码行被截断、一行代码印成了空行）。
+    let list: String = (1..=30)
+        .map(|n| format!("{n}. 这是第 {n} 行。\n"))
+        .collect();
+    let answer = format!(
+        "先说一句。\n\n| 名称 | 用途 |\n|---|---|\n| bin | 放程序 |\n| etc | 放配置 |\n\n```rust\nfn main() {{\n    for name in names {{\n        println!(\"{{name}}\");\n    }}\n}}\n```\n\n{list}\n说完了。"
+    );
+    // 在最容易印早了的两处各停一会儿（够画好几帧）：表头后面那一行刚到两个字、代码刚到缩进；别的六个字一段、每段之间
+    // 停一下，一帧一帧地画出来。
+    let pauses = ["| 名称 | 用途 |\n|-", "for name in names {\n        "];
+    let mut stream = Vec::new();
+    let mut rest = answer.as_str();
+    for pause in pauses {
+        let cut = rest.find(pause).expect("回答里有这一处") + pause.len();
+        let (head, tail) = rest.split_at(cut);
+        stream.push(Piece::Bytes(says_part(&[head]).into_bytes()));
+        stream.push(Piece::Wait(Duration::from_millis(400)));
+        rest = tail;
+    }
+    let characters: Vec<char> = rest.chars().collect();
+    for piece in characters.chunks(6) {
+        let piece: String = piece.iter().collect();
+        stream.push(Piece::Bytes(says_part(&[&piece]).into_bytes()));
+        stream.push(Piece::Wait(Duration::from_millis(4)));
+    }
+    stream.push(Piece::Bytes(says(&[]).into_bytes()));
+    let server = serve(vec![Reply::stream(stream)]);
+    let home = Home::new(Some(&server.base_url));
+    let said = say_sized(
+        &home,
+        &home.work,
+        (12, 80),
+        ("说一大段", &terminal("long"), None),
+        &[],
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(80);
+    let all = lines.join("\n");
+    let at = |needle: &str| {
+        let found: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(needle))
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(found.len(), 1, "「{needle}」只出现一次：\n{all}");
+        found[0]
+    };
+    // 表格是画好的表格：有上边框，表头在框里，没有原文的那一行。
+    let top = at("┌");
+    assert!(lines[top + 1].contains("│ 名称"), "{all}");
+    assert!(!all.contains("| 名称 |"), "表头的原文没有先印出来：\n{all}");
+    assert_eq!(top + 1, at("名称"), "{all}");
+    // 代码一行不少、不截断。
+    let code = at("fn main() {");
+    assert!(lines[code + 1].contains("for name in names {"), "{all}");
+    assert!(lines[code + 2].contains("println!(\"{name}\");"), "{all}");
+    // 三十行一行不少、照先后、各一次。
+    let mut last = at("先说一句。");
+    for n in 1..=30 {
+        let line = at(&format!("这是第 {n} 行。"));
+        assert!(line > last, "第 {n} 行在前一行的下面：\n{all}");
+        last = line;
+    }
+    assert!(at("说完了。") > last, "{all}");
+    assert!(lines.len() > 40, "比终端高得多：{} 行", lines.len());
 }

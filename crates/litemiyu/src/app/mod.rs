@@ -16,6 +16,7 @@ mod files_page;
 mod frame;
 mod help;
 mod herdr;
+pub mod inline;
 mod jobs;
 mod jump;
 mod keys;
