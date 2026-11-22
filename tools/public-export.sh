@@ -162,7 +162,7 @@ ALLOW = [
     ("邮箱", r"THIRD-PARTY-LICENSES\.txt|resources/licenses/.*|xtask/src/notices/.*\.txt|LICENSE",
      "第三方的许可证原文和版权声明，作者的邮箱照原样留"),
     ("邮箱", r"packaging/homebrew/litemiyu\.rb\.in",
-     "配方模板的下载地址里，版本的占位后面紧跟平台名（@VERSION@-macos-aarch64.tar.gz），长得像邮箱"),
+     "配方模板的下载地址里，版本的占位后面紧跟一个横线和平台名，长得像邮箱"),
     ("指着不导出的文件", r"tools/public-export\.sh|docs/发布\.md",
      "导出脚本和它的说明要讲不许出现的名字放在哪：那份清单有意不导出"),
     ("像 key 的字",
