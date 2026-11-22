@@ -79,6 +79,6 @@ pub use route::{
 };
 pub use shown::{Next, Shown};
 pub use window::{
-    Asked as HandoverAsked, Found, HANDOVER_WAIT, Listed, NotRemoved, ask_handover,
-    find as find_session, list as list_sessions, remove as remove_session,
+    Asked as HandoverAsked, Found, HANDOVER_WAIT, Listed, NotRemoved, Said, ask_handover,
+    find as find_session, list as list_sessions, remove as remove_session, say,
 };

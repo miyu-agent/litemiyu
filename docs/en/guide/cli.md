@@ -74,7 +74,7 @@ litemiyu ask "What does this project do"
 | Option | What it does |
 |---|---|
 | `-c`, `--continue` | Continue the latest session |
-| `-s`, `--session <id>` | Continue the given session |
+| `-s`, `--session <id>` | Continue the given session. If the session is open in a window, see [Talking to a running session](#talking-to-a-running-session) |
 | `-C`, `--cd <dir>` | Work in the given directory (new sessions only) |
 | `--format <text\|json\|jsonl>` | Output format; the default is `text` |
 | `--file <file>` | Append this file's path to the message; repeatable |
@@ -169,7 +169,7 @@ $ litemiyu ask --format jsonl "run echo hi and tell me the output"
 | Status | Meaning |
 |---|---|
 | 0 | The turn ended normally |
-| 1 | An error occurred, for example a model error, no such session, the session is open in another window, or the configuration file cannot be read |
+| 1 | An error occurred, for example a model error, no such session, the window that has the session did not pick up the message, or the configuration file cannot be read |
 | 2 | Bad arguments |
 | 3 | Interrupted (`Ctrl+C`), or `--timeout` or `--max-steps` was reached |
 | 4 | The turn ended, but some steps needed confirmation and were skipped |
@@ -208,13 +208,39 @@ Which commands fall into each group is described in [Tools and permissions](tool
 
 If the AI started subagents or background commands during the turn, `ask` waits until all of them have reported and the AI has given its final reply before exiting. While it waits, standard error shows `· Waiting for 1 subagent to report… (Ctrl+C stops waiting)`.
 
+### Talking to a running session
+
+When the session named by `-s` or `-c` is open in a full-screen window, `ask` does not fail and does not open a second copy. It hands the message to that window, waits for the AI there to finish answering, and prints the answer. Other programs can use this to talk to a session you are watching.
+
+```bash
+litemiyu ask -s 0199a2b3-0000-7000-8000-000000000001 "The tests finished; the results are in out.log"
+```
+
+In that window the message appears just like one you typed into the input box, and the answer is visible on both sides. If the session is idle, the message starts a new turn; if the session is busy, the message joins the turn in progress, the same as typing in the window mid-turn.
+
+A few things differ from an ordinary `ask` in this case:
+
+| Aspect | Behavior |
+|---|---|
+| Pace of the output | The answer arrives piece by piece (each piece once the AI has finished it), not character by character. All three output formats work |
+| `Ctrl+C`, `--timeout` | They only stop the waiting. A message already handed to the window is still processed by the session there |
+| Dangerous commands that need confirmation | They are confirmed by the person at that window; `ask` cannot confirm them, and `--yes` has no effect |
+| `--model`, `--max-steps` | They have no effect; the session keeps the window's settings |
+
+If you pass an option that has no effect, `ask` only prints a notice on standard error; it does not exit with an error.
+
+If the window does not pick up the message within 45 seconds (for example because it is stuck), `ask` withdraws the message and exits with status 1. The message will not show up in that session later.
+
+Subagent sessions cannot be used this way: while the session that started a subagent is open, `ask -s <the subagent's session ID>` still reports that the session is open in another window.
+
 ### Common errors
 
 | Output | Cause |
 |---|---|
 | `litemiyu: no usable model: none is set up` | No model has been set up yet. Run `litemiyu config` to add one |
 | `litemiyu: no session …` | The ID after `-s` is wrong. The full ID is required |
-| `litemiyu: session … is open in another window` | The session is open in a full-screen window; close that window first. When the ID after `-s` is a subagent's session, you get this while the session that started it is open; see [Reopening a subagent's session](agents.md#reopening-a-subagents-session) |
+| `litemiyu: session … is open in another window` | The ID after `-s` is a subagent's session, and that session or the one that started it is open in a window; see [Reopening a subagent's session](agents.md#reopening-a-subagents-session). A main session that is open in a window does not produce this; see [Talking to a running session](#talking-to-a-running-session) |
+| `litemiyu: the window that has session … did not pick up the message within 45 seconds; not sent` | The window that has this session is not responding, for example because it is stuck. The message has been withdrawn |
 | `litemiyu: invalid value 'xml' for '--format'` | The option's value is wrong; the hint on the next line lists the values you can use |
 | `litemiyu: time is up` | The `--timeout` was reached |
 | `litemiyu: the request limit was reached` | The `--max-steps` count was reached |

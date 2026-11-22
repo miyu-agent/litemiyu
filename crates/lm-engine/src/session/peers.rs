@@ -21,7 +21,7 @@ pub(crate) use bell::{Placed, forget};
 #[cfg(feature = "testkit")]
 pub(crate) use bell::{euid, ring, spots};
 pub(crate) use letter::{Letter, post_named, refused_mark};
-pub(crate) use listen::{Inbox, listen, watch};
+pub(crate) use listen::{Inbox, listen, said_command, watch};
 pub(crate) use outbox::Outbox;
 
 use std::path::{Path, PathBuf};

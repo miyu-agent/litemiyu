@@ -46,6 +46,24 @@ pub fn pick(words: &Words, id: Option<&str>) -> Result<String, NotFound> {
     })
 }
 
+/// 同 [`pick`]，只是有窗口开着的主会话也交回（LM-59）：第二格是它是不是开在别的窗口里。`ask` 对开着的会话不打开它，
+/// 把话交给拿着它的那个窗口、跟着它的日志等回答（`remote.rs`）。子代理的会话照旧：它自己、它上面哪一层开着的都不行。
+///
+/// # Errors
+///
+/// 同 [`pick`]，只是主会话开着不算错。
+pub fn pick_even_open(words: &Words, id: Option<&str>) -> Result<(String, bool), NotFound> {
+    let failed = |why: String| NotFound {
+        reason: "failed",
+        message: words.say("list_failed", &[("reason", &words.why(&why))]),
+    };
+    let paths = Paths::locate(&Env::current()).map_err(|error| failed(error.to_string()))?;
+    let listed = lm_engine::session::list_sessions(&paths).map_err(|e| failed(e.to_string()))?;
+    choose_even_open(words, id, &listed, true, |id| {
+        lm_engine::session::find_session(&paths, id)
+    })
+}
+
 /// [`pick`] 的挑法：`listed` 是列出来的主会话（最近的在前），`find` 照编号在会话目录里找（列表里没有时才调）。
 fn choose(
     words: &Words,
@@ -53,6 +71,17 @@ fn choose(
     listed: &[Listed],
     find: impl FnOnce(&str) -> Option<Found>,
 ) -> Result<String, NotFound> {
+    choose_even_open(words, id, listed, false, find).map(|(id, _)| id)
+}
+
+/// [`choose`]，`even_open` 是真时开着的主会话也交回，第二格是它开没开着。
+fn choose_even_open(
+    words: &Words,
+    id: Option<&str>,
+    listed: &[Listed],
+    even_open: bool,
+    find: impl FnOnce(&str) -> Option<Found>,
+) -> Result<(String, bool), NotFound> {
     let taken = |id: &str| NotFound {
         reason: "taken",
         message: words.say("taken", &[("id", id)]),
@@ -62,9 +91,9 @@ fn choose(
         None => listed.first(),
     };
     if let Some(found) = found {
-        return match found.open {
-            true => Err(taken(found.id.as_str())),
-            false => Ok(found.id.as_str().to_string()),
+        return match (found.open, even_open) {
+            (true, false) => Err(taken(found.id.as_str())),
+            (open, _) => Ok((found.id.as_str().to_string(), open)),
         };
     }
     let Some(id) = id else {
@@ -81,7 +110,7 @@ fn choose(
         });
     };
     match &found.held {
-        None => Ok(found.id.as_str().to_string()),
+        None => Ok((found.id.as_str().to_string(), false)),
         Some(held) if held == &found.id => Err(taken(id)),
         Some(held) => Err(NotFound {
             reason: "taken",

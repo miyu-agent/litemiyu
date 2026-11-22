@@ -89,6 +89,29 @@ fn letters_come_back_whole_and_in_the_order_they_were_posted() {
     assert_eq!(got, want, "照文件名排就是照发的先后");
 }
 
+/// 人从命令行说的一句（LM-59）：放进去、读出来是同一封；命令编号照 `<会话>/say/<那一句的编号>` 写，内核认它是合写法的。
+#[test]
+fn a_sentence_said_from_the_command_line_comes_back_whole() {
+    let root = Root::new("letter-say");
+    let dir = target(&root);
+    let said = Letter::Say {
+        from: session(TO),
+        id: "0199a2b3-0000-7000-8000-00000000abcd".to_string(),
+        text: "从命令行来的一句".to_string(),
+    };
+    post(&root.0, &session(TO), &said, &root.bell()).expect("写得进");
+    let inbox = dir.join(INBOX);
+    let names = names(&inbox);
+    assert_eq!(names.len(), 1);
+    assert_eq!(read(&inbox.join(&names[0])).expect("读得懂"), Some(said));
+    let command = super::said_command(&session(TO), "0199a2b3-0000-7000-8000-00000000abcd");
+    assert_eq!(
+        command,
+        format!("{TO}/say/0199a2b3-0000-7000-8000-00000000abcd")
+    );
+    assert!(lm_kernel::kernel::id::CommandId::parse(&command).is_ok());
+}
+
 #[test]
 fn half_written_temp_files_are_not_read() {
     let root = Root::new("letter-temp");

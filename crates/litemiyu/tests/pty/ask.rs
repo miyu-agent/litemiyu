@@ -229,7 +229,9 @@ fn a_closed_stdout_does_not_crash() {
     );
 }
 
-/// 别的窗口开着的会话 `ask -s` 不硬接（退出码 1、`taken`），全屏 `-s` 也不硬开。LM-3 从 `session_cli.rs` 挪来：原来还查
+/// 别的进程开着的会话，全屏 `-s` 不硬开（退出码 1）。`ask -s` 从 LM-59 起也不硬接、但不再报 `taken`：它把这一句交给拿着
+/// 会话的那个进程、跟着日志等回答（`ask_open.rs` 看的是开在窗口里、答得上来的样子）；这里拿着会话的那一头卡在一次不回话
+/// 的请求上，等不到回答，照 `--timeout` 收：退出码 3、`timed_out`，不动那个会话。LM-3 从 `session_cli.rs` 挪来：原来还查
 /// `rename -s`、`session delete` 也不动它，这两个子命令删了；界面里改名、删除开着的会话另有测试（`sessions.rs`、`rename.rs`）。
 #[test]
 fn an_open_session_is_not_taken_by_ask_or_the_full_screen() {
@@ -247,10 +249,15 @@ fn an_open_session_is_not_taken_by_ask_or_the_full_screen() {
         .stderr(std::process::Stdio::null());
     let mut holder = command.spawn().expect("起得来");
     crate::cli::until("第二次请求停住了", || server.talks().len() >= 2);
-    let out = home.run(&["ask", "-s", &id, "--format", "json", "hi"], Input::Null);
-    assert_eq!(out.code, Some(1), "{out:?}");
-    assert_eq!(json(out.stdout.trim())["reason"], "taken");
-    assert!(out.stderr.contains("其他窗口"), "{}", out.stderr);
+    let out = home.run(
+        &["ask", "-s", &id, "--timeout", "1", "--format", "json", "hi"],
+        Input::Null,
+    );
+    assert_eq!(out.code, Some(3), "{out:?}");
+    assert_eq!(json(out.stdout.trim())["reason"], "timed_out");
+    assert_eq!(json(out.stdout.trim())["session"], id.as_str());
+    assert!(!out.stderr.contains("其他窗口"), "{}", out.stderr);
+    assert_eq!(home.sessions().len(), 1, "没有另开会话");
     let full = home.run(&["-s", &id], Input::Null);
     assert_eq!(full.code, Some(1), "全屏也不硬开：{full:?}");
     drop(holder.kill());

@@ -14,6 +14,8 @@
 //!   Miyu 是 `<被等的>/idle/<等的>/<起算毫秒>`，等的一边时钟停住（系统时间往回拨了）时两次订的起算时刻一样，第二封被内核当成
 //!   第一封、不叫醒。信的文件名是发的一方造的 UUIDv7（`letter::post`），一封一个；同一封交了没删就被杀、重开再交，照编号只生效一次。
 //! - 登记、关了的通知（L7 三）：交给 actor 自己办（[`Peer`]），不进内核。
+//! - 人从命令行说的一句（LM-59，[`Letter::Say`]）：交 `Command::Send`，`by` 是人，编号 `<这个会话>/say/<那一句的编号>`
+//!   （[`said_command`]）；发的一方跟着读日志，照这个编号认出这一句、等这一轮结束。
 //!
 //! 回了（收下、拒了）才删文件；这边正在撤销、恢复（`restoring`）的照 Miyu `watchers.rs` 退避着再交；会话停了的留着，下次
 //! 打开再读。读不懂的记一行、挪到一边（`letter::set_aside`）。读到话之前先告诉 actor 对方回过话了（防刷屏，`outbox.rs`，
@@ -28,7 +30,7 @@ use tokio::task::AbortHandle;
 
 use lm_kernel::kernel::block::{Block, Text};
 use lm_kernel::kernel::id::{CommandId, SessionId};
-use lm_kernel::kernel::origin::{By, Session};
+use lm_kernel::kernel::origin::{By, Person, Session};
 use lm_kernel::kernel::session::{Command, Outcome, Reason};
 use lm_kernel::kernel::time::Timestamp;
 
@@ -218,7 +220,7 @@ async fn hand(
     handle: &WeakHandle,
 ) -> Result<(), Stopped> {
     let from = letter.from().clone();
-    let by = By::Session(Session { id: from.clone() });
+    let mut by = By::Session(Session { id: from.clone() });
     let (id, command) = match letter {
         Letter::Message { call, text, .. } => {
             let send = Command::Send {
@@ -256,11 +258,24 @@ async fn hand(
         }
         // `deliver` 先办掉了，走不到这里。
         Letter::Handover { .. } => return Ok(()),
+        // 人从命令行说的一句（LM-59）：照人在这个窗口的输入框里打的一句交，不是别的会话的来信。不加急：会话正忙着的排在这
+        // 一轮里，和在输入框里打字一样。
+        Letter::Say { id, text, .. } => {
+            by = By::Person(Person::default());
+            let send = Command::Send {
+                blocks: vec![Block::Text(Text { text })],
+                urgent: false,
+            };
+            (said_command(me, &id), send)
+        }
     };
     let Ok(id) = CommandId::parse(&id) else {
         return Ok(());
     };
-    peer(handle, Peer::Heard(from.clone()))?;
+    // 对方回过话了（防刷屏的账）：只算别的会话的来信，人说的一句不算。
+    if matches!(by, By::Session(_)) {
+        peer(handle, Peer::Heard(from.clone()))?;
+    }
     let (mut wait, mut waited) = (RETRY_FIRST_MS, 0);
     let outcome = loop {
         let Some(live) = handle.upgrade() else {
@@ -291,6 +306,12 @@ async fn hand(
         Outcome::Rejected { .. } => {}
     }
     Ok(())
+}
+
+/// 人从命令行说的那一句（[`Letter::Say`]）的命令编号：`<会话>/say/<那一句的编号>`。发的一方照它在日志里认出这一句
+/// （事件的 `cause`）。
+pub(crate) fn said_command(session: &SessionId, id: &str) -> String {
+    format!("{session}/say/{id}")
 }
 
 /// 交给 actor 自己办的一样。

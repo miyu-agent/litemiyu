@@ -40,6 +40,11 @@ mod old {
             from: SessionId,
             at: i64,
         },
+        Say {
+            from: SessionId,
+            id: String,
+            text: String,
+        },
     }
 }
 
@@ -123,8 +128,13 @@ fn letters() -> Vec<Value> {
             since: -3,
         },
         old::Letter::Handover {
-            from,
+            from: from.clone(),
             at: 1_700_000_000_000,
+        },
+        old::Letter::Say {
+            from,
+            id: "0199a2b3-0000-7000-8000-00000000abcd".to_string(),
+            text: "从命令行来的一句".to_string(),
         },
     ]
     .iter()

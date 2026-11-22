@@ -85,6 +85,60 @@ impl Asked {
     }
 }
 
+/// 人从命令行对开着的会话 `id` 说一句（LM-59，`litemiyu ask -s <编号>`，2026-11-23 项目主人：别的程序要能对正在运行的
+/// 会话说话、拿到回答）：往它的收件目录放一封，敲拿着它的那个窗口的门铃。那个窗口照人在输入框里打的一句办：会话闲着的开
+/// 一轮，正忙着的排在这一轮里。回答不从这里回来：发的一方只读地跟着这个会话的日志（`store::log::read_marked`），照
+/// [`Said::cause`] 认出这一句的事件，等它所在的那一轮结束。碰磁盘。
+///
+/// # Errors
+///
+/// 会话目录不在了、收件目录写不进去。
+pub fn say(
+    paths: &crate::store::paths::Paths,
+    id: &lm_kernel::kernel::id::SessionId,
+    text: &str,
+) -> std::io::Result<Said> {
+    let said = crate::session::clock::unique(crate::session::clock::wall_now());
+    let letter = crate::session::peers::Letter::Say {
+        from: id.clone(),
+        id: said.clone(),
+        text: text.to_string(),
+    };
+    let name = crate::session::peers::post_named(&paths.sessions(), id, &letter, &paths.bell)?;
+    Ok(Said {
+        letter: paths.session(id).join("inbox").join(name),
+        cause: crate::session::peers::said_command(id, &said),
+    })
+}
+
+/// 放进去的一句（[`say`]）。
+#[derive(Debug)]
+pub struct Said {
+    /// 那封信。
+    letter: PathBuf,
+    /// 这一句交给内核时的命令编号。
+    cause: String,
+}
+
+impl Said {
+    /// 日志里这一句的事件的 `cause`（命令编号）：跟着读日志的一方照它认。
+    #[must_use]
+    pub fn cause(&self) -> &str {
+        &self.cause
+    }
+
+    /// 那个窗口收下了没有：收下、交给内核以后它把信删掉。碰磁盘。
+    #[must_use]
+    pub fn taken(&self) -> bool {
+        !self.letter.exists()
+    }
+
+    /// 不等了：那封信还没被读走的删掉，那个窗口之后不会再收到这一句；交回删没删掉（删不掉多半是它刚好被收下了）。碰磁盘。
+    pub fn give_up(&self) -> bool {
+        std::fs::remove_file(&self.letter).is_ok()
+    }
+}
+
 /// 发了「请放手」以后最多等多久锁放开（[`ask_handover`]）：门铃一响那边当场停，落盘、放锁是几十毫秒的事；兜底扫才收到的
 /// （门铃没绑上）等不到，照旧报别的窗口开着。
 pub const HANDOVER_WAIT: std::time::Duration = std::time::Duration::from_secs(3);

@@ -19,7 +19,7 @@ use crate::core::{Asking, Command, Core, Push, Update};
 const CLOSING: Duration = Duration::from_secs(30);
 
 /// 主线程等的一样。
-enum Event {
+pub(super) enum Event {
     /// 引擎交来的（装在盒子里：它比信号大得多）。
     Update(Box<Update>),
     /// 收到的信号：SIGINT 是假，SIGTERM 是真。
@@ -44,6 +44,8 @@ pub struct Plan {
     pub max_steps: Option<u64>,
     /// `--model`：先换成它再说（照配置查过）。
     pub model: Option<String>,
+    /// 接着说的那个会话正开在别的窗口里（LM-59）：不打开它，把话交给那个窗口、跟着日志等回答（`remote.rs`）。
+    pub elsewhere: bool,
 }
 
 /// 照 `plan` 跑，交给 `output`，交回收尾。
@@ -365,7 +367,7 @@ impl Run {
 }
 
 /// SIGINT、SIGTERM 写进一对套接字，各一条线程读出来交给主线程（不轮询）。装不上的照常跑，只是收不到。
-fn signals(tx: &mpsc::Sender<Event>) {
+pub(super) fn signals(tx: &mpsc::Sender<Event>) {
     for (signal, term) in [
         (signal_hook::consts::SIGINT, false),
         (signal_hook::consts::SIGTERM, true),

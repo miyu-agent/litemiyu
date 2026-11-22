@@ -5,7 +5,7 @@ use lm_engine::session::{Found, Listed};
 use lm_kernel::kernel::id::SessionId;
 use lm_kernel::kernel::time::Timestamp;
 
-use super::choose;
+use super::{choose, choose_even_open};
 use crate::cli::words::Words;
 
 const MAIN: &str = "0199aaaa-0000-7000-8000-000000000001";
@@ -61,6 +61,24 @@ fn a_listed_session_is_picked_without_looking_in_the_directory() {
         (not.reason, not.message.as_str()),
         ("taken", format!("会话 {MAIN} 已在其他窗口打开").as_str())
     );
+    // `ask` 的找法（LM-59）：开着的主会话也交回，说明它开着；没开着的照旧。
+    assert_eq!(
+        choose_even_open(&words, Some(MAIN), &[listed(MAIN, true)], true, never).ok(),
+        Some((MAIN.to_string(), true))
+    );
+    assert_eq!(
+        choose_even_open(&words, None, &[listed(MAIN, true)], true, never).ok(),
+        Some((MAIN.to_string(), true)),
+        "-c 最近的那一个开着也一样"
+    );
+    assert_eq!(
+        choose_even_open(&words, Some(MAIN), &[listed(MAIN, false)], true, never).ok(),
+        Some((MAIN.to_string(), false))
+    );
+    // 子代理的会话照旧不行。
+    let not = choose_even_open(&words, Some(CHILD), &[], true, |_| child(Some(CHILD)))
+        .expect_err("子会话开着");
+    assert_eq!(not.reason, "taken");
 }
 
 #[test]

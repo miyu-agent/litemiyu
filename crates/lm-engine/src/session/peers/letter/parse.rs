@@ -13,12 +13,13 @@ use lm_kernel::kernel::id::{CallId, SessionId};
 use super::Letter;
 
 /// 四种的名字，连同各自的格子（照结构里的先后，数组写法照它对上）。
-const KINDS: [(&str, &[&str]); 5] = [
+const KINDS: [(&str, &[&str]); 6] = [
     ("message", &["from", "call", "text"]),
     ("watch", &["from", "since", "wall"]),
     ("idle", &["from", "since", "status"]),
     ("closed", &["from", "since"]),
     ("handover", &["from", "at"]),
+    ("say", &["from", "id", "text"]),
 ];
 
 /// 读一封的字节。错的是英文的一句（进运行日志）。
@@ -94,8 +95,13 @@ pub(super) fn letter(body: &[u8]) -> Result<Letter, String> {
             from: from()?,
             at: millis(&fields, "at")?,
         }),
+        "say" => Ok(Letter::Say {
+            from: from()?,
+            id: text(&fields, "id")?,
+            text: text(&fields, "text")?,
+        }),
         other => Err(format!(
-            "unknown variant `{other}`, expected one of `message`, `watch`, `idle`, `closed`, `handover`"
+            "unknown variant `{other}`, expected one of `message`, `watch`, `idle`, `closed`, `handover`, `say`"
         )),
     }
 }

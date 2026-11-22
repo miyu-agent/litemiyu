@@ -312,6 +312,16 @@ pub(super) fn resent(event: &Event, out: &mut Vec<Push>) {
     }
 }
 
+/// 这一句是人从命令行交进来的（LM-59）：命令编号是 `<会话>/say/<编号>`（`lm_engine` 的 `said_command`）。人在这个窗口
+/// 的输入框里打的不是这个写法。
+fn said_elsewhere(event: &Event) -> bool {
+    matches!(event.by, By::Person(_))
+        && event
+            .cause
+            .as_ref()
+            .is_some_and(|cause| cause.as_str().contains("/say/"))
+}
+
 /// 一句话里的图片块：有的交一条 [`Push::Images`]。
 pub(super) fn images(blocks: &[Content], seq: u64, out: &mut Vec<Push>) {
     let files: Vec<Option<String>> = blocks
@@ -391,6 +401,11 @@ pub fn read(event: &Event) -> Vec<Push> {
                 Some(text) if !text.is_empty() => Push::Said {
                     seq,
                     text: text.to_string(),
+                },
+                // 人从命令行对这个开着的会话说的一句（LM-59，`litemiyu ask -s`）：这个窗口没有先画上它，照你说的画。
+                _ if said_elsewhere(event) => Push::Said {
+                    seq,
+                    text: message.text(),
                 },
                 _ => Push::UserMessage(seq),
             });
@@ -629,6 +644,31 @@ mod tests {
             r#"{"seq":5,"at":"2026-09-25T22:05:02.000Z","kind":"command.ran","by":{"kind":"person"},"cause":"c4","body":{"text":"/goal 修绿","command":"goal"}}"#,
         );
         assert_eq!(read(&typed), [Push::CommandRan]);
+    }
+
+    /// 人从命令行对开着的会话说的一句（LM-59）：这个窗口没有先画上它，落盘的事件照你说的画；人在这个窗口打的照旧只配序号。
+    #[test]
+    fn a_sentence_said_from_the_command_line_is_drawn_from_the_event() {
+        let said = event(
+            r#"{"seq":7,"at":"2026-11-23T03:00:00.000Z","kind":"message.user","by":{"kind":"person"},"cause":"0199a2b3-0000-7000-8000-000000000001/say/abc","body":{"blocks":[{"type":"text","text":"从命令行来的一句"}]}}"#,
+        );
+        assert_eq!(
+            read(&said),
+            [
+                Push::Resent("0199a2b3-0000-7000-8000-000000000001/say/abc".to_string()),
+                Push::Said {
+                    seq: 7,
+                    text: "从命令行来的一句".to_string()
+                }
+            ]
+        );
+        let typed = event(
+            r#"{"seq":8,"at":"2026-11-23T03:00:01.000Z","kind":"message.user","by":{"kind":"person"},"cause":"c9","body":{"blocks":[{"type":"text","text":"在窗口里打的一句"}]}}"#,
+        );
+        assert_eq!(
+            read(&typed),
+            [Push::Resent("c9".to_string()), Push::UserMessage(8)]
+        );
     }
 
     /// 旧日志里的待办（2026-11-14 砍了 `todowrite`）：人清掉待办的 `todos.cleared` 读成不认识的种类，什么都不推；`todowrite`

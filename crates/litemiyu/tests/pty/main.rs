@@ -12,6 +12,7 @@ mod ask;
 mod ask_bad;
 mod ask_hazard;
 mod ask_more;
+mod ask_open;
 mod ask_same;
 mod ask_stop;
 mod ask_terminal;

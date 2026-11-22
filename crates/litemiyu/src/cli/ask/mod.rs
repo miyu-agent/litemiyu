@@ -6,6 +6,7 @@ mod ending;
 mod follow;
 mod input;
 mod out;
+mod remote;
 pub mod sessions;
 mod steps;
 mod text;
@@ -81,7 +82,10 @@ fn ask(parsed: Parsed, words: &Words) -> ExitCode {
             return ExitCode::from(ending.exit);
         }
     };
-    let ending = drive::drive(plan, words, output.as_mut());
+    let ending = match plan.elsewhere {
+        true => remote::drive(plan, words, output.as_mut()),
+        false => drive::drive(plan, words, output.as_mut()),
+    };
     ExitCode::from(ending.exit)
 }
 
@@ -168,13 +172,16 @@ fn plan(parsed: &Parsed, words: &Words) -> Result<drive::Plan, Early> {
         true => (Some(rescued(parsed, words)?), None),
         false => (None, ready(words, parsed.value("model"))?),
     };
-    let session = match (parsed.value("session"), parsed.has("continue")) {
-        (None, false) => None,
-        (id, _) => Some(
-            sessions::pick(words, id).map_err(|not| early(words, 1, not.reason, &not.message))?,
-        ),
+    let (session, elsewhere) = match (parsed.value("session"), parsed.has("continue")) {
+        (None, false) => (None, false),
+        (id, _) => {
+            let (id, open) = sessions::pick_even_open(words, id)
+                .map_err(|not| early(words, 1, not.reason, &not.message))?;
+            (Some(id), open)
+        }
     };
     Ok(drive::Plan {
+        elsewhere,
         session,
         message,
         yes: parsed.has("yes"),
