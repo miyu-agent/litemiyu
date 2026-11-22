@@ -36,7 +36,7 @@ The recommended method for each system:
 | macOS (Apple silicon) | [Homebrew](#homebrew-macos-linux), or [download a release package](#download-a-release-package-linux-macos) |
 | Other Linux distributions | [Download a release package](#download-a-release-package-linux-macos); if you already use Homebrew, [Homebrew](#homebrew-macos-linux) works too |
 | Linux or macOS (Apple silicon) with Node.js installed | [npm](#npm) works too |
-| Intel Macs, FreeBSD and other BSDs | [Build from source](#building-from-source) |
+| Intel Macs, FreeBSD and other BSDs, other POSIX-compatible systems | [Build from source](#building-from-source) |
 | Windows | Install inside WSL2 the same way as on Linux |
 
 ## deb (Debian, Ubuntu)
@@ -230,7 +230,7 @@ install -m 755 target/release/litemiyu ~/.local/bin/litemiyu
 
 The built program is `target/release/litemiyu`; the last line puts it into `~/.local/bin`.
 
-> The source contains code paths for BSD, but it has not been built or run on BSD. If you hit a problem, please open an issue.
+> LiteMiyu's source is written against POSIX. Linux and macOS each have a few dedicated code paths, and every other system uses the generic POSIX ones, so BSD and other POSIX-compatible systems are expected to build and run by design. So far, though, it has only been built and run on Linux and macOS; if you hit a problem on another system, please open an issue.
 
 ## Check the installation
 

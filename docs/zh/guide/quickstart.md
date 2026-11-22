@@ -8,14 +8,14 @@
 
 ## 安装
 
-LiteMiyu 只有一个程序文件 `litemiyu`，放进 `PATH` 就算装好了。支持 Linux、macOS 和 BSD；Windows 上可以在 WSL2 里使用 Linux 的版本。
+LiteMiyu 只有一个程序文件 `litemiyu`，放进 `PATH` 就算装好了。支持 Linux、macOS、BSD 等 POSIX 兼容的系统；Windows 上可以在 WSL2 里使用 Linux 的版本。
 
 - Arch Linux：推荐从 AUR 安装，运行 `paru -S litemiyu-bin`。
 - macOS（Apple 芯片）：推荐用 Homebrew 安装，运行 `brew install miyu-agent/tap/litemiyu`。
 - Debian、Ubuntu、Fedora 等发行版：到[发行版页面](https://github.com/miyu-agent/litemiyu/releases)下载 deb 或 rpm 包安装。
 - 已经装了 Node.js 的电脑：也可以运行 `npm install -g litemiyu`。
 - 其他 Linux 发行版、macOS（Apple 芯片）：到[发行版页面](https://github.com/miyu-agent/litemiyu/releases)下载对应系统的压缩包，解压后把里面的 `litemiyu` 放进 `~/.local/bin`。
-- Intel 芯片的 Mac、BSD：没有发行包，需要从源码编译。
+- Intel 芯片的 Mac、BSD 和其他 POSIX 兼容的系统：没有发行包，需要从源码编译。
 
 每种装法的完整步骤、校验方法、升级和卸载见[安装、升级、卸载](install.md)。
 

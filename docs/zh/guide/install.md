@@ -36,7 +36,7 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 | macOS（Apple 芯片） | [Homebrew](#homebrewmacoslinux)，或者[下载发行包](#下载发行包linuxmacos) |
 | 其他 Linux 发行版 | [下载发行包](#下载发行包linuxmacos)；已经在用 Homebrew 的话也可以用 [Homebrew](#homebrewmacoslinux) |
 | 已经装了 Node.js 的 Linux、macOS（Apple 芯片） | 也可以用 [npm](#npm) |
-| Intel 芯片的 Mac、FreeBSD 等 BSD | [从源码编译](#从源码编译) |
+| Intel 芯片的 Mac、FreeBSD 等 BSD、其他 POSIX 兼容的系统 | [从源码编译](#从源码编译) |
 | Windows | 在 WSL2 里按照 Linux 的方法安装 |
 
 ## deb（Debian、Ubuntu）
@@ -230,7 +230,7 @@ install -m 755 target/release/litemiyu ~/.local/bin/litemiyu
 
 编好的程序在 `target/release/litemiyu`，最后一行把它放进 `~/.local/bin`。
 
-> 源码里为 BSD 写了对应的代码，但是没有在 BSD 上编译和运行过，遇到问题请到仓库提出。
+> LiteMiyu 的源码以 POSIX 为底，除了 Linux 和 macOS 各有专门的写法，其余系统都使用通用的 POSIX 写法，所以 BSD 和其他 POSIX 兼容的系统按设计都可以编译运行。不过目前只在 Linux 和 macOS 上实际编译和运行过，在其他系统上遇到问题请到仓库提出。
 
 ## 确认安装成功
 
