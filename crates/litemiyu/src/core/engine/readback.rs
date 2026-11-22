@@ -47,7 +47,7 @@ impl Engine {
 
     /// 列会话 `session` 日志里序号到 `upto` 为止你说的话：一块块读、当场补发、办进草稿（`transcript/said.rs`），不攒整份
     /// 事件、推送。
-    pub(super) async fn spoken(&mut self, session: &str, upto: u64, texts: Box<Texts>) {
+    pub(super) async fn spoken(&mut self, session: &str, upto: u64, texts: std::sync::Arc<Texts>) {
         let Some((session, slice)) = self.slice(session, 0, upto).await else {
             return;
         };
@@ -81,7 +81,7 @@ impl Engine {
         session: &str,
         path: String,
         (after, upto): (u64, u64),
-        texts: Box<Texts>,
+        texts: std::sync::Arc<Texts>,
     ) {
         let Some((session, slice)) = self.slice(session, after, upto).await else {
             return;

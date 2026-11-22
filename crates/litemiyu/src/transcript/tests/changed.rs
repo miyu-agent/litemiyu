@@ -187,7 +187,7 @@ fn a_draft_does_not_keep_the_ledger_and_a_lookup_finds_the_diffs() {
     apply(&mut draft, two_turns());
     assert!(draft.changed().is_empty(), "草稿不记账");
     // 从日志里找（`Lookup`）：照先后交回每一步的差异和它是哪一轮的。
-    let texts = Box::new(crate::config::Config::builtin().unwrap().text().clone());
+    let texts = crate::config::Config::builtin().unwrap().text_shared();
     let mut lookup = Lookup::new(texts, "/w/a.rs".into());
     for push in two_turns() {
         lookup.push(push);

@@ -220,7 +220,7 @@ pub struct Config {
     /// 第一屏要的几句字。
     pub front: Front,
     /// 别的字：第一次要时才读（[`Config::text`]）。
-    text: OnceLock<Box<Texts>>,
+    text: OnceLock<std::sync::Arc<Texts>>,
     /// 斜杠命令。
     pub commands: Commands,
     /// 时间线的样子。
@@ -302,13 +302,21 @@ impl Config {
             std::thread::scope(|scope| {
                 std::thread::Builder::new()
                     .name("config".into())
-                    .spawn_scoped(scope, || read_texts(language, auto).map(Box::new))
+                    .spawn_scoped(scope, || {
+                        read_texts(language, auto).map(std::sync::Arc::new)
+                    })
                     .expect("读字的线程起得来")
                     .join()
                     .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
             })
             .expect("编进程序的界面字读得懂")
         })
+    }
+
+    /// 同 [`Config::text`]，交回共用的那一份：要带到别的线程上用的（读回、查改动）拿它，不另抄一份（LM-42）。
+    pub fn text_shared(&self) -> std::sync::Arc<Texts> {
+        self.text();
+        std::sync::Arc::clone(self.text.get().expect("刚读过"))
     }
 
     /// 别的字读过了没有（测试守着第一屏不读它）。

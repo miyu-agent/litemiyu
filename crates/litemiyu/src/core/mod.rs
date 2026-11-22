@@ -113,7 +113,7 @@ pub enum Command {
         /// 读到这一条为止（含）。
         upto: u64,
         /// 界面的字。
-        texts: Box<crate::config::Texts>,
+        texts: std::sync::Arc<crate::config::Texts>,
     },
     /// 找日志里改过一个文件的那几步（「文件修改」那一页，`transcript/changed.rs` 的 `Lookup`）：序号在 `after` 之后、`upto`
     /// 为止（含）的那一截；草稿里的旁白照 `texts` 写。
@@ -127,7 +127,7 @@ pub enum Command {
         /// 读到这一条为止（含）。
         upto: u64,
         /// 界面的字。
-        texts: Box<crate::config::Texts>,
+        texts: std::sync::Arc<crate::config::Texts>,
     },
     /// 切进主会话派的子会话看它（Miyu「切进子会话」）：它的整个编号；`None` 是退回主会话。切进去以后说话、`!` 跑命令、
     /// 打断、撤回、压缩、清空都交给它。

@@ -115,7 +115,7 @@ impl App {
         let t = &self.talk.transcript;
         let shed = (0..t.pieces().len()).rfind(|&p| !t.pieces().resident(p));
         if let Some(upto) = shed.and_then(|p| t.first_seq(p + 1)) {
-            let texts = Box::new(self.config.text().clone());
+            let texts = self.config.text_shared();
             // 同读回一样排进 `wanted`，画完这一帧交给引擎（`window.rs` 的 `send_wanted`）。
             let session = self.talk.transcript.session.clone().unwrap_or_default();
             self.talk.listing = Listing::Waiting(session.clone());

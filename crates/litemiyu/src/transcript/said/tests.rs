@@ -57,7 +57,7 @@ fn gathered_piece_by_piece_lists_what_the_whole_transcript_lists() {
     let config = Config::builtin().expect("出厂的配置读得懂");
     let texts = config.text();
     let mut whole = Transcript::default();
-    let mut gather = Gather::new(Box::new(texts.clone()));
+    let mut gather = Gather::new(std::sync::Arc::new(texts.clone()));
     for push in pushes() {
         whole.update(Update::Push(push.clone()), texts);
         gather.push(push);

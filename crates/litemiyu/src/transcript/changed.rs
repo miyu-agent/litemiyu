@@ -204,7 +204,7 @@ pub struct Found {
 #[derive(Debug)]
 pub struct Lookup {
     draft: Transcript,
-    texts: Box<crate::config::Texts>,
+    texts: std::sync::Arc<crate::config::Texts>,
     path: String,
     /// 第几段以前的都收过了。
     done: usize,
@@ -213,7 +213,7 @@ pub struct Lookup {
 
 impl Lookup {
     /// 找改过 `path` 的；草稿里的旁白照 `texts` 写（同界面）。
-    pub fn new(texts: Box<crate::config::Texts>, path: String) -> Lookup {
+    pub fn new(texts: std::sync::Arc<crate::config::Texts>, path: String) -> Lookup {
         Lookup {
             draft: Transcript::untracked(),
             texts,

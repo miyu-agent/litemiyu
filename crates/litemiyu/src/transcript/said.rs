@@ -22,7 +22,7 @@ pub struct Said {
 #[derive(Debug)]
 pub struct Gather {
     draft: Transcript,
-    texts: Box<Texts>,
+    texts: std::sync::Arc<Texts>,
     /// 第几段以前的都收过了。
     done: usize,
     said: Vec<Said>,
@@ -30,7 +30,7 @@ pub struct Gather {
 
 impl Gather {
     /// 一份空的，草稿里的旁白照 `texts` 写（同界面）。
-    pub fn new(texts: Box<Texts>) -> Gather {
+    pub fn new(texts: std::sync::Arc<Texts>) -> Gather {
         Gather {
             draft: Transcript::untracked(),
             texts,

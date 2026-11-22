@@ -239,7 +239,7 @@ impl App {
             path: path.to_string(),
             after: from.saturating_sub(1),
             upto: next.saturating_sub(1),
-            texts: Box::new(self.config.text().clone()),
+            texts: self.config.text_shared(),
         };
         self.talk.wanted.push(command);
     }
