@@ -78,6 +78,11 @@ use incoming::{Incoming, dispatch};
 use screen::Screen;
 use terminal::Fullscreen;
 
+/// macOS 上大块直接向系统要、放掉当场还（LM-46，`lm_heap::Direct`）：系统的分配器把放掉的中等块留在常驻内存里。
+#[cfg(target_os = "macos")]
+#[global_allocator]
+static HEAP: lm_heap::Direct = lm_heap::Direct;
+
 fn main() -> ExitCode {
     // 还没起别的线程：glibc 的 arena 限个数，大块直接向系统要、放掉当场还（docs/00-设计.md 第七节「L0 量到的」第 2 处）。
     lm_heap::tune();

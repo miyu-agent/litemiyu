@@ -19,6 +19,8 @@ fn freed_small_blocks_are_given_back_where_glibc_is() {
     let released = super::trim();
     if cfg!(all(target_os = "linux", target_env = "gnu")) {
         assert!(released, "glibc 上空着的还得回去");
+    } else if cfg!(target_os = "macos") {
+        // macOS 上交回的是这一次还了多少字节算出来的，看分配器当时把这些块放在哪：这里只查调得了、不崩。
     } else {
         assert!(!released);
     }

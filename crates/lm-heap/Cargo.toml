@@ -1,6 +1,6 @@
 [package]
 name = "lm-heap"
-description = "进程的堆：glibc 上限制 arena 的个数、大块直接向系统要、空闲时把空着的还给系统（Miyu 的 miyu-heap）"
+description = "进程的堆：glibc 上限制 arena 的个数、大块直接向系统要，glibc、macOS 上空闲时把空着的还给系统（Miyu 的 miyu-heap）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

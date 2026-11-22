@@ -28,7 +28,8 @@ pub fn tune() -> bool {
     imp::tune(ARENAS, MMAP_FROM, TOP_PAD)
 }
 
-/// 把堆里空着的还给系统：glibc 上调 `malloc_trim(0)`，别处什么都不做、交回假。交回还了没有。要走一遍堆，在阻塞线程里调。
+/// 把堆里空着的还给系统：glibc 上调 `malloc_trim(0)`，macOS 上调 `malloc_zone_pressure_relief`（LM-46），别处什么都不做、
+/// 交回假。交回还了没有。要走一遍堆，在阻塞线程里调。
 pub fn trim() -> bool {
     imp::trim()
 }
@@ -52,6 +53,11 @@ pub fn stats() -> Option<Stats> {
 }
 
 pub mod usage;
+
+#[cfg(target_os = "macos")]
+mod direct;
+#[cfg(target_os = "macos")]
+pub use direct::{DIRECT_FROM, Direct};
 
 // 链进 `lm-heap-mem`：它定义的 `memcpy` 这些符号顶掉 musl 的（不用它里头的名字，照 C 的符号接上）。
 #[cfg(all(target_os = "linux", target_env = "musl", target_arch = "x86_64"))]
@@ -127,8 +133,41 @@ mod imp {
     }
 }
 
-/// 别的（Linux 的 musl、macOS、BSD）：分配器自己会还，什么都不做。
-#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+/// macOS（LM-46）：系统的分配器把放掉的大块、中块留在手里等着复用，内存紧了才还（`vmmap` 里 `MALLOC_LARGE (empty)`、
+/// `MALLOC_MEDIUM (empty)` 那几行）。2026-11-22 在一台 M1 上量的：第一次用时取来、解完 6.5 MB 的模型目录以后，放掉的那些
+/// 一直算在这个进程头上，RSS 36 MB（不取目录的是 12 MB）。`malloc_zone_pressure_relief` 就是「内存紧了」时系统替每个进程
+/// 调的那一步，这里在空下来的时候自己调：只还空着的，已经分出去的不动。
+#[cfg(target_os = "macos")]
+mod imp {
+    // 声明 libSystem 的一个函数（`malloc/malloc.h`，10.7 起）：`zone` 是空指针时每个分配区都还，`goal` 是 0 时能还多少还多少，
+    // 交回还了多少字节。
+    #[allow(unsafe_code, reason = "声明 libSystem 的 malloc_zone_pressure_relief")]
+    unsafe extern "C" {
+        fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize;
+    }
+
+    pub(super) fn tune(_arenas: i32, _mmap_from: i32, _top_pad: i32) -> bool {
+        false
+    }
+
+    pub(super) fn trim() -> bool {
+        // SAFETY: `malloc_zone_pressure_relief` 只把分配器手里空着的页、缓存着的空块还给系统，已经分出去的不动；参数是文档
+        // 写明认的「所有分配区」（空指针）和「能还多少还多少」（0）。分配器自己加锁，哪个线程调都行。
+        #[allow(
+            unsafe_code,
+            reason = "调 libSystem 的 malloc_zone_pressure_relief，见上一行"
+        )]
+        let released = unsafe { malloc_zone_pressure_relief(std::ptr::null_mut(), 0) };
+        released > 0
+    }
+
+    pub(super) fn stats() -> Option<super::Stats> {
+        None
+    }
+}
+
+/// 别的（Linux 的 musl、BSD）：分配器自己会还，什么都不做。
+#[cfg(not(any(all(target_os = "linux", target_env = "gnu"), target_os = "macos")))]
 mod imp {
     pub(super) fn tune(_arenas: i32, _mmap_from: i32, _top_pad: i32) -> bool {
         false
