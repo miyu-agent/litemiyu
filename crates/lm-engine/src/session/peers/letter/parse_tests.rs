@@ -36,6 +36,10 @@ mod old {
             from: SessionId,
             since: i64,
         },
+        Handover {
+            from: SessionId,
+            at: i64,
+        },
     }
 }
 
@@ -114,7 +118,14 @@ fn letters() -> Vec<Value> {
             since: 5,
             status: None,
         },
-        old::Letter::Closed { from, since: -3 },
+        old::Letter::Closed {
+            from: from.clone(),
+            since: -3,
+        },
+        old::Letter::Handover {
+            from,
+            at: 1_700_000_000_000,
+        },
     ]
     .iter()
     .map(|letter| serde_json::to_value(letter).expect("写得出"))

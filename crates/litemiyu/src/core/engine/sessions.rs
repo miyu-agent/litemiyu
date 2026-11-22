@@ -23,7 +23,8 @@ impl Engine {
         })
         .await
         .unwrap_or_else(|error| Err(error.to_string()));
-        self.report(Update::Sessions { listed });
+        let parked = self.parked.keys().cloned().collect();
+        self.report(Update::Sessions { listed, parked });
     }
 
     /// 导出会话 `id` 到 `path`（`/export`）：在阻塞线程里照 [`crate::cli::export_session`] 的写法直接写成 Markdown（不再起
@@ -43,7 +44,11 @@ impl Engine {
 
     /// 删掉会话 `id`（`/delete`）：在阻塞线程里拿着锁直接删掉它的目录，交回删没删成。正在说话的
     /// 那个界面先发了 `New` 停下它（引擎线程照先后办，到这里已经放下了锁）。
-    pub(super) async fn delete(&self, id: String) {
+    pub(super) async fn delete(&mut self, id: String) {
+        // 留在后台接着跑的（LM-45）：先停下、放开它的锁，不然删的时候撞上自己拿着的锁。
+        if let Some(parked) = self.parked.remove(&id)
+            && parked.stop().await.is_err()
+        {}
         let done = tokio::task::spawn_blocking(move || {
             let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
             // 原因照引擎的原话（`no such session`、`the session is open in another window`），界面照 `why` 换成句子（LM-39）。
@@ -70,7 +75,21 @@ impl Engine {
         let Some(ready) = &self.ready else {
             return;
         };
-        let handle = match ready.load(&id).await {
+        // 留在后台接着跑的（LM-45）：它就活在这个进程里，照它的把手接上，不重新载入（载入会撞上自己拿着的锁）。
+        let parked = match self.parked.remove(&id) {
+            // 已经停了的不算（别的窗口接走过）：照磁盘上的载入。
+            Some(parked) if parked.current().await.is_ok() => Some(parked),
+            _ => None,
+        };
+        let loaded = match parked {
+            Some(parked) => Ok(parked),
+            None => match ready.load(&id).await {
+                // 别的窗口开着它：请那边放手（它在那边留在后台跑着的会放），等锁放开再载入（LM-45）。
+                Err(NotLoaded::Taken) => ready.take_over(&id).await,
+                loaded => loaded,
+            },
+        };
+        let handle = match loaded {
             Ok(handle) => handle,
             Err(NotLoaded::Broken {
                 dir, line, upto, ..
@@ -90,7 +109,7 @@ impl Engine {
                 });
             }
         };
-        self.close().await;
+        self.leave().await;
         self.unattend(Some(&handle));
         let Ok((subscription, backlog)) = handle.subscribe_after(0).await else {
             return self.report(Update::OpenFailed {
@@ -118,7 +137,7 @@ impl Engine {
         dir: std::path::PathBuf,
         (line, upto): (usize, u64),
     ) {
-        self.close().await;
+        self.leave().await;
         let backlog = Backlog::broken(dir, upto);
         self.report(Update::Opened(id.clone()));
         self.reader = Some(backlog.slice(0, 0));

@@ -120,6 +120,8 @@ pub enum Update {
     Sessions {
         /// 列出来的。
         listed: Result<Vec<lm_engine::session::Listed>, String>,
+        /// 这个窗口里留在后台接着跑的会话的编号（LM-45）：列表里写「在后台运行中」，不写成别的窗口开着的。
+        parked: Vec<String>,
     },
     /// 正在说话的会话钉着哪个预设（LM-29，`engine/presets.rs`）：开了新会话、打开了旧会话时交一次；配置换了、预设改了删了
     /// 的再交一次（名字后面的「已修改」「已删除」照它）。

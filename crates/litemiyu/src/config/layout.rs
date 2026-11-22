@@ -118,7 +118,8 @@ texts! {
         /// 「工作区」那一级权限的图标 `▣`（U+25A3；Miyu 终端 `26bad03d` 以前默认主题的 `level_icons.workspace`），两套图标都用它
         /// （普通的 Unicode 字符，不靠 Nerd Font）。原来是 `✻ `。
         pub done_icon: String,
-        /// 收尾行里符号后面多空的：照 Miyu 那时给 `▣` 多空一格（`done_gap` 的 `workspace`）。`▣` 在有的终端里画成两格宽，
+        /// 收尾行里符号后面多空的：出厂是空的（2026-11-22 项目主人：「这里多了一个空格」，`▣` 和时刻之间只留 `done_icon`
+        /// 自己带的那一格；Miyu 现在的 `done_gap` 也是空的）。原来照 Miyu 那时给 `▣` 多空一格：`▣` 在有的终端里画成两格宽，
         /// 多空的这一格不让它挤着后面的字。
         pub done_gap: String,
     }

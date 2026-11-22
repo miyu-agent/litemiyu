@@ -38,6 +38,57 @@ use summary::{Summary, Tracker};
 use crate::session::table::AgentsSpent;
 use crate::store::paths::Bell;
 
+/// 别的窗口开着会话 `id`、这个窗口要接着开它时（LM-45）：往它的收件目录放一封「请放手」、敲它的门铃。它在那个窗口里留在
+/// 后台跑着的，那边有计划地停下、放开锁（`peers/listen.rs` 的 `handover`）；它是那个窗口正在说话的会话的，那边不放，留一个
+/// 回绝的记号。交回 [`Asked`]：发的一方照它看有没有被回绝，照 [`HANDOVER_WAIT`] 等锁放开再载入，等不到的照旧报别的窗口
+/// 开着。碰磁盘，在阻塞线程里调。
+///
+/// # Errors
+///
+/// 会话目录不在了、收件目录写不进去。
+pub fn ask_handover(
+    paths: &crate::store::paths::Paths,
+    id: &lm_kernel::kernel::id::SessionId,
+) -> std::io::Result<Asked> {
+    let letter = crate::session::peers::Letter::Handover {
+        from: id.clone(),
+        at: crate::session::clock::wall_now().unix_millis(),
+    };
+    let name = crate::session::peers::post_named(&paths.sessions(), id, &letter, &paths.bell)?;
+    let inbox = paths.session(id).join("inbox");
+    Ok(Asked {
+        refused: inbox.join(crate::session::peers::refused_mark(&name)),
+        letter: inbox.join(name),
+    })
+}
+
+/// 发出去的一封「请放手」（[`ask_handover`]）。
+#[derive(Debug)]
+pub struct Asked {
+    /// 那边回绝时留的记号。
+    refused: PathBuf,
+    /// 那封信。
+    letter: PathBuf,
+}
+
+impl Asked {
+    /// 那边回绝了（它是那个窗口正在说话的会话）：记号在，顺手删掉。碰磁盘。
+    #[must_use]
+    pub fn refused(&self) -> bool {
+        std::fs::remove_file(&self.refused).is_ok()
+    }
+
+    /// 不等了：那封信还没被读走的删掉，那边之后不会照它放手。碰磁盘。
+    pub fn give_up(&self) {
+        drop(std::fs::remove_file(&self.letter));
+        drop(std::fs::remove_file(&self.refused));
+    }
+}
+
+/// 发了「请放手」以后最多等多久锁放开（[`ask_handover`]）：门铃一响那边当场停，落盘、放锁是几十毫秒的事；兜底扫才收到的
+/// （门铃没绑上）等不到，照旧报别的窗口开着。
+pub const HANDOVER_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// 一个窗口对一个主会话的占有：锁、跟着日志记的概要。
 #[derive(Debug)]
 pub(crate) struct Window {

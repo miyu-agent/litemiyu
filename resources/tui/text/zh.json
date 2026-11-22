@@ -27,6 +27,7 @@
   "refused": "无法完成操作：{reason}",
   "editing": " 编辑上一条 · Esc 取消 ",
   "interrupted": "已中断",
+  "paused": "已暂停，重新打开后继续",
   "failed": "出错：{reason}",
   "reason_with": "{head}：{message}",
   "status_hints": {
@@ -484,6 +485,7 @@
     "untitled": "未命名会话",
     "open_elsewhere": "已在其他窗口打开",
     "busy_elsewhere": "在其他窗口运行中",
+    "background": "在后台运行中",
     "closed": "未打开",
     "taken": "此会话已在其他窗口打开",
     "open_failed": "无法打开此会话：{reason}",

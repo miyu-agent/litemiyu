@@ -30,7 +30,8 @@ pub(crate) const BAD: &str = "inbox.bad";
 /// 一封最多多大：一句话最多 10 万个字（`send_message` 的上限），JSON 里转义了也放得下。
 const MAX_BYTES: u64 = 2 << 20;
 
-/// 一封：发来的话、「空了告诉我」的登记、空了的通知、关了的通知。`from` 都是发它的那个会话。
+/// 一封：发来的话、「空了告诉我」的登记、空了的通知、关了的通知、请放手。`from` 都是发它的那个会话（请放手的写这个会话
+/// 自己：发的那个窗口还没有会话）。
 /// 读法照手写的（`letter/parse.rs`，引擎线第八趟瘦身），写法照派生的 `Serialize`。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -59,6 +60,9 @@ pub(crate) enum Letter {
     },
     /// `from` 没等到空下来就关了：回给等它的（L7 三）。
     Closed { from: SessionId, since: i64 },
+    /// 别的窗口要接着开这个会话（LM-45，`listen.rs` 的 `handover`）：请拿着它的那个窗口放手。`at` 是发的那一刻的系统时间
+    /// （Unix 毫秒）：收的一方只认刚发的，放久了的（发的一方早就不等了）不理。
+    Handover { from: SessionId, at: i64 },
 }
 
 impl Letter {
@@ -68,7 +72,8 @@ impl Letter {
             Letter::Message { from, .. }
             | Letter::Watch { from, .. }
             | Letter::Idle { from, .. }
-            | Letter::Closed { from, .. } => from,
+            | Letter::Closed { from, .. }
+            | Letter::Handover { from, .. } => from,
         }
     }
 }
@@ -81,6 +86,21 @@ pub(crate) fn post(
     letter: &Letter,
     bell: &Bell,
 ) -> io::Result<()> {
+    post_named(sessions, to, letter, bell).map(|_| ())
+}
+
+/// 「请放手」被回绝时，收的一方在收件目录里留的那个记号的名字（LM-45）：`.` 开头（扫的时候不当信读），后面是那封信的文件名。
+pub(crate) fn refused_mark(name: &str) -> String {
+    format!(".refused-{name}")
+}
+
+/// 同 [`post`]，交回那封信的文件名（`<编号>.json`）：发的一方照它认回绝的记号（[`refused_mark`]）。
+pub(crate) fn post_named(
+    sessions: &Path,
+    to: &SessionId,
+    letter: &Letter,
+    bell: &Bell,
+) -> io::Result<String> {
     let dir = sessions.join(to.as_str());
     let inbox = dir.join(INBOX);
     match fs::create_dir(&inbox) {
@@ -100,7 +120,7 @@ pub(crate) fn post(
         Ok(()) => super::bell::ring(bell, &dir),
         Err(_) => drop(fs::remove_file(&temp)),
     }
-    written
+    written.map(|()| name)
 }
 
 /// 收件目录 `inbox` 里该读的几封，照文件名排。目录没有的是空的。碰磁盘，在阻塞线程里调。

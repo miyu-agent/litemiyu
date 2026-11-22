@@ -8,7 +8,9 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command as Process, Stdio};
 
 use lm_engine::session::testkit::{Play, Script};
-use lm_engine::session::{Handle, Listed, Load, LoadError, Workplace, list_sessions, load};
+use lm_engine::session::{
+    Handle, Listed, Load, LoadError, Workplace, ask_handover, list_sessions, load,
+};
 use lm_kernel::kernel::block::Block;
 use lm_kernel::kernel::id::SessionId;
 
@@ -394,4 +396,69 @@ async fn hold(given: &str) {
     let mut line = String::new();
     drop(tokio::task::spawn_blocking(move || std::io::stdin().read_line(&mut line)).await);
     drop(handle);
+}
+
+/// 往会话 `session` 的收件目录放一封「请放手」。
+async fn ask(home: &Home, session: &SessionId) -> lm_engine::session::HandoverAsked {
+    let (root, session) = (home.root.clone(), session.clone());
+    tokio::task::spawn_blocking(move || ask_handover(&root, &session))
+        .await
+        .expect("跑完了")
+        .expect("放得进去")
+}
+
+/// LM-45（2026-11-22 项目主人：留在后台跑的会话要能被别的窗口直接接过去）：别的窗口请它放手。有头订阅着的（它是那个
+/// 窗口正在说话的会话）不理，照旧打不开；没有头订阅着的（留在后台）有计划地停下、放开锁，接着载入得了。
+#[tokio::test]
+async fn an_unwatched_session_hands_itself_over_when_asked_and_a_watched_one_does_not() {
+    let home = Home::new();
+    let held = home
+        .create_as(&script([]), &base_system(), full(&home))
+        .await;
+    let id = held.id().clone();
+    let pushes = watch(&held).await;
+    within("头订阅上", async {
+        while !held.watched() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let asked = ask(&home, &id).await;
+    within("那边回绝", async {
+        while !asked.refused() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(
+        matches!(try_load(&home, &id).await, Err(LoadError::Taken)),
+        "有头看着的不放手，当场回绝"
+    );
+    // 头走了（换到别的会话，它留在后台）：再请一次。
+    drop(pushes);
+    within("头放下了", async {
+        while held.watched() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let asked = ask(&home, &id).await;
+    let taken = within("它放手、这边载入", async {
+        loop {
+            match try_load(&home, &id).await {
+                Ok(handle) => break handle,
+                Err(LoadError::Taken) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                Err(other) => panic!("载入不了：{other}"),
+            }
+        }
+    })
+    .await;
+    assert!(!asked.refused(), "没有回绝");
+    assert!(held.current().await.is_err(), "原来那一头已经停了");
+    // 接过来的这一头刚载入、还没有头订阅：那封信已经删了，它不会跟着停下。
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(taken.current().await.is_ok(), "接过来的照常开着");
+    close(taken).await;
 }

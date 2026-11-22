@@ -45,6 +45,10 @@ const RETRY_FIRST_MS: u64 = 100;
 /// 一共最多等多久（毫秒）：撤销、恢复早该做完了。
 const RETRY_TOTAL_MS: u64 = 30_000;
 
+/// 「请放手」的信（LM-45）发出来多久以内才认（毫秒）：发的一方等锁最多等 [`crate::session::HANDOVER_WAIT`]，比它短，认了的
+/// 那一封发的一方一定还在等。
+const HANDOVER_FRESH_MS: u64 = 2_000;
+
 /// `.` 开头的临时文件多久没动算发的一方写到一半被杀留下的：写一封只要几毫秒，10 分钟没改名的不会再改名了。
 const STALE_TEMP: Duration = Duration::from_secs(600);
 
@@ -109,7 +113,8 @@ async fn run(
         .await
         .unwrap_or_default();
         for name in names {
-            if deliver(&dir, name, &me, &handle).await.is_err() {
+            // 头一遍扫到的是没开着时攒下的：里面的「请放手」早过时了（`sweep`）。
+            if deliver(&dir, name, &me, &handle, sweep).await.is_err() {
                 return;
             }
         }
@@ -152,6 +157,7 @@ async fn deliver(
     name: OsString,
     me: &SessionId,
     handle: &WeakHandle,
+    backlog: bool,
 ) -> Result<(), Stopped> {
     let path = dir.join(INBOX).join(&name);
     let read = {
@@ -167,9 +173,41 @@ async fn deliver(
             return Ok(());
         }
     };
+    if let Letter::Handover { at, .. } = letter {
+        // 先删再办：办的时候这个会话要停，信留着的话接着开它的那个窗口一打开又读到这一封。
+        drop(blocking(move || std::fs::remove_file(&path)).await);
+        if backlog {
+            return Ok(());
+        }
+        let mark = dir
+            .join(INBOX)
+            .join(letter::refused_mark(&name.to_string_lossy()));
+        return handover(handle, at, mark).await;
+    }
     hand(letter, &name, me, handle).await?;
     drop(blocking(move || std::fs::remove_file(&path)).await);
     Ok(())
+}
+
+/// 别的窗口请这个会话放手（LM-45，2026-11-22 项目主人：留在后台跑的会话要能被别的窗口直接接过去）：这时没有头订阅着它的
+/// （[`crate::session::Handle::watched`] 是假：它在这个窗口里留在后台，或者界面正换着会话），有计划地停下——在跑的那一轮照
+/// 「重启了」收，日志落好盘，锁放开，那个窗口载入以后接着干。有头看着的（它就是这个窗口正在说话的会话）不理，那个窗口等不到
+/// 锁，照旧报「已在其他窗口打开」：这时在收件目录里留一个回绝的记号（`mark`），那个窗口看到就不等了。放久了的信不理。
+async fn handover(handle: &WeakHandle, at: i64, mark: PathBuf) -> Result<(), Stopped> {
+    let Some(live) = handle.upgrade() else {
+        return Err(Stopped);
+    };
+    let age = crate::session::clock::wall_now().unix_millis().abs_diff(at);
+    if age > HANDOVER_FRESH_MS {
+        return Ok(());
+    }
+    if live.watched() {
+        drop(blocking(move || std::fs::File::create(mark)).await);
+        return Ok(());
+    }
+    // 停不下的是已经停了。停了以后这个任务跟着被掐掉（`Window` 放下时）。
+    live.stop().await.unwrap_or(());
+    Err(Stopped)
 }
 
 /// 交给 actor：话、通知交内核，等回应；登记、关了的通知交 actor 自己办。`name` 是这封信的文件名。
@@ -216,6 +254,8 @@ async fn hand(
                 },
             );
         }
+        // `deliver` 先办掉了，走不到这里。
+        Letter::Handover { .. } => return Ok(()),
     };
     let Ok(id) = CommandId::parse(&id) else {
         return Ok(());

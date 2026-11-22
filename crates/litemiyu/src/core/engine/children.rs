@@ -26,26 +26,26 @@ pub fn agents(pushes: &[Push]) -> impl Iterator<Item = String> + '_ {
     })
 }
 
-/// 订阅子会话 `id`：主会话的把手取得到它才订阅，取不到的（已经停了、不是这张表里的）不管。
-pub async fn watch(main: &Handle, id: &str, deliver: Deliver, more: mpsc::UnboundedSender<String>) {
-    let Ok(session) = SessionId::parse(id) else {
-        return;
-    };
-    let Some(child) = main.child(&session).await else {
-        return;
-    };
+/// 订阅子会话 `id`：主会话的把手取得到它才订阅，取不到的（已经停了、不是这张表里的）不管。交回转推送的那个任务：放下
+/// 主会话时掐掉（`Engine::leave`）。
+pub async fn watch(
+    main: &Handle,
+    id: &str,
+    deliver: Deliver,
+    more: mpsc::UnboundedSender<String>,
+) -> Option<tokio::task::AbortHandle> {
+    let session = SessionId::parse(id).ok()?;
+    let child = main.child(&session).await?;
     // 从头补：派出去到订阅上之间它可能已经在问人了（只推订阅以后的那一份里就没有那一句）。日志里落了盘的照先后交一遍，
     // 问过又答了的抽屉照推送收（`app/asking.rs`）；它已经说完的那几步照补发的读法读（[`landed`]）。
-    let Ok((subscription, backlog)) = child.subscribe_after(0).await else {
-        return;
-    };
+    let (subscription, backlog) = child.subscribe_after(0).await.ok()?;
     let rejoin = child.rejoin();
     drop(child);
     let seen = backlog.upto();
     if let Ok(events) = backlog.read().await
         && !hand_over(&landed(events), id, &deliver, &more)
     {
-        return;
+        return None;
     }
     let followed = Followed {
         subscription,
@@ -53,7 +53,7 @@ pub async fn watch(main: &Handle, id: &str, deliver: Deliver, more: mpsc::Unboun
         seen,
         heard: 0,
     };
-    tokio::spawn(forward(followed, id.to_string(), deliver, more));
+    Some(tokio::spawn(forward(followed, id.to_string(), deliver, more)).abort_handle())
 }
 
 /// 订阅上以前子会话已经落了盘的那一截读成推送，照补发的读法（`push::replay`）：回答照 `message.assistant` 的块开一块、写字、

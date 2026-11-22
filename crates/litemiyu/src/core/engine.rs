@@ -113,6 +113,13 @@ struct Engine {
     session: Option<Handle>,
     /// 把它推来的交回界面的那个任务：换会话时先掐掉，旧会话的推送不会排在新会话的后面。
     forwarder: Option<tokio::task::AbortHandle>,
+    /// 留在后台接着跑的会话（LM-45，2026-11-22 项目主人：「切走就停的话切会话就没意义了」）：换到别的会话、`/new` 时还在
+    /// 干活的那一个不停，把手放在这里，照编号找；再切回来照它接上（[`Engine::open_old`]），不重新载入。干完了的下一次办
+    /// 命令时停下（[`Engine::reap`]）；退出时一起有计划地停下。
+    parked: std::collections::BTreeMap<String, Handle>,
+    /// 订阅子会话的那几个任务（`children.rs`）：放下主会话时掐掉，后台会话的子代理推来的不交给界面（它这时画的是别的
+    /// 会话）；切回来补发时重新订阅。
+    watchers: Vec<tokio::task::AbortHandle>,
     /// 读回以后安静下来还堆的那个任务（`readback.rs`）：又读回了就掐掉重排。
     settling: Option<tokio::task::AbortHandle>,
     /// 下一个新开的会话用哪个预设（[`Command::New`]，预设的名字）：`None` 照配置里的默认预设。
@@ -150,6 +157,8 @@ impl Engine {
             ready: None,
             session: None,
             forwarder: None,
+            parked: std::collections::BTreeMap::new(),
+            watchers: Vec::new(),
             settling: None,
             preset: None,
             agents: mpsc::unbounded_channel(),
@@ -181,6 +190,7 @@ impl Engine {
 
     /// 办一条命令。
     async fn handle(&mut self, command: Command) {
+        self.reap().await;
         if let Some(refused) = self
             .read_only
             .as_ref()
@@ -239,7 +249,7 @@ impl Engine {
             Command::Effort(level) => self.set_effort(level).await,
             Command::New { preset } => {
                 self.preset = preset;
-                self.close().await;
+                self.leave().await;
             }
             Command::Presets => self.presets().await,
             Command::PresetDefault(name) => self.preset_default(name).await,
@@ -663,7 +673,9 @@ impl Engine {
             let child = main.child(&child).await;
             self.unattend(child.as_ref());
         }
-        children::watch(&main, &id, Arc::clone(&self.deliver), self.agents.0.clone()).await;
+        let task =
+            children::watch(&main, &id, Arc::clone(&self.deliver), self.agents.0.clone()).await;
+        self.watchers.extend(task);
     }
 
     /// 没人能确认的这一次运行里，会话 `handle` 也交上（[`Command::Unattended`]）。停了的没处交。
@@ -692,8 +704,9 @@ impl Engine {
         lm_engine::session::new_command_id()
     }
 
-    /// 有计划地停下正在说话的会话：日志落好盘再退出。
-    async fn close(&mut self) {
+    /// 放下正在说话的会话（换到别的会话、`/new`）：界面不再看它。它还在干活的（[`working`]）留在后台接着跑（`parked`，
+    /// LM-45）；闲着的照旧有计划地停下，日志落好盘。
+    async fn leave(&mut self) {
         self.watched.clear();
         self.reader = None;
         self.read_only = None;
@@ -702,11 +715,54 @@ impl Engine {
         if let Some(forwarder) = self.forwarder.take() {
             forwarder.abort();
         }
-        if let Some(session) = self.session.take() {
+        for watcher in self.watchers.drain(..) {
+            watcher.abort();
+        }
+        let Some(session) = self.session.take() else {
+            return;
+        };
+        if working(&session).await {
+            self.parked
+                .insert(session.id().as_str().to_string(), session);
+        } else if session.stop().await.is_err() {
             // 停不下的是已经停了：没有要等的。
+        }
+    }
+
+    /// 后台的会话里干完了的有计划地停下（同切走时闲着的那样），放开它的锁：别的窗口这时才打得开它。每办一条命令看一次，
+    /// 不另起定时器（空闲的程序不会因为它被叫醒）。
+    async fn reap(&mut self) {
+        if self.parked.is_empty() {
+            return;
+        }
+        let mut done = Vec::new();
+        for (id, session) in &self.parked {
+            if !working(session).await {
+                done.push(id.clone());
+            }
+        }
+        for id in done {
+            if let Some(session) = self.parked.remove(&id)
+                && session.stop().await.is_err()
+            {}
+        }
+    }
+
+    /// 退出：有计划地停下正在说话的会话和留在后台的，日志落好盘再退出。
+    async fn close(&mut self) {
+        self.leave().await;
+        for (_, session) in std::mem::take(&mut self.parked) {
             if session.stop().await.is_err() {}
         }
     }
+}
+
+/// 会话还在干活：有回合在跑、在等人确认或回答、挂着循环或定时触发、有后台命令或子代理在跑。停了的不算。
+async fn working(session: &Handle) -> bool {
+    let Ok(current) = session.current().await else {
+        return false;
+    };
+    session.busy() || session.waiting() || session.looping().is_some() || !current.jobs.is_empty()
 }
 
 /// 只读打开着坏了一行的会话时（[`Engine::read_only`]），要会话办的命令照 Miyu 核心拒（`session_read_only`，界面照

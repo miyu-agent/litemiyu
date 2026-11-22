@@ -80,7 +80,7 @@ pub fn lines(
         .min(config.layout.session_title_width);
     let widest_right = found
         .iter()
-        .map(|s| state(s, current, now, texts).width())
+        .map(|s| state(s, (current, &list.parked), now, texts).width())
         .max()
         .unwrap_or(0);
     let tick_width = if ticking {
@@ -133,7 +133,7 @@ pub fn lines(
         ));
         let used: usize = content.iter().map(Span::width).sum();
         let room = usize::from(width).saturating_sub(2 + used + 1);
-        let cell = right(info, current, (here, room), now, config);
+        let cell = right(info, (current, &list.parked), (here, room), now, config);
         let lead = marker(info, current, config);
         let line = panel::item_with(
             i == list.selected,
@@ -183,17 +183,20 @@ pub fn title<'a>(info: &'a Listed, texts: &'a SessionTexts) -> &'a str {
     }
 }
 
-/// 右边那一格里写它在哪的那一截：正在用的不写；别的窗口开着的写开着（忙不忙），没开着的写没开着，接着写多久以前有过动静。
+/// 右边那一格里写它在哪的那一截：正在用的不写；这个窗口里留在后台接着跑的（`parked`，LM-45）写在后台运行中；别的窗口
+/// 开着的写开着（忙不忙），没开着的写没开着，接着写多久以前有过动静。
 fn state(
     info: &Listed,
-    current: Option<&str>,
+    (current, parked): (Option<&str>, &[String]),
     now: jiff::Timestamp,
     texts: &SessionTexts,
 ) -> String {
     if current == Some(info.id.as_str()) {
         return String::new();
     }
+    let here = parked.iter().any(|id| id == info.id.as_str());
     let open = match (info.open, info.busy) {
+        _ if here => &texts.background,
         (true, true) => &texts.busy_elsewhere,
         (true, false) => &texts.open_elsewhere,
         (false, _) => &texts.closed,
@@ -205,12 +208,12 @@ fn state(
 /// 打头写 `…`，一格都放不下的不写（Miyu 2026-11-02：标题先占宽）。
 fn right(
     info: &Listed,
-    current: Option<&str>,
+    which: (Option<&str>, &[String]),
     (here, room): (&str, usize),
     now: jiff::Timestamp,
     config: &Config,
 ) -> String {
-    let state = state(info, current, now, &config.text().sessions);
+    let state = state(info, which, now, &config.text().sessions);
     let gap = if state.is_empty() { 0 } else { 2 };
     let left = room.saturating_sub(state.width() + gap);
     let elsewhere = (!info.cwd.is_empty() && crate::local::home_short(&info.cwd) != here)

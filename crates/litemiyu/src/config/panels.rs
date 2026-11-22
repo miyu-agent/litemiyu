@@ -104,6 +104,8 @@ texts! {
         pub open_elsewhere: String,
         /// 别的窗口开着它、有一轮在跑。
         pub busy_elsewhere: String,
+        /// 这个窗口里留在后台接着跑的（LM-45）：切走时它还在干活。
+        pub background: String,
         /// 没有窗口开着它（引擎的 `closed`）。
         pub closed: String,
         /// 要切过去的会话别的窗口开着：不硬开。

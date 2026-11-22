@@ -41,6 +41,8 @@ Inside the interface: run `/sessions`, or click an entry under `Recent sessions`
 
 > A session can be open in only one window at a time. If it is already open elsewhere, you get `session … is open in another window`. Different sessions can be open in different windows at the same time.
 
+When you switch to another session in the same window (`/sessions`, `Recent sessions` in the sidebar, or `/new`), the session you leave keeps running in the background if it is still working: the current turn, background commands, subagents, loops and scheduled continuations all carry on. Switch back to see where it has got to. A session that is idle when you leave is closed and opened again when you return. A session in the background can be opened directly from another window: it moves from this window's background to that window, the turn in progress continues there, and the conversation gets one more line, `Paused; continues when reopened`. Only a session that is being shown in a window cannot be opened elsewhere; you then get `session … is open in another window`. When you quit LiteMiyu, background sessions stop with it, and an unfinished turn continues the next time the session is opened.
+
 ## The session list
 
 Run `/sessions` (or `/resume`) to open the session list:
@@ -49,7 +51,7 @@ Run `/sessions` (or `/resume`) to open the session list:
 
 The first row is the current session; below it the rest are grouped under `Recent`, `Past 7 days`, `Past 30 days` and `Older`. Each row shows the session's title, short ID, state and when it was last used. Untitled sessions show their first message; sessions created by `litemiyu ask` are listed here as well.
 
-There are three states: `Not open`, `Open in another window` and `Busy in another window`.
+There are four states: `Not open`, `Running in the background` (in the background of this window), `Open in another window` and `Busy in another window`.
 
 | Key (`Vim` mode) | Action |
 |---|---|

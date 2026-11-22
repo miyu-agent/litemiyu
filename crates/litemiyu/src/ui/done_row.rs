@@ -8,7 +8,7 @@ use crate::config::Layout;
 
 /// 收尾行：打头的符号（`done_icon`）、多空的（`done_gap`），接着做完的时刻、模型、用时这些（`tui.md`「正文」第 4 条）。Miyu
 /// 打头的是这一轮开始时的权限级别的图标，LiteMiyu 没有权限级别，一律是 `layout.json` 的那一个：Miyu 以前「工作区」那一级的
-/// `▣`、后面多空一格（2026-11-20 项目主人定，两套图标都用它）。
+/// `▣`（2026-11-20 项目主人定，两套图标都用它；后面不多空，2026-11-22 项目主人）。
 pub fn line(text: &str, layout: &Layout) -> String {
     format!("{}{}{text}", layout.done_icon, layout.done_gap)
 }
@@ -51,13 +51,13 @@ mod tests {
     #[test]
     fn a_narrow_done_line_breaks_only_between_segments() {
         // 2026-09-29 28 列实测：照字折把模型名从中间劈开。
-        let text = "▣  20:39 · dev/deepseek-v4.1-flash · 2.8s · 3.8k(C83%)";
+        let text = "▣ 20:39 · dev/deepseek-v4.1-flash · 2.8s · 3.8k(C83%)";
         let got = pieces(text, 25);
         let lines: Vec<&str> = got.iter().map(|(l, _)| l.trim_end()).collect();
         assert_eq!(
             lines,
             [
-                "▣  20:39",
+                "▣ 20:39",
                 "· dev/deepseek-v4.1-flash",
                 "· 2.8s · 3.8k(C83%)"
             ]

@@ -29,6 +29,8 @@ pub struct SessionList {
     pub pinned: Option<usize>,
     /// 正在用的会话：永远排在最上面（Miyu 2026-10-18 项目主人：都在跑的时候看不出哪个是当前的）。
     pub current: Option<String>,
+    /// 这个窗口里留在后台接着跑的会话（LM-45）：右边写「在后台运行中」，选它是切回去。
+    pub parked: Vec<String>,
 }
 
 impl SessionList {

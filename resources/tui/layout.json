@@ -32,7 +32,7 @@
   "key_burst_ms": 0,
   "markdown_cache": 8,
   "relayout_budget_ms": 8,
-  "done_gap": " ",
+  "done_gap": "",
   "menu_rows": 5,
   "history_rows": 0,
   "jump_flash_ms": 1000,

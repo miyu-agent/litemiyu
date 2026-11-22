@@ -145,6 +145,34 @@ fn an_interrupted_turn_stops_every_spinner() {
     assert!(!t.busy());
 }
 
+/// 2026-11-22 项目主人：切换会话以后正文里出现一行 `restarted`。这一轮正跑着的时候程序退出了、或者别的窗口把它接走了，内核照
+/// 「重启了」收（LM-45 以后切走的会话在后台接着跑，不这样收了）；正文里写成和「已中断」一个样子的一行人话，不写原因码。认不得的
+/// 别的原因照旧原样写。
+#[test]
+fn a_turn_stopped_by_leaving_the_session_says_paused_not_the_code() {
+    let mut t = Transcript::default();
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(1, None),
+            Push::TurnEnded(crate::core::EndReason::Other("restarted".into())),
+        ],
+    );
+    assert_eq!(
+        (&t.entries[0].kind, t.entries[0].text.as_str()),
+        (&Kind::Done, "已暂停，重新打开后继续")
+    );
+    apply(
+        &mut t,
+        vec![
+            Push::TurnStarted(2, None),
+            Push::TurnEnded(crate::core::EndReason::Other("odd".into())),
+        ],
+    );
+    let last = t.entries.last().expect("有一条");
+    assert_eq!((&last.kind, last.text.as_str()), (&Kind::Note, "odd"));
+}
+
 #[test]
 fn an_error_turn_says_why() {
     let mut t = Transcript::default();

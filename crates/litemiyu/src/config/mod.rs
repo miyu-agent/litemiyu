@@ -126,6 +126,9 @@ texts! {
         pub editing: String,
         /// 这一轮被打断了。
         pub interrupted: String,
+        /// 这一轮正跑着的时候程序退出了、或者别的窗口把会话接走了（LM-45），照「重启了」结束的（`turn.ended` 的 `restarted`）：再打开这个会话时内核接着干这一轮。
+        /// 原来把原因码 `restarted` 原样写在正文里（2026-11-22 项目主人问的）。
+        pub paused: String,
         /// 这一轮出错了，`{reason}` 是原因（`transcript/failure.rs` 拼的）。
         pub failed: String,
         /// 原因里人话和原话连起来：`{head}` 人话，`{message}` 原话。

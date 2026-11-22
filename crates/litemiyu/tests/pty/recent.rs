@@ -2,7 +2,7 @@
 //! （最后一次动静新的在前），当前这个在原位、行首箭头；点一行切过去，切过去的不挪到最上面（Miyu `848a8a1a`，2026-10-27
 //! 项目主人：「正常按照时间顺序就好了。否则很难找」），在它里面说了话才挪上去。
 
-use crate::replies::says;
+use crate::replies::{calls, says};
 use crate::support::{Served, Session, served};
 
 /// 侧边栏从第几列起（160 列宽、侧边栏 38 列，`layout.json`）。
@@ -217,4 +217,55 @@ fn unnamed_sessions_are_listed_by_their_first_words() {
         .count();
     assert_eq!(rows, 2, "{screen}");
     assert!(!screen.contains("alpha-second"), "{screen}");
+}
+
+/// LM-45（2026-11-22 项目主人：「切走就停的话切会话就没意义了」）：一轮还在跑的时候换到别的会话，它留在后台接着跑——
+/// 命令跑完以后的那一次请求是在看着别的会话的时候发出去的；切回来看到的是它跑完的样子，不是「已暂停」再接着干。
+#[test]
+fn a_session_left_while_working_keeps_running_in_the_background() {
+    // 命令等工作目录里出现 `go` 才结束（最多 30 秒）：什么时候跑完由测试定。
+    let run = serde_json::json!({
+        "command": "sh -c 'i=0; until [ -e go ] || [ $i -ge 600 ]; do sleep 0.05; i=$((i+1)); done'",
+        "description": "Wait for go"
+    });
+    let server = served(vec![
+        calls("shell", &run.to_string()),
+        says(&["answer-b"]),
+        says(&["answer-a-done"]),
+    ]);
+    let session = Session::start(&server.base_url, &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("topic-a");
+    session.press_enter();
+    session.wait_for("Wait for go", "第一个会话的命令在跑");
+    // 这时开一个新会话，在里面说一句。
+    session.type_text("/new");
+    session.press_enter();
+    session.wait_until("回到首页", |s| !in_body(&s.screen(), "topic-a"));
+    session.type_text("topic-b");
+    session.press_enter();
+    session.wait_for("answer-b", "第二个会话答完");
+    assert_eq!(server.received().len(), 2, "第一个会话的命令还没跑完");
+    // 放行第一个会话的命令：它在后台跑完，接着请求模型。
+    std::fs::write(session.work().join("go"), "").expect("写得进工作目录");
+    session.wait_until(
+        "第一个会话在后台跑完了命令、接着请求了",
+        |_| server.received().len() == 3,
+    );
+    assert!(
+        !in_body(&session.screen(), "answer-a-done"),
+        "后台会话的回答不画进现在这个会话：{}",
+        session.screen()
+    );
+    let row = session
+        .row_of(SIDE, "topic-a")
+        .expect("最近会话里列着第一个");
+    session.click(SIDE + 4, row);
+    session.wait_for("answer-a-done", "切回来看到它跑完的样子");
+    let screen = session.screen();
+    assert!(
+        !screen.contains("已暂停") && !screen.contains("restarted"),
+        "没有被停下再接着干：{screen}"
+    );
+    assert_eq!(server.received().len(), 3, "切回来没有重发请求");
 }

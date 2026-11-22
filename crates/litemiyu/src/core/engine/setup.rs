@@ -257,6 +257,40 @@ pub enum NotLoaded {
 }
 
 impl Ready {
+    /// 别的窗口开着会话 `id`（[`NotLoaded::Taken`]）时接过来（LM-45）：请那边放手（`lm_engine::session::ask_handover`），
+    /// 每 50 毫秒看一次锁，放开了就载入；那边回绝了的（它是那个窗口正在说话的会话）、等满 `HANDOVER_WAIT` 的照旧交回别的
+    /// 窗口开着。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Ready::load`]。
+    pub async fn take_over(&self, id: &str) -> Result<Handle, NotLoaded> {
+        let Ok(session) = SessionId::parse(id) else {
+            return Err(NotLoaded::Taken);
+        };
+        let paths = self.paths.clone();
+        let asked =
+            tokio::task::spawn_blocking(move || lm_engine::session::ask_handover(&paths, &session))
+                .await;
+        let Ok(Ok(asked)) = asked else {
+            return Err(NotLoaded::Taken);
+        };
+        let until = tokio::time::Instant::now() + lm_engine::session::HANDOVER_WAIT;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            match self.load(id).await {
+                // 还拿着：那边回绝了的、等满了的不等了。
+                Err(NotLoaded::Taken) => {
+                    if asked.refused() || tokio::time::Instant::now() >= until {
+                        asked.give_up();
+                        return Err(NotLoaded::Taken);
+                    }
+                }
+                loaded => return loaded,
+            }
+        }
+    }
+
     /// 打开磁盘上的会话 `id`：在它上次记下的工作目录干活，那个目录不在了的在终端所在的目录（Miyu 核心照日志里最后一次记下
     /// 的，都没有退回 `~`）。
     ///

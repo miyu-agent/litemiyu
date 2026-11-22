@@ -121,6 +121,10 @@ impl Transcript {
                 let text = texts.failed.replace("{reason}", &reason);
                 self.push(Kind::Error, text);
             }
+            // 这一轮正跑着的时候程序退出了（内核照「重启了」收的）：和「已中断」一个样子，不把原因码写出来。
+            EndReason::Other(other) if other == "restarted" => {
+                self.push(Kind::Done, texts.paused.clone());
+            }
             EndReason::Other(other) => self.push(Kind::Note, other),
         }
         self.turn = None;

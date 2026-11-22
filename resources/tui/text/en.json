@@ -27,6 +27,7 @@
   "refused": "Couldn't do that: {reason}",
   "editing": " Editing your last message · Esc to cancel ",
   "interrupted": "Interrupted",
+  "paused": "Paused; continues when reopened",
   "failed": "Error: {reason}",
   "reason_with": "{head}: {message}",
   "status_hints": {
@@ -484,6 +485,7 @@
     "untitled": "Untitled session",
     "open_elsewhere": "Open in another window",
     "busy_elsewhere": "Busy in another window",
+    "background": "Running in the background",
     "closed": "Not open",
     "taken": "This session is open in another window",
     "open_failed": "Could not open this session: {reason}",

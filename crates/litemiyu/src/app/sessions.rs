@@ -22,6 +22,8 @@ use crate::session_list::SessionList;
 pub struct Recent {
     /// 引擎最近交回的那一份；还没要过的是 `None`。
     pub listed: Option<Vec<Listed>>,
+    /// 这个窗口里留在后台接着跑的会话（LM-45），同那一份一起交回的。
+    pub parked: Vec<String>,
     /// 要过、还没交回来。
     asked: bool,
     /// 手上的那一份旧了（会话开了、换了，一轮做完，起了标题）：看得到侧边栏时再要一份。
@@ -74,11 +76,13 @@ impl App {
     /// 会话的进出那几种消息：交回 `true` 的不再往下走。
     pub(super) fn sessions_update(&mut self, update: &Update) -> bool {
         match update {
-            Update::Sessions { listed } => {
+            Update::Sessions { listed, parked } => {
                 self.talk.recent.asked = false;
+                self.talk.recent.parked.clone_from(parked);
                 match listed {
                     Ok(listed) => {
                         if let Some(list) = &mut self.boxes.sessions {
+                            list.parked.clone_from(parked);
                             list.replace(listed.clone());
                         }
                         self.talk.recent.listed = Some(listed.clone());
@@ -178,6 +182,7 @@ impl App {
         }
         let mut list = SessionList {
             current: self.talk.main_session(),
+            parked: self.talk.recent.parked.clone(),
             ..SessionList::default()
         };
         if let Some(listed) = self.talk.recent.listed.clone() {
