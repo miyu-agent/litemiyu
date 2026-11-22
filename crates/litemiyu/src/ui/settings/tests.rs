@@ -317,6 +317,54 @@ fn the_models_page_has_two_tabs_and_columns_like_miyu() {
     assert!(!text.contains("旗舰池"), "{text}");
 }
 
+/// LM-50（Miyu 核心 FX-19，2026-11-22 项目主人：「已下架的模型就不该出现在列表里，上游的模型列表是什么样子显示就应该是
+/// 什么样子」）：一家报出过自己的模型列表的，「供应商和模型」那一页就照它列，配置里写了资料的、默认模型指到的，列表里没有就
+/// 不列；默认模型的值不在列表里时，在写这个值的地方提示「供应商已不提供此模型」。
+#[test]
+fn a_provider_that_reports_its_list_shows_only_that_and_a_default_outside_it_is_flagged() {
+    let scratch = Scratch::new("withdrawn");
+    let paths = scratch.paths();
+    let config = "[providers.fake]\nbase_url = \"http://127.0.0.1:9/v1\"\nkey = { secret = \"fake\" }\n\n\
+                  [providers.fake.models.\"org/m1\"]\nwindow = 64000\n\n[models]\nchat = \"fake/org/m1\"\n";
+    std::fs::write(paths.config_file(), config).unwrap();
+    lm_engine::providers::lists::store(&paths, "fake", &["only-listed".to_string()]).unwrap();
+    let mut settings = Settings::at(paths, "zh", Outcome::Back).unwrap();
+    settings.show_models();
+    let (text, _) = screen(&settings);
+    assert!(text.contains("only-listed"), "供应商报的那一个：{text}");
+    assert!(
+        !text.contains("org/m1"),
+        "配置里写了、供应商的列表里没有的不列：{text}"
+    );
+    assert!(text.contains("已获取 1 个模型"), "{text}");
+    press(&mut settings, KeyCode::Char('.'));
+    let (text, _) = screen(&settings);
+    assert!(
+        text.contains("当前  fake/org/m1（供应商已不提供此模型）"),
+        "{text}"
+    );
+    // 挑默认模型的窗里也只有供应商报的。
+    press(&mut settings, KeyCode::Enter);
+    let (text, _) = screen(&settings);
+    assert!(text.contains("fake/only-listed"), "{text}");
+    assert!(!text.contains("  fake/org/m1  "), "窗里不列：{text}");
+}
+
+/// 指到一家没配的供应商的默认模型照旧写「不存在」，不说成供应商不提供。
+#[test]
+fn a_default_naming_an_unknown_provider_still_reads_as_missing() {
+    let scratch = Scratch::new("missing-default");
+    let paths = scratch.paths();
+    let config = "[providers.fake]\nbase_url = \"http://127.0.0.1:9/v1\"\nkey = { secret = \"fake\" }\n\n\
+                  [providers.fake.models.\"m1\"]\n\n[models]\nchat = \"nowhere/m9\"\n";
+    std::fs::write(paths.config_file(), config).unwrap();
+    let mut settings = Settings::at(paths, "zh", Outcome::Back).unwrap();
+    settings.show_models();
+    press(&mut settings, KeyCode::Char('.'));
+    let (text, _) = screen(&settings);
+    assert!(text.contains("当前  nowhere/m9（不存在）"), "{text}");
+}
+
 #[test]
 fn the_mcp_page_lists_a_server_with_its_switch_and_state() {
     let scratch = Scratch::new("mcp");

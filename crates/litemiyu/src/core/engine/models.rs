@@ -4,7 +4,7 @@
 //!
 //! 整份目录不常驻：开 `/model` 时临时借一份（`ModelData::hold`，在阻塞线程里），排好就放掉、把堆还给系统。平常的对话不碰。
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use lm_engine::session::{ConfigSource, ModelData};
@@ -158,13 +158,14 @@ impl Engine {
 
 /// 排出 `/model` 的一行行：每一家的模型，照 Miyu 终端 `core/models.rs` 的 `choices`（LM-8 砍了模型池，原来排在最前的池那几行没了）。
 ///
-/// 列哪些（LM-47，Miyu 核心 FX-18，2026-11-22 项目主人：「有这种配置但是模型已经不存在了的话，不应该再出现在列表里」）：
+/// 列哪些（LM-47、LM-50，Miyu 核心 FX-18、FX-19，2026-11-22 项目主人：「已下架的模型就不该出现在列表里，上游的模型列表是
+/// 什么样子显示就应该是什么样子」）：
 ///
-/// - 供应商报得出自己的模型列表的（手上有它列过的、不是空的），以它的列表为准：配置里只写了资料（窗口、价格这类）、目录里
-///   对上这一家的模型，列表里没有的都不列；目录、配置只用来补窗口、价格这些资料。
-/// - 正在用的（新会话默认的聊天模型、看图的模型）例外：列表里没有也照旧列，标上「供应商已经没有这个模型」
-///   （[`ChoiceState::Gone`]），免得正在用的一下子看不见、不知道该换。
-/// - 报不出列表的（没有 `/models`、没拉到过）照旧：配置里写的、目录里的都列。
+/// - 供应商报得出自己的模型列表的（手上有它列过的、不是空的），就照它的列表列，一个不多一个不少：配置里只写了资料（窗口、
+///   价格这类）、目录里对上这一家的模型，列表里没有的都不列；目录、配置只用来补窗口、价格这些资料。正在用的（新会话默认的
+///   聊天模型、看图的模型）也不例外（LM-47 给它们留过例外、标「供应商已经没有这个模型」，LM-50 去掉了）：配置的值不在列表
+///   里时，由显示这个配置值的地方（配置界面「默认模型」一页）提示。
+/// - 报不出列表的（没有 `/models`、没拉到过）照旧：配置里写的、正在用的、目录里的都列。
 pub fn list(resolved: &Resolved, source: &dyn ConfigSource, data: &ModelData) -> Vec<Choice> {
     let values = resolved.values();
     let mut out = Vec::new();
@@ -180,8 +181,7 @@ pub fn list(resolved: &Resolved, source: &dyn ConfigSource, data: &ModelData) ->
             let Ok(found) = provider::provider(&values, knowledge, &id) else {
                 return;
             };
-            // 模型 → 供应商已经没有它了（只有正在用的才会这样还列着）。
-            let mut listed: BTreeMap<String, bool> = BTreeMap::new();
+            let mut listed: BTreeSet<String> = BTreeSet::new();
             let offered = knowledge
                 .lists
                 .get(&id)
@@ -189,38 +189,29 @@ pub fn list(resolved: &Resolved, source: &dyn ConfigSource, data: &ModelData) ->
             match offered {
                 Some(list) => {
                     for model in &list.models {
-                        listed.insert(model.id.clone(), false);
-                    }
-                    for model in used_models(&values, &id) {
-                        listed.entry(model).or_insert(true);
+                        listed.insert(model.id.clone());
                     }
                 }
                 None => {
-                    for model in written_models(&values, &id) {
-                        listed.insert(model, false);
-                    }
-                    for model in used_models(&values, &id) {
-                        listed.insert(model, false);
-                    }
+                    listed.extend(written_models(&values, &id));
+                    listed.extend(used_models(&values, &id));
                     let catalog = found
                         .recognized
                         .as_ref()
                         .zip(knowledge.lookup.as_ref())
                         .and_then(|(recognized, lookup)| lookup.listing(&recognized.provider));
                     if let Some(entry) = &catalog {
-                        for model in entry.models.keys() {
-                            listed.insert(model.clone(), false);
-                        }
+                        listed.extend(entry.models.keys().cloned());
                     }
                 }
             }
-            for (model, gone) in listed {
+            for model in listed {
                 let (facts, _) = facts(resolved, knowledge, &found, &model);
                 let reference = format!("{id}/{model}");
-                let state = match (no_key, gone) {
-                    (true, _) => ChoiceState::NoKey,
-                    (false, true) => ChoiceState::Gone,
-                    (false, false) => ChoiceState::Ok,
+                let state = if no_key {
+                    ChoiceState::NoKey
+                } else {
+                    ChoiceState::Ok
                 };
                 out.push(row(&id, &model, &reference, &facts, state));
             }

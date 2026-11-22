@@ -452,6 +452,7 @@
       "own"
     ],
     "gone": " (gone)",
+    "withdrawn": " (no longer offered by the provider)",
     "options": {
       "": "Inherit default",
       "on": "On",

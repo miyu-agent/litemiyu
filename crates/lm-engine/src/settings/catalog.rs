@@ -235,9 +235,16 @@ impl Catalog {
         })
     }
 
-    /// 配好的 `id` 那一家在配置界面「供应商和模型」那一页列的模型（Miyu `model.list` 的一家）：配置里写了的（连同主对话指到
-    /// 它的那个），这一趟试出来的 `listed`，目录里对上的那一家的（新发布的在前）；一个名字只列一次，每个带资料。推不出这一家
-    /// 的（没地址这类）照写了的、试出来的列，不带资料，原话放在 `problem`。只读。
+    /// 配好的 `id` 那一家在配置界面「供应商和模型」那一页列的模型（Miyu `model.list` 的一家）。只读。
+    ///
+    /// 列哪些（LM-50，Miyu 核心 FX-19，2026-11-22 项目主人：「已下架的模型就不该出现在列表里，上游的模型列表是什么样子显示
+    /// 就应该是什么样子」）：
+    ///
+    /// - 这一家报得出自己的模型列表的（`listed` 不是空的：存下来的、这一趟拉到的），就照它列，一个不多一个不少；配置里写了
+    ///   资料的、主对话指到的、目录里的，列表里没有就不列。
+    /// - 报不出的照旧：配置里写了的（连同主对话指到它的那个），目录里对上的那一家的（新发布的在前）。
+    ///
+    /// 一个名字只列一次，每个带资料。推不出这一家的（没地址这类）不带资料，原话放在 `problem`。
     pub fn offer(
         &self,
         values: &Values,
@@ -254,27 +261,30 @@ impl Catalog {
                 names.push((name, from));
             }
         };
-        for name in
-            lm_kernel::config::key::names(values.keys(), "providers.<id>.models.<model>", &[id])
-        {
-            push(name, "config");
-        }
-        if let Some(chat) = provider::chat(values)
-            && let Some(model) = chat.strip_prefix(&format!("{id}/"))
-        {
-            push(model.to_string(), "config");
-        }
-        for name in listed {
-            push(name.clone(), "provider");
-        }
-        let recognized = found
-            .as_ref()
-            .ok()
-            .and_then(|found| found.recognized.as_ref())
-            .map(|recognized| recognized.provider.clone());
-        if let Some(vendor) = &recognized {
-            for model in self.models(vendor) {
-                push(model.id, "catalog");
+        if listed.is_empty() {
+            for name in
+                lm_kernel::config::key::names(values.keys(), "providers.<id>.models.<model>", &[id])
+            {
+                push(name, "config");
+            }
+            if let Some(chat) = provider::chat(values)
+                && let Some(model) = chat.strip_prefix(&format!("{id}/"))
+            {
+                push(model.to_string(), "config");
+            }
+            let recognized = found
+                .as_ref()
+                .ok()
+                .and_then(|found| found.recognized.as_ref())
+                .map(|recognized| recognized.provider.clone());
+            if let Some(vendor) = &recognized {
+                for model in self.models(vendor) {
+                    push(model.id, "catalog");
+                }
+            }
+        } else {
+            for name in listed {
+                push(name.clone(), "provider");
             }
         }
         let models = names

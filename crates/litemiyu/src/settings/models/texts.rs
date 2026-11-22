@@ -29,6 +29,8 @@ texts! {
         pub tags: [String; 2],
         /// 引用的东西不在了。
         pub gone: String,
+        /// 默认模型的值不在供应商自己的模型列表里时，跟在值后面写的（LM-50）。
+        pub withdrawn: String,
         /// 选项值的名字。
         pub options: BTreeMap<String, String>,
         /// 编辑窗里一项的名字。

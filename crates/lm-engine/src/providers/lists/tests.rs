@@ -119,3 +119,49 @@ fn a_fresh_stored_list_is_not_fetched_again() {
     assert!(!due(&paths, &claims, "relay"), "刚存过的不拉");
     assert!(claims.claim("relay", REFETCH), "没占这一回的「拉过」");
 }
+
+/// LM-50（Miyu 核心 FX-19，2026-11-22 项目主人：「上游的模型列表是什么样子显示就应该是什么样子」）：配置界面的一家，报得出
+/// 列表的就照它列，配置里写了资料的、主对话指到的、目录里的，列表里没有都不列；报不出的照旧。
+#[test]
+fn the_settings_page_offers_exactly_what_the_provider_lists() {
+    use lm_kernel::config::Layer;
+    use lm_kernel::config::merge::{Layers, merge};
+    use lm_kernel::config::parse::parse;
+
+    let scratch = Scratch::new();
+    let paths = Paths::under(scratch.path());
+    let items = crate::configured::items();
+    let text = "[providers.deepseek]\nkey = { env = \"X\" }\n\n[providers.deepseek.models.\"written-only\"]\nwindow = 64000\n\n\
+                [models]\nchat = \"deepseek/in-use\"\n";
+    let parsed = parse(&items, Layer::System, text).unwrap();
+    let layers = Layers {
+        system: Some(&parsed),
+        ..Layers::default()
+    };
+    let resolved = merge(&items, &layers, &|_| None);
+    let values = resolved.values();
+    let catalog = crate::settings::catalog::Catalog::load(&paths).unwrap();
+    let names = |listed: &[String]| -> Vec<(String, &'static str)> {
+        catalog
+            .offer(&values, &resolved, "deepseek", listed)
+            .models
+            .into_iter()
+            .map(|model| (model.name, model.from))
+            .collect()
+    };
+
+    let without = names(&[]);
+    assert!(without.contains(&("written-only".to_string(), "config")));
+    assert!(without.contains(&("in-use".to_string(), "config")));
+    // 这个临时目录里没有模型目录，所以这里看不到目录里的那些；有目录时它们照旧接在后面。
+
+    let listed = ["only-listed".to_string(), "another".to_string()];
+    assert_eq!(
+        names(&listed),
+        [
+            ("only-listed".to_string(), "provider"),
+            ("another".to_string(), "provider")
+        ],
+        "报得出列表的一个不多一个不少，先后照它的"
+    );
+}

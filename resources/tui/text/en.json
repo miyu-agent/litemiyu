@@ -322,7 +322,6 @@
     "loading": "Reading models…",
     "empty": "No matching models",
     "no_key": "no key",
-    "gone": "no longer offered by the provider",
     "refuse_no_key": "This model has no key"
   },
   "undo": {

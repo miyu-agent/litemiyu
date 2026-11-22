@@ -46,11 +46,11 @@ fn opening_the_model_box_fetches_the_list_in_the_background_once() {
     assert_eq!(listed(&server), 1, "一分钟里不再拉");
 }
 
-/// LM-47（Miyu 核心 FX-18，2026-11-22 项目主人：「有这种配置但是模型已经不存在了的话，不应该再出现在列表里」）：供应商报得出
-/// 自己的列表时以它为准——配置里只写了资料、列表里没有的模型不再列；正在用的（默认的聊天模型）列表里没有也照旧列，右边标上
-/// 「供应商已经没有这个模型」。
+/// LM-47、LM-50（Miyu 核心 FX-18、FX-19，2026-11-22 项目主人：「已下架的模型就不该出现在列表里，上游的模型列表是什么样子
+/// 显示就应该是什么样子」）：供应商报得出自己的列表时就照它列——配置里只写了资料、列表里没有的模型不再列；正在用的（默认的
+/// 聊天模型）列表里没有的也一样不列（LM-47 给它留过例外，LM-50 去掉了）。
 #[test]
-fn models_the_provider_no_longer_lists_are_dropped_unless_in_use() {
+fn models_the_provider_no_longer_lists_are_dropped_even_when_in_use() {
     let server = served_listing(r#"{"data":[{"id":"only-listed"}]}"#, vec![]);
     let config = format!(
         "[providers.fake]\ndriver = \"openai-chat\"\nbase_url = \"{}\"\nkey = {{ env = \"LITEMIYU_TEST_KEY\" }}\n\n\
@@ -68,9 +68,20 @@ fn models_the_provider_no_longer_lists_are_dropped_unless_in_use() {
         screen.contains("only-listed") && !screen.contains("written-only")
     });
     let screen = session.screen();
+    // 底栏写着正在用的 `m1 fake`，那不是列表里的一行：只看窗里的（两边有竖线的行）。
+    let rows: Vec<&str> = screen
+        .lines()
+        .filter(|line| line.contains('│'))
+        .filter(|line| line.contains("m1") || line.contains("written-only"))
+        .collect();
     assert!(
-        screen.contains("m1") && screen.contains("供应商已经没有这个模型"),
-        "正在用的照旧列、标出来：{screen}"
+        rows.is_empty(),
+        "列表里只有供应商报的那一个，正在用的 m1 也不列：{rows:?}\n{screen}"
+    );
+    assert!(screen.contains("─ 模型  1 个"), "只有一行：{screen}");
+    assert!(
+        !screen.contains("供应商已经没有这个模型"),
+        "那一格去掉了：{screen}"
     );
 }
 
@@ -98,7 +109,7 @@ fn a_provider_without_a_list_still_shows_what_the_config_names() {
     });
     let screen = session.screen();
     assert!(
-        screen.contains("written-only") && !screen.contains("供应商已经没有这个模型"),
-        "没有列表的照旧：{screen}"
+        screen.contains("written-only") && screen.contains("m1"),
+        "没有列表的照旧，配置里写的、正在用的都列：{screen}"
     );
 }

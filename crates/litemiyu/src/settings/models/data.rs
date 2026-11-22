@@ -35,8 +35,10 @@ pub struct Provider {
     pub driver: Option<String>,
     /// 这一家的 key：引用和设没设；没写 key 的是 `None`。
     pub key: Option<(Reference, bool)>,
-    /// 模型：写了的、这一趟试出来的、目录里的。
+    /// 模型：这一家报得出列表的就是它列的那些；报不出的是配置里写了的、目录里的（`Catalog::offer`）。
     pub models: Vec<Model>,
+    /// 这一家报出过自己的模型列表（存下来的、这一趟拉到的），`models` 就是照它列的。
+    pub reported: bool,
     /// 推不出这一家的原话（没地址这类）。
     pub problem: Option<String>,
 }
@@ -55,7 +57,8 @@ pub struct Model {
 }
 
 impl Data {
-    /// 照 `snapshot` 拼：每家的模型照 `catalog`（没有目录的只列配置里写了的）；`listed` 是这一趟试出来的模型名，照编号。
+    /// 照 `snapshot` 拼：每家的模型照 `catalog`（没有目录的只列配置里写了的）；`listed` 是供应商列出来的模型名（存下来的、
+    /// 这一趟拉到的），照编号。
     pub fn read(
         snapshot: &Snapshot,
         catalog: Option<&Catalog>,
@@ -106,6 +109,7 @@ impl Data {
                     None => (written_models(&values, &id), None),
                 };
                 Provider {
+                    reported: !tried.is_empty(),
                     name: text(&item("name")),
                     driver: text(&item("driver")),
                     base_url,

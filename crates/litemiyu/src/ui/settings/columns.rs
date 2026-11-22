@@ -234,10 +234,16 @@ fn detail(frame: &mut Frame, area: Rect, models: &Models, texts: &ModelTexts) {
     let model = view.model(&reference).map(|(_, m)| m);
     let gone = !reference.is_empty() && model.is_none();
     let now = if gone { theme::error() } else { Style::new() };
-    let shown = if gone {
-        format!("{reference}{}", texts.gone)
-    } else {
-        reference.clone()
+    // 值对不上任何一个列着的模型：那一家报得出自己的列表的，是供应商已经不提供这个模型了（LM-50）；别的（那一家没配、
+    // 报不出列表又哪儿都没写）照旧写「不存在」。
+    let withdrawn = reference
+        .split_once('/')
+        .and_then(|(id, _)| view.provider(id))
+        .is_some_and(|provider| provider.reported);
+    let shown = match (gone, withdrawn) {
+        (true, true) => format!("{reference}{}", texts.withdrawn),
+        (true, false) => format!("{reference}{}", texts.gone),
+        (false, _) => reference.clone(),
     };
     lines.push((texts.detail[0].clone(), Line::styled(shown, now)));
     if let Some(m) = model {

@@ -21,9 +21,6 @@ pub enum ChoiceState {
     Ok,
     /// 写了 key，一个都没有值。
     NoKey,
-    /// 供应商自己的模型列表里已经没有它了，只因为正在用（默认的聊天模型、看图的模型）才还列着（LM-47）：照样能选，标出来
-    /// 让人知道该换。
-    Gone,
 }
 
 impl ChoiceState {
