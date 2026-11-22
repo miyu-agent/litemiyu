@@ -38,7 +38,7 @@
       "icon": "↗"
     },
     "jobs": {
-      "name": "Jobs",
+      "name": "Background jobs",
       "subject": "action",
       "icon": "≡"
     },
@@ -71,7 +71,7 @@
       "icon": "≡"
     },
     "send_message": {
-      "name": "Send message",
+      "name": "Cross-session message",
       "subject": "to",
       "icon": "↗"
     }

@@ -1,5 +1,5 @@
 {
-  "name": "litemiyu",
+  "name": "@NPM_MAIN_NAME@",
   "version": "@VERSION@",
   "description": "Single-process agent harness for the terminal, one static program",
   "license": "AGPL-3.0-or-later",

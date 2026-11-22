@@ -5,7 +5,8 @@
 //!   （每个平台一个的包，照 [`PLATFORMS`] 各填一次）；
 //! - 占位：`@VERSION@` 版本（发版标签去掉 `v`，下载地址照它）、`@PKGVER@` 同一个版本照 pacman 的写法（[`pkgver`]）、
 //!   `@SHA256_LINUX_X86_64@`、`@SHA256_LINUX_AARCH64@`、`@SHA256_MACOS_AARCH64@` 三个发行包 `litemiyu-<版本>-<平台>.tar.gz` 的
-//!   哈希（LM-7）；npm 每个平台的包另有 `@NPM_OS@`、`@NPM_CPU@`（Node.js 的叫法）、`@PLATFORM@`（发行包名里的叫法）；
+//!   哈希（LM-7）；npm 每个平台的包另有 `@NPM_OS@`、`@NPM_CPU@`（Node.js 的叫法）、`@PLATFORM@`（发行包名里的叫法），
+//!   主包另有 `@NPM_MAIN_NAME@`（主包发两个名字，[`NPM_MAINS`]）；
 //! - 填完还有 `@…@` 的、`SHA256SUMS` 里没有那一份的，都报错、不写。
 //!
 //! npm 的包里要放程序，所以只在给了 `--archives <目录>`（放着这次发布的三个压缩包）时才出：每个压缩包先照 `SHA256SUMS` 核对
@@ -33,6 +34,13 @@ pub const PLATFORMS: [(&str, &str, &str); 3] = [
     ("linux-x86_64", "linux", "x64"),
     ("linux-aarch64", "linux", "arm64"),
     ("macos-aarch64", "darwin", "arm64"),
+];
+
+/// npm 主包发两个名字，内容一样：不带前缀的 `litemiyu`，和带组织前缀的 `@miyu-agent/litemiyu`（2026-11-23 项目主人：
+/// `npm install -g @miyu-agent/litemiyu` 也要装得上）。名字、放在 `--out` 的 `npm/` 下哪个目录。
+pub const NPM_MAINS: [(&str, &str); 2] = [
+    ("litemiyu", "litemiyu"),
+    ("@miyu-agent/litemiyu", "litemiyu-scoped"),
 ];
 
 /// npm 主包里原样拷的文件（相对 `packaging/npm/litemiyu/`）和权限。
@@ -145,13 +153,17 @@ fn npm(
     let license = read_bytes(&root.join("LICENSE"))?;
     let mut files = Vec::new();
     let main = packaging.join("npm/litemiyu");
-    let to = out.join("npm/litemiyu");
-    let manifest = fill(&read(&main.join("package.json.in"))?, values)
-        .map_err(|e| format!("npm/litemiyu/package.json.in：{e}"))?;
-    files.push((to.join("package.json"), manifest.into_bytes(), 0o644));
-    files.push((to.join("LICENSE"), license.clone(), 0o644));
-    for (file, mode) in NPM_MAIN {
-        files.push((to.join(file), read_bytes(&main.join(file))?, mode));
+    for (name, dir) in NPM_MAINS {
+        let to = out.join("npm").join(dir);
+        let mut values = values.to_vec();
+        values.push(("NPM_MAIN_NAME", name.to_owned()));
+        let manifest = fill(&read(&main.join("package.json.in"))?, &values)
+            .map_err(|e| format!("npm/litemiyu/package.json.in：{e}"))?;
+        files.push((to.join("package.json"), manifest.into_bytes(), 0o644));
+        files.push((to.join("LICENSE"), license.clone(), 0o644));
+        for (file, mode) in NPM_MAIN {
+            files.push((to.join(file), read_bytes(&main.join(file))?, mode));
+        }
     }
     let work = out.join("unpacked");
     for (platform, os, cpu) in PLATFORMS {
@@ -370,12 +382,27 @@ mod tests {
     fn the_npm_main_package_depends_on_exactly_the_platform_packages() {
         let dir = super::root().join("packaging/npm");
         let values = [("VERSION", "2026.11.0-rc.1".to_owned())];
-        let main = fill(
-            &std::fs::read_to_string(dir.join("litemiyu/package.json.in")).unwrap(),
-            &values,
-        )
-        .unwrap();
-        let main: serde_json::Value = serde_json::from_str(&main).unwrap();
+        // 主包两个名字，除了名字别的一样。
+        let named = |name: &str| -> serde_json::Value {
+            let mut values = values.to_vec();
+            values.push(("NPM_MAIN_NAME", name.to_owned()));
+            let text = fill(
+                &std::fs::read_to_string(dir.join("litemiyu/package.json.in")).unwrap(),
+                &values,
+            )
+            .unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        let main = named("litemiyu");
+        assert_eq!(main["name"], "litemiyu");
+        let mut scoped = named("@miyu-agent/litemiyu");
+        assert_eq!(scoped["name"], "@miyu-agent/litemiyu");
+        scoped["name"] = main["name"].clone();
+        assert_eq!(scoped, main, "两个名字的主包除了名字一字不差");
+        assert_eq!(
+            super::NPM_MAINS.map(|(name, _)| name),
+            ["litemiyu", "@miyu-agent/litemiyu"]
+        );
         let optional = main["optionalDependencies"].as_object().unwrap();
         let script = std::fs::read_to_string(dir.join("litemiyu/lib/platform.js")).unwrap();
         assert_eq!(optional.len(), PLATFORMS.len());

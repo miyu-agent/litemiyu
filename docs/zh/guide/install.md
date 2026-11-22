@@ -159,6 +159,8 @@ brew install miyu-agent/tap/litemiyu
 npm install -g litemiyu
 ```
 
+这个包还有一个带组织前缀的名字 `@miyu-agent/litemiyu`，两个名字的内容相同，用 `npm install -g @miyu-agent/litemiyu` 安装也可以。
+
 `litemiyu` 这个包本身不带程序。程序放在每个平台各一个的包里，npm 只安装对应你这台电脑的那一个：
 
 | 系统 | 包 |

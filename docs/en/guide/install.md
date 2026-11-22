@@ -159,6 +159,8 @@ If you already have Node.js (version 16 or later), you can install with npm:
 npm install -g litemiyu
 ```
 
+The package is also published under a scoped name, `@miyu-agent/litemiyu`. Both names have the same content, so `npm install -g @miyu-agent/litemiyu` works too.
+
 The `litemiyu` package does not contain the program itself. The program lives in one package per platform, and npm installs only the one that matches your machine:
 
 | System | Package |
