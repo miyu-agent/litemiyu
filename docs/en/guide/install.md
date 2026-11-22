@@ -35,6 +35,7 @@ The recommended method for each system:
 | Arch Linux, Arch Linux ARM | [AUR](#arch-linux-aur); if you prefer not to use the AUR, the [Arch package](#arch-package-arch-linux-arch-linux-arm) |
 | macOS (Apple silicon) | [Homebrew](#homebrew-macos-linux), or [download a release package](#download-a-release-package-linux-macos) |
 | Other Linux distributions | [Download a release package](#download-a-release-package-linux-macos); if you already use Homebrew, [Homebrew](#homebrew-macos-linux) works too |
+| Linux or macOS (Apple silicon) with Node.js installed | [npm](#npm) works too |
 | Intel Macs, FreeBSD and other BSDs | [Build from source](#building-from-source) |
 | Windows | Install inside WSL2 the same way as on Linux |
 
@@ -150,6 +151,35 @@ This command adds the [miyu-agent/tap](https://github.com/miyu-agent/homebrew-ta
 
 The installed program is the same file as the one in the release package.
 
+## npm
+
+If you already have Node.js (version 16 or later), you can install with npm:
+
+```bash
+npm install -g litemiyu
+```
+
+The `litemiyu` package does not contain the program itself. The program lives in one package per platform, and npm installs only the one that matches your machine:
+
+| System | Package |
+|---|---|
+| Linux x86_64 | `@miyu-agent/litemiyu-linux-x64` |
+| Linux aarch64 | `@miyu-agent/litemiyu-linux-arm64` |
+| macOS (Apple silicon) | `@miyu-agent/litemiyu-darwin-arm64` |
+
+The installed program is the same file as the one in the release package.
+
+The `litemiyu` command is a short launcher script. On Node.js 22.15 or later it replaces itself with the program, so no Node.js process stays around while LiteMiyu runs; on earlier versions it starts the program as a child process.
+
+Starting with npm 12, installation scripts are not run by default, so you will see an `install scripts blocked` notice during installation. This does not affect use. If you want the `litemiyu` command to be the program itself, with Node.js not involved at startup at all, allow its installation script when installing:
+
+```bash
+npm install -g --allow-scripts=litemiyu litemiyu
+```
+
+- Upgrade: `npm install -g litemiyu@latest`.
+- Uninstall: `npm uninstall -g litemiyu`.
+
 ## Download a release package (Linux, macOS)
 
 1. Download the archive and the checksum file
@@ -217,6 +247,7 @@ LiteMiyu has no automatic updates and no upgrade command. Upgrading means replac
 - deb, rpm, Arch package: download the package of the new version and install it again with the command you used to install it; see the sections above.
 - AUR: it follows your system updates, for example `paru -Syu`.
 - Homebrew: `brew upgrade litemiyu`.
+- npm: `npm install -g litemiyu@latest`.
 - Release package: download the new version and overwrite `~/.local/bin/litemiyu` with `install`, as in step 3 above.
 - Source: run `git pull`, then `cargo build --release -p litemiyu` again, and overwrite the file once more.
 
@@ -234,6 +265,7 @@ If you once put the program into `~/.local/bin` by hand, delete `~/.local/bin/li
     sudo pacman -R litemiyu       # installed from the Arch package
     sudo pacman -R litemiyu-bin   # installed from the AUR
     brew uninstall litemiyu       # installed with Homebrew
+    npm uninstall -g litemiyu     # installed with npm
     rm ~/.local/bin/litemiyu      # installed by hand
     ```
 

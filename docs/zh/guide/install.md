@@ -35,6 +35,7 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 | Arch Linux、Arch Linux ARM | [AUR](#arch-linuxaur)；不想用 AUR 的话安装 [Arch 的包](#arch-的包arch-linuxarch-linux-arm) |
 | macOS（Apple 芯片） | [Homebrew](#homebrewmacoslinux)，或者[下载发行包](#下载发行包linuxmacos) |
 | 其他 Linux 发行版 | [下载发行包](#下载发行包linuxmacos)；已经在用 Homebrew 的话也可以用 [Homebrew](#homebrewmacoslinux) |
+| 已经装了 Node.js 的 Linux、macOS（Apple 芯片） | 也可以用 [npm](#npm) |
 | Intel 芯片的 Mac、FreeBSD 等 BSD | [从源码编译](#从源码编译) |
 | Windows | 在 WSL2 里按照 Linux 的方法安装 |
 
@@ -150,6 +151,35 @@ brew install miyu-agent/tap/litemiyu
 
 安装的程序和发行包里的是同一个文件。
 
+## npm
+
+电脑上已经有 Node.js（16 或更新的版本）的话，可以用 npm 安装：
+
+```bash
+npm install -g litemiyu
+```
+
+`litemiyu` 这个包本身不带程序。程序放在每个平台各一个的包里，npm 只安装对应你这台电脑的那一个：
+
+| 系统 | 包 |
+|---|---|
+| Linux x86_64 | `@miyu-agent/litemiyu-linux-x64` |
+| Linux aarch64 | `@miyu-agent/litemiyu-linux-arm64` |
+| macOS（Apple 芯片） | `@miyu-agent/litemiyu-darwin-arm64` |
+
+安装的程序和发行包里的是同一个文件。
+
+`litemiyu` 命令是一个很短的启动脚本。在 Node.js 22.15 或更新的版本上，它会把自己直接换成程序，运行时不会多留一个 Node.js 进程；在更早的版本上，它把程序作为子进程启动。
+
+npm 12 起默认不运行安装脚本，所以安装时会看到一条 `install scripts blocked` 的提示，这不影响使用。如果想让 `litemiyu` 命令就是程序本身、启动时完全不经过 Node.js，可以在安装时允许它的安装脚本：
+
+```bash
+npm install -g --allow-scripts=litemiyu litemiyu
+```
+
+- 升级：`npm install -g litemiyu@latest`。
+- 卸载：`npm uninstall -g litemiyu`。
+
 ## 下载发行包（Linux、macOS）
 
 1. 下载压缩包和校验文件
@@ -217,6 +247,7 @@ LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一�
 - deb、rpm、Arch 的包：下载新版本的包，用安装时的命令再装一次，见上面各节。
 - AUR：跟着系统更新，例如 `paru -Syu`。
 - Homebrew：`brew upgrade litemiyu`。
+- npm：`npm install -g litemiyu@latest`。
 - 发行包：下载新版本，按照上面的第 3 步用 `install` 覆盖 `~/.local/bin/litemiyu`。
 - 源码：`git pull` 之后重新运行 `cargo build --release -p litemiyu`，再覆盖一次。
 
@@ -234,6 +265,7 @@ LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一�
     sudo pacman -R litemiyu       # 用 Arch 的包安装的
     sudo pacman -R litemiyu-bin   # 用 AUR 安装的
     brew uninstall litemiyu       # 用 Homebrew 安装的
+    npm uninstall -g litemiyu     # 用 npm 安装的
     rm ~/.local/bin/litemiyu      # 手动安装的
     ```
 
