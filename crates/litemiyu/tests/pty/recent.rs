@@ -146,9 +146,23 @@ fn switching_sessions_leaves_the_typed_text_with_its_session() {
         "字不该跟过去：\n{}",
         session.screen()
     );
-    let row = session.row_of(SIDE, "name-three").expect("列着 name-three");
-    session.click(SIDE + 4, row);
-    session.wait_for("answer-three", "切回来了");
+    // macOS 的 CI 上这一下点了没切过去过两次（2026-11-21、11-22，屏幕停在 name-one，本机 40 遍没重现，原因没查清）。
+    // 猜的两种：刚切过去侧边栏还在变高（用量那几行后到），照旧的行号点偏了；或者那一刻的点击没被受理。所以每隔一秒照
+    // 现在的屏幕重新找一次行号再点，直到切回来。
+    let clicked = std::cell::Cell::new(None::<std::time::Instant>);
+    session.wait_until("切回来了（answer-three）", |s| {
+        if s.screen().contains("answer-three") {
+            return true;
+        }
+        let due = clicked
+            .get()
+            .is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(1));
+        if let (true, Some(row)) = (due, s.row_of(SIDE, "name-three")) {
+            s.click(SIDE + 4, row);
+            clicked.set(Some(std::time::Instant::now()));
+        }
+        false
+    });
     session.wait_for("draft-for-three", "切回来字还在");
 }
 
