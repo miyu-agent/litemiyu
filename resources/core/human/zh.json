@@ -23,6 +23,7 @@
     "permissions/unresolvable": "无法确定路径指向的位置：{reason}",
     "commands/loop-fixed": "已开始循环：每 {every} · {text}",
     "commands/loop-dynamic": "已开始循环：由 AI 定下一次 · {text}",
+    "commands/loop-auto": "已开始循环：由 AI 决定执行的内容和下一次运行的时间",
     "commands/loop-off": "已停止此会话的循环和定时触发。",
     "commands/loop-none": "此会话没有循环。",
     "software/basesystem": "基础系统",

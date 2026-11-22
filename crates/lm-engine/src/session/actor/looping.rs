@@ -1,6 +1,8 @@
 //! 循环在 actor 里的那一半（L5 四，`session/looping.rs`）：人开、停（`Handle::start_loop`、`stop_loop`），`schedule_wakeup` 改下一次、
 //! 停（`tools/schedules.rs`），定时器到点了交一条说话的命令进内核。
 //!
+//! 她自己定节奏的循环那一轮结束了没定下一次的结束（LM-44，[`Actor::loop_settled`]）。
+//!
 //! 到点交的照 Miyu 的唤醒表（`miyu-endpoint` 的 `schedules/fire.rs`）：一条 `Send`，`by` 是 `schedule`（带任务编号和循环的
 //! 种类）；照「别处来的话」的规矩收，闲着开一轮，正在跑一轮的排在后面。Miyu 先把下一次写进表再交：这里定时器先换上再交，
 //! 同样她在那一轮里定的下一次不会被盖掉。
@@ -211,7 +213,17 @@ impl Actor {
     /// 送完一批输入（`drain` 的末尾）：欠着一次的、撤回不再能恢复了、会话闲着（`/restore` 恢复完，或者人说的那一轮结束
     /// 了），换上零秒到点的定时器补交这一次（LM-34）。只在送完一批时看一眼，不另起定时器去问：空闲的程序不会因为它被叫醒。
     /// 补交的照到点交（[`Actor::loop_fire`]），时刻是补交的那一刻；固定间隔的从那一刻往后数下一次，不和紧跟着的一次挨着连跑。
+    ///
+    /// 同一刻也看她自己定节奏的循环（LM-44，Miyu 施工 LO-3「不调就停」）：交过了、会话闲下来了、下一次还没定，就是那一轮
+    /// 结束了她没调 `schedule_wakeup`，循环结束。那一轮怎么结束的都算（打断、出错的也是：留着也不会再到点）。
     pub(super) fn loop_settled(&mut self) {
+        if self.looping.unpaced() && self.session.idle() {
+            self.looping.stop();
+            self.show_loop();
+            // 没有推送跟着来，头不会去看循环变了没有：推一批空的叫它看一眼。
+            self.push(Pushed::Events(Vec::new()));
+            return;
+        }
         if !self.looping.held() || self.session.undo_pending() || !self.session.idle() {
             return;
         }

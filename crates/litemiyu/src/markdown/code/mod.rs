@@ -9,25 +9,55 @@ mod lexer;
 mod tests;
 
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
+use serde_json::value::RawValue;
 
 use super::inline::Piece;
 use crate::theme;
 
-/// `code.json` 的样子。
-#[derive(Debug, Clone, Deserialize)]
+/// 代码着色的表（`code.json`，一种语言一条）。拿到手还没读：第一次照名字找时才切成一条条、读出每条的名字，哪一种语言第一次
+/// 用到才解哪一种（LM-43：原来第一次排回答就把整张表解出来留着，堆上约 45 kB，一段对话用到的只有一两种语言）。
+#[derive(Debug, Clone)]
 pub struct Languages {
-    /// 一种语言一条。
-    pub languages: Vec<Language>,
+    /// 整张表的原文（编进程序的那一份）。
+    text: &'static str,
+    /// 切好的一条条。
+    entries: OnceLock<Vec<Entry>>,
+}
+
+/// 表里的一条：名字先读出来，认什么留着原文、第一次用到才解。
+#[derive(Debug, Clone)]
+struct Entry {
+    /// 名字和别名，都转成了小写。
+    names: Vec<String>,
+    /// 这一条的原文。
+    raw: &'static str,
+    /// 解出来的。
+    language: OnceLock<Language>,
+}
+
+/// `code.json` 最外面一层：每一条先不解。
+#[derive(Deserialize)]
+struct Shell<'a> {
+    #[serde(borrow)]
+    languages: Vec<&'a RawValue>,
+}
+
+/// 一条里只读名字。
+#[derive(Deserialize)]
+struct Names {
+    names: Vec<String>,
 }
 
 /// 一种语言认什么。没写的都是不认。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Language {
-    /// 名字和别名，照代码块开头写的那个认，不分大小写。
-    pub names: Vec<String>,
+    /// 名字和别名，照代码块开头写的那个认，不分大小写。找的时候照切表时读好的那一份（[`Languages::find`]），这里只认下这个键。
+    #[serde(rename = "names")]
+    _names: serde::de::IgnoredAny,
     /// 关键字。
     #[serde(default)]
     pub keywords: Vec<String>,
@@ -91,12 +121,75 @@ pub struct Language {
 }
 
 impl Languages {
-    /// 照代码块开头写的语言找；没登记的是 `None`。
+    /// 拿着 `code.json` 的原文，这时不读。
+    pub const fn new(text: &'static str) -> Self {
+        Self {
+            text,
+            entries: OnceLock::new(),
+        }
+    }
+
+    /// 照代码块开头写的语言找；没写语言、没登记的是 `None`。没写语言的不去读表。
+    ///
+    /// # Panics
+    ///
+    /// 编进程序的 `code.json` 读不懂：安装坏了才会有，测试把每一条都解一遍守着（`code/tests.rs`）。
     pub fn find(&self, name: &str) -> Option<&Language> {
         let name = name.trim().to_lowercase();
-        self.languages
+        if name.is_empty() {
+            return None;
+        }
+        let entry = self
+            .entries()
             .iter()
-            .find(|l| l.names.iter().any(|n| n.to_lowercase() == name))
+            .find(|entry| entry.names.contains(&name))?;
+        Some(entry.language.get_or_init(|| {
+            lm_kernel::kernel::json::from_str(entry.raw).expect("编进程序的 code.json 读得懂")
+        }))
+    }
+
+    /// 切好的一条条：第一次要时切。
+    fn entries(&self) -> &[Entry] {
+        self.entries.get_or_init(|| {
+            let shell: Shell<'static> =
+                serde_json::from_str(self.text).expect("编进程序的 code.json 读得懂");
+            shell
+                .languages
+                .into_iter()
+                .map(|raw| {
+                    let names: Names = lm_kernel::kernel::json::from_str(raw.get())
+                        .expect("编进程序的 code.json 读得懂");
+                    Entry {
+                        names: names.names.iter().map(|n| n.to_lowercase()).collect(),
+                        raw: raw.get(),
+                        language: OnceLock::new(),
+                    }
+                })
+                .collect()
+        })
+    }
+
+    /// 表里每一条的头一个名字（测试用）。
+    #[cfg(test)]
+    pub(crate) fn firsts(&self) -> Vec<String> {
+        self.entries()
+            .iter()
+            .filter_map(|entry| entry.names.first().cloned())
+            .collect()
+    }
+
+    /// 解过的有几条（测试用）。
+    #[cfg(test)]
+    pub(crate) fn read(&self) -> usize {
+        self.entries.get().map_or(0, |all| {
+            all.iter().filter(|e| e.language.get().is_some()).count()
+        })
+    }
+
+    /// 切过没有（测试用）。
+    #[cfg(test)]
+    pub(crate) fn opened(&self) -> bool {
+        self.entries.get().is_some()
     }
 }
 

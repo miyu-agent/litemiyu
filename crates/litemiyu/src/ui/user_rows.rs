@@ -25,9 +25,18 @@ pub fn rows(i: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
     if let Some(woke) = entry.woke {
         let text = ctx.config.text();
         let label = match woke {
-            crate::transcript::Woke::Loop => &text.woke_loop,
+            crate::transcript::Woke::Loop | crate::transcript::Woke::Auto => &text.woke_loop,
             crate::transcript::Woke::Once => &text.woke_once,
         };
+        if woke == crate::transcript::Woke::Auto {
+            // 光打 `/loop` 开的（LM-44）：交给模型的那句内置的英文不原样显示，也不能点开看。
+            let shown = Entry {
+                text: text.woke_auto.clone(),
+                open: false,
+                ..entry.clone()
+            };
+            return super::foreign_rows::rows(i, &shown, label, ctx);
+        }
         return super::foreign_rows::rows(i, entry, label, ctx);
     }
     let bar_style = theme::user_bar();

@@ -166,4 +166,47 @@ mod tests {
         assert!(t.entries[second].hidden, "撤回带走到点交进来的那一句");
         assert!(!t.entries[first].hidden);
     }
+
+    /// LM-44（2026-11-22 项目主人）：光打 `/loop` 开的循环到点交进来的是一句内置的英文，正文里写「循环 · 由 AI 自己决定」，
+    /// 点开也不露那句英文；人自己写了同样开头的话的照原话画。
+    #[test]
+    fn an_autonomous_loop_wakeup_does_not_show_the_built_in_words() {
+        use crate::core::{Push, Update};
+        let f = Fixture::new();
+        let mut t = Transcript::default();
+        let texts = f.config.text();
+        let words = lm_engine::schedule::autonomous().expect("编进程序了");
+        for (seq, text) in [(3, format!("{words}\n")), (9, format!("{words} 再看一眼"))] {
+            let woke = Push::Woke {
+                seq,
+                text,
+                looping: true,
+            };
+            t.update(Update::Push(woke), texts);
+            t.update(Update::Push(Push::TurnStarted(seq + 1, Some(seq))), texts);
+        }
+        let bar = f.config.layout.user_bar.trim_end();
+        let (first, second) = (0, t.entries.len() - 1);
+        let drawn = |t: &Transcript, i: usize| {
+            text(&crate::ui::user_rows::rows(i, &t.entries[i], &f.ctx())).join("\n")
+        };
+        assert_eq!(
+            text(&crate::ui::user_rows::rows(
+                first,
+                &t.entries[first],
+                &f.ctx()
+            ))[1],
+            format!("{bar} 循环 · 由 AI 自己决定")
+        );
+        assert!(
+            drawn(&t, second).contains("循环 · No new instructions"),
+            "人自己写的话（后面还有字）照原话画"
+        );
+        t.entries[first].open = true;
+        let opened = drawn(&t, first);
+        assert!(
+            !opened.contains("No new instructions") && opened.contains("由 AI 自己决定"),
+            "点开也不露那句英文：{opened}"
+        );
+    }
 }

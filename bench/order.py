@@ -29,8 +29,9 @@
 3. 地址照程序的符号表换成函数名，照第一次跑到的先后写成清单：启动那一段跑到的自然排在最前，发话那一段新跑到的排在其后，
    日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，herdr 那一段
    新跑到的最后（前面几段的先后不受后面的影响）；
-4. 量启动时读到哪些只读数据（LM-42，`rodata.py`：在 gdb 里起第 1 步那一份，起来、闲下来，记下读到的输入段），写成链接脚本
-   `hot.ld`：这些输入段挨在一起排在只读数据的最前面。要装 gdb；
+4. 量读到哪些只读数据（`rodata.py`：在 gdb 里起第 1 步那一份，记下读到的输入段），写成链接脚本 `hot.ld`：这些输入段挨在
+   一起排在只读数据的最前面。启动时读到的在最前（LM-42：起来、闲下来），说一句话读到的接在后面（LM-43：连本机的 HTTPS
+   假服务器说一句、等回完、闲下来，第一次起、第二次起各一遍）。要装 gdb；
 5. 带着清单和 `hot.ld` 再链一遍。
 
 轨迹不落盘（占用 四）：一段剧本的轨迹有 9 GB 上下，模拟器写进临时目录里的一个命名管道，这边边读边认出跑过的地址（重复的
@@ -236,18 +237,30 @@ def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=T
     return runs
 
 
-def read_data(binary, map_file, catalog):
-    """量启动时读到哪些只读输入段（`rodata.py`），交回 (名字照先后, 每次的说明)。同一个数据目录起两次、各闲下来：第一次是
-    新的数据目录（有配置，缓存里放不放目录同排函数的第一段），第二次是日常起来的样子（有上一次留下的东西）；再用一个没有配置
-    的数据目录起一次（引导）。不说话：说话那一段读到的只读数据占了整段的大半（2026-11-22 量的：排不排都是 760 kB 上下），
-    被拦着走又慢。"""
+# 说话那几次量只读数据（`read_data`）：一次没量成的再试，最多这么多次。被 gdb 拦着走的程序偶尔会走岔（内核替它读只读数据的
+# 那种系统调用会报地址不对，见 `rodata.py`）。
+TRIES = 3
+
+
+def read_data(binary, map_file, catalog, said):
+    """量读到哪些只读输入段（`rodata.py`），交回 (名字照排的先后, 每次的说明)。
+
+    启动那几次（LM-42）：同一个数据目录起两次、各闲下来——第一次是新的数据目录（有配置，缓存里放不放目录同排函数的第一段），
+    第二次是日常起来的样子（有上一次留下的东西）；再用一个没有配置的数据目录起一次（引导）。不说话。
+
+    说话那几次（LM-43，`said` 不空才量）：另一个新的数据目录，连本机的 HTTPS 假服务器（真用的人连供应商走的都是 HTTPS），
+    起来、说一句、等回答画完、闲下来；同一个数据目录再来一次（第二次起）。2026-11-22 量的：说一句话真读到的输入段约 495 kB，
+    没排的时候发过消息在内存里的只读数据是 884 kB（读到的散在整段各处，一处带进一片邻居）。
+
+    排的先后见 `rodata.arrange`：启动读到的在最前，空闲时在内存里的还是那一截。"""
     text = fake_model.generated() if catalog else None
     host = fake_model.REMOTE if catalog else "127.0.0.1"
-    runs, notes = [], []
+    expect = fake_model.WINDOW if catalog else None
+    runs, talked, rests, notes = [], [], [], []
     with tempfile.TemporaryDirectory(prefix="litemiyu-order-") as root:
-        env = scratch(root, fake_model.start(host), catalog=text)
+        env = scratch(os.path.join(root, "first"), fake_model.start(host), catalog=text)
         for _ in range(2):
-            names, note = rodata.read(binary, map_file, env)
+            names, _, note = rodata.read(binary, map_file, env)
             if len(names) < rodata.FEWEST:
                 raise SystemExit(f"量只读数据只读到 {len(names)} 个输入段：没量成")
             runs.append(names)
@@ -256,10 +269,41 @@ def read_data(binary, map_file, catalog):
         fresh = os.path.join(root, "fresh")
         home = os.path.join(fresh, "home")
         os.makedirs(home)
-        names, note = rodata.read(binary, map_file, {"LITEMIYU_HOME": os.path.join(fresh, "data"), "HOME": home})
+        names, _, note = rodata.read(binary, map_file, {"LITEMIYU_HOME": os.path.join(fresh, "data"), "HOME": home})
         runs.append(names)
         notes.append(note)
-    return rodata.merge(runs), notes
+        if said:
+            url, trusted = fake_model.start_tls(os.path.join(root, "tls"), host)
+            secure = scratch(os.path.join(root, "https"), url, trusted, catalog=text)
+            answer = fake_model.ANSWER[-1].encode()
+            for _ in range(2):
+                names, rest, note = talk_read(binary, map_file, secure, said.encode(), answer, expect)
+                talked.append(names)
+                rests.append(rest)
+                notes.append("说话 " + note)
+    names, note = rodata.arrange(runs, talked, rests, rodata.sizes(map_file))
+    return names, notes + [note]
+
+
+def talk_read(binary, map_file, env, said, answer, expect):
+    """说一句话的那一次量只读数据，没量成的再试（`TRIES`）。回答认的是回车以后、假服务器收到这一次请求以后屏幕上来的字。"""
+    for attempt in range(TRIES):
+        before = fake_model.served()
+
+        def drawn(seen, before=before):
+            return fake_model.served() > before and answer in seen and (expect is None or expect in seen)
+
+        try:
+            names, rest, note = rodata.read(binary, map_file, env, said=said, until=drawn)
+        except SystemExit as failed:
+            if attempt + 1 == TRIES:
+                raise
+            print(f"说话那一次量只读数据没量成，再试：{failed}", file=sys.stderr)
+            continue
+        if len(names) < rodata.FEWEST:
+            raise SystemExit(f"说话那一次量只读数据只读到 {len(names)} 个输入段：没量成")
+        return names, rest, note
+    raise SystemExit("说话那一次量只读数据没量成")
 
 
 class Reader:
@@ -457,14 +501,14 @@ def main():
     order, blocks = first_touch(runs, table)
     with open(order_file, "w") as out:
         out.write("\n".join(order) + "\n")
-    hot, notes = read_data(final, map_file, not args.no_catalog)
+    hot, notes = read_data(final, map_file, not args.no_catalog, args.said)
     with open(hot_file, "w") as out:
         out.write(rodata.script(hot))
     # 清单不是 cargo 看着的文件：删掉程序让它重链。deps 里那一份也要删，不然 cargo 只是把它再连回来。
     forget(final)
     cargo(crate, ordered_dir, link, triple)
     no_unwind(final)
-    print(f"启动时读到的只读输入段 {len(hot)} 个排到前面（{'；'.join(notes)}）")
+    print(f"读到的只读输入段 {len(hot)} 个排到前面（{'；'.join(notes)}）")
     print(f"程序里 {len(table)} 个函数，轨迹里 {blocks} 块落在程序里，跑过 {len(order)} 个函数，照先后排到前面")
     print(final)
 

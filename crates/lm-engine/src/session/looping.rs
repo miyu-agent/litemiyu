@@ -8,7 +8,9 @@
 //! - 固定间隔的：开的那一刻先交一次，之后每隔 `every` 秒交一次（Miyu 照上一次往后数整数个间隔、错过的跳过；这里定时器照交的那一刻
 //!   往后数，不会错过）。
 //! - 撤回还能恢复时到点（LM-34，`actor/looping.rs`）：三种都一样，这一次不交，搁着欠一次（[`Looping::held`]），撤回处理了补交。
-//! - 她自己定节奏的：开的那一刻先交一次，交过以后停着等，她调 `schedule_wakeup` 定下一次；不调就一直停着（同 Miyu「停着等」）。
+//! - 她自己定节奏的（`/loop <话>`、光打的 `/loop`）：开的那一刻先交一次，她调 `schedule_wakeup` 定下一次；那一轮结束了她没定
+//!   下一次的，循环结束、标记跟着没了（LM-44，Miyu 施工 LO-3「不调就停」；原来停着等，标记在、循环其实不会再跑）。
+//! - `/stop` 也停掉循环（LM-44，Miyu 施工 LO-2）；挂着的到点继续和循环是同一个定时器，一起停。
 //! - 到点继续（LM-20，Miyu 没有）：没开着循环时她调 `schedule_wakeup` 并写了那句话，挂一个只交一次的（[`LoopRun::once`]）。
 //!   用的是同一个定时器、同一格 [`Looping`]（界面照循环的样子画下一次几点，`/loop off` 停得掉）；到点交过就没了，交进来的话
 //!   照定时任务记（`by` 的 `loop` 不写），不算循环的一轮：她在那一轮里再调一次才有下一次。
@@ -139,6 +141,14 @@ impl LoopRun {
         }
     }
 
+    /// 她自己定节奏的循环交过了、下一次还没定（也没欠着）：会话闲下来时还是这样的，就是那一轮结束了她没定下一次。
+    pub(crate) fn unpaced(&self) -> bool {
+        !self.once
+            && self.now.as_ref().is_some_and(|looping| {
+                looping.pace == Pace::Dynamic && looping.next.is_none() && !looping.held
+            })
+    }
+
     /// 停掉：有的交回真。
     pub(crate) fn stop(&mut self) -> bool {
         self.disarm();
@@ -179,12 +189,18 @@ impl Drop for LoopRun {
 }
 
 /// 载入时一路记的：上一次运行关掉时循环是不是还开着、到点继续是不是还挂着（设计第五节第 9 条）。最后一条循环交进来的话、
-/// 最后一次她用 `schedule_wakeup` 定上以后，没有人敲过 `/loop`（`command.ran` 的 `loop`，重开时写的那一行也是它）、她也没用
-/// `schedule_wakeup` 停掉、挂着的到点继续也没交过的，算还开着：窗口关了它跟着停了，要写一行告诉人。
+/// 最后一次她用 `schedule_wakeup` 定上以后，没有人敲过 `/loop`、`/stop`（`command.ran`，重开时写的那一行也是 `loop`）、她也没用
+/// `schedule_wakeup` 停掉、挂着的到点继续也没交过的，算还开着：窗口关了它跟着停了，要写一行告诉人。她自己定节奏的循环交过
+/// 一句以后有一轮结束了、她没定下一次的，那时循环已经自己结束（LM-44），不算还开着。
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Trail {
     left: bool,
+    /// 她自己定节奏的循环交过一句，她还没定下一次。
+    unpaced: bool,
 }
+
+/// `/stop` 记的命令名（`command.ran` 的 `command`）：它也停掉循环（LM-44）。
+const STOP_COMMAND: &str = "stop";
 
 impl Trail {
     /// 记一条。
@@ -194,14 +210,29 @@ impl Trail {
             Body::MessageUser(_) => {
                 if let By::Schedule(schedule) = &event.by {
                     self.left = schedule.looping.is_some();
+                    self.unpaced = schedule.looping == Some(ScheduleLoop::Dynamic);
                 }
             }
-            Body::CommandRan(ran) if ran.command == COMMAND => self.left = false,
+            Body::CommandRan(ran) if ran.command == COMMAND || ran.command == STOP_COMMAND => {
+                self.left = false;
+                self.unpaced = false;
+            }
             Body::ToolResult(result) => match result.human.as_ref().map(|said| said.key.as_str()) {
-                Some(STOPPED_KEY) => self.left = false,
-                Some(SET_KEY) => self.left = true,
+                Some(STOPPED_KEY) => {
+                    self.left = false;
+                    self.unpaced = false;
+                }
+                Some(SET_KEY) => {
+                    self.left = true;
+                    self.unpaced = false;
+                }
                 _ => {}
             },
+            // 一轮结束了她还没定下一次：循环那时自己结束了。
+            Body::TurnEnded(_) if self.unpaced => {
+                self.left = false;
+                self.unpaced = false;
+            }
             _ => {}
         }
     }

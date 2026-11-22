@@ -495,6 +495,10 @@ pub(super) const FILES: &[(&str, &str)] = &[
         include_str!("../../../../../resources/software/basesystem/write/updated.txt"),
     ),
     (
+        "software/loop/autonomous.txt",
+        include_str!("../../../../../resources/software/loop/autonomous.txt"),
+    ),
+    (
         "software/loop/common/bad-args.txt",
         include_str!("../../../../../resources/software/loop/common/bad-args.txt"),
     ),

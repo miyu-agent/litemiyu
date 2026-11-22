@@ -251,7 +251,13 @@ async fn dynamic(how: Settle) {
             (Some(ScheduleLoop::Dynamic), "盯 CI".to_string()),
         ]
     );
-    assert!(!handle.looping().expect("循环开着").held, "不再搁着");
+    // 补交的那一轮她没再定下一次：循环结束（LM-44），不搁着、也不挂着。
+    within("循环结束", async {
+        while handle.looping().is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
     stop(&handle).await;
 }
 

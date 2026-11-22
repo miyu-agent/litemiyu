@@ -512,7 +512,18 @@ impl Engine {
             });
             return;
         }
-        let typed = format!("/loop {}", words.trim());
+        // 光打的 `/loop` 交进去的那一句先读：读不出的什么都不动，原来的循环还在（同 Miyu）。
+        let autonomous = match asked {
+            lm_engine::schedule::Asked::Autonomous => match lm_engine::schedule::autonomous() {
+                Ok(words) => Some(words),
+                Err(error) => {
+                    self.report(Update::Failed(error.to_string()));
+                    return;
+                }
+            },
+            _ => None,
+        };
+        let typed = looping::typed(words);
         let ran = Kernel::Ran {
             text: typed.clone(),
             command: "loop".to_string(),
@@ -530,6 +541,10 @@ impl Engine {
             lm_engine::schedule::Asked::Dynamic { prompt } => {
                 session.start_loop(None, (*prompt).to_string(), typed).await
             }
+            lm_engine::schedule::Asked::Autonomous => {
+                let prompt = autonomous.unwrap_or_default().to_string();
+                session.start_loop(None, prompt, typed).await
+            }
         };
         // 会话停了的：没处可开，也没处可报。
         if let Ok(stopped) = done {
@@ -539,9 +554,16 @@ impl Engine {
         }
     }
 
-    /// `/stop`（Miyu 核心的 `commands/basic.rs`）：打断这一轮，排着的话留着；没有在进行的回合照样往下。子代理、后台命令
-    /// 还没搬（L5），没有要停的。最后记一条 `command.ran`，界面照它把留着的排队话放进正文。没有会话的不发。
+    /// `/stop`（Miyu 核心的 `commands/basic.rs`）：先停掉这个会话的循环和挂着的定时触发（LM-44，Miyu 施工 LO-2：全停的时候
+    /// 循环也停，不然打断了这一轮、到点又来一轮），再打断这一轮，排着的话留着；没有在进行的回合照样往下。最后记一条
+    /// `command.ran`，界面照它把留着的排队话放进正文，下次载入照它认循环已经停了（`looping::Trail`）。没有会话的不发。
     async fn stop(&mut self) {
+        if let Some(session) = self.session.clone()
+            && session.stop_loop().await.is_ok()
+        {
+            // 停掉的没有推送跟着来：当场交一次，输入框上面那一行的标记跟着没了。
+            self.report(Update::LoopNow(session.looping()));
+        }
         let interrupt = Kernel::Interrupt {
             queued: Queued::Keep,
         };

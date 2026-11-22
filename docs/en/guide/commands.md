@@ -120,7 +120,7 @@ The file contains your messages and the AI's replies, with one line for each com
 
 ### /stop
 
-Stops everything running in this session: the current turn, background commands and subagents. Messages still queued are kept and not sent. To interrupt only the current turn, pressing `Esc` twice is enough.
+Stops everything running in this session: the current turn, background commands and subagents. This session's loop and scheduled continuation stop as well. Messages still queued are kept and not sent. To interrupt only the current turn, pressing `Esc` twice is enough.
 
 ## Context
 
@@ -148,7 +148,8 @@ Has the AI do the same thing repeatedly at some pace:
 |---|---|
 | `/loop <interval> <prompt>` | Sends the prompt at a fixed interval, for example `/loop 5m check whether the build has finished` |
 | `/loop <prompt>` | Lets the AI pick when to run next |
-| `/loop off` | Stops this session's loops |
+| `/loop` | No prompt: the AI decides what to do and when |
+| `/loop off` | Stops this session's loops; `/loop clear` and `/loop stop` do the same |
 
 See [Subagents, cross-session messages and loops](agents.md#loops-loop). Sessions with no features do not have this command.
 

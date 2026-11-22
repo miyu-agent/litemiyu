@@ -22,6 +22,7 @@
   "loop_stopped": "上次关闭窗口时循环和定时触发已停止，输入 /loop 可以重新开始循环",
   "loop_held": "循环在等撤回处理",
   "woke_loop": "循环",
+  "woke_auto": "由 AI 自己决定",
   "woke_once": "定时触发",
   "refused": "无法完成操作：{reason}",
   "editing": " 编辑上一条 · Esc 取消 ",

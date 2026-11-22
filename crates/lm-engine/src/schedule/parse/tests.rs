@@ -3,8 +3,36 @@
 use super::*;
 
 #[test]
+fn nothing_after_it_is_autonomous() {
+    assert_eq!(parse(""), Ok(Asked::Autonomous));
+    assert_eq!(parse("  \n "), Ok(Asked::Autonomous), "只有空白也是");
+    assert_eq!(parse("5m"), Err(BadLoop), "只写了间隔没写话的照旧参数不对");
+    assert_eq!(parse("every 5m"), Err(BadLoop));
+}
+
+#[test]
+fn the_autonomous_words_are_the_shipped_ones() {
+    let words = crate::schedule::autonomous().expect("编进程序了");
+    assert_eq!(
+        words,
+        include_str!("../../../../../resources/software/loop/autonomous.txt").trim_end()
+    );
+    assert!(!words.is_empty() && !words.ends_with('\n'));
+}
+
+#[test]
 fn off_alone_stops_the_loops() {
     assert_eq!(parse("off"), Ok(Asked::Off));
+    for word in ["clear", "stop", "OFF", " Stop ", "Clear"] {
+        assert_eq!(parse(word), Ok(Asked::Off), "{word} 同 off");
+    }
+    assert_eq!(
+        parse("stop the build"),
+        Ok(Asked::Dynamic {
+            prompt: "stop the build"
+        }),
+        "带字的整句是要说的话"
+    );
     assert_eq!(
         parse("off the record"),
         Ok(Asked::Dynamic {
@@ -85,13 +113,6 @@ fn without_an_interval_it_is_dynamic() {
             prompt: "5 minutes then check"
         })
     );
-}
-
-#[test]
-fn nothing_or_only_an_interval_is_bad() {
-    assert_eq!(parse(""), Err(BadLoop));
-    assert_eq!(parse("5m"), Err(BadLoop));
-    assert_eq!(parse("every 5m"), Err(BadLoop));
 }
 
 #[test]

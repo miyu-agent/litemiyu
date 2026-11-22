@@ -212,10 +212,20 @@
       "run": "loop",
       "args": true,
       "argument": {
-        "zh": "[<间隔>] <要说的话> | off",
-        "en": "[<interval>] <prompt> | off"
+        "zh": "[[<间隔>] <要说的话> | off]",
+        "en": "[[<interval>] <prompt> | off]"
       },
       "usage": [
+        [
+          {
+            "zh": "/loop",
+            "en": "/loop"
+          },
+          {
+            "zh": "不指定内容：由 AI 决定执行的内容和时间",
+            "en": "No prompt: let the AI decide what to do and when"
+          }
+        ],
         [
           {
             "zh": "/loop <间隔> <要说的话>",
@@ -242,8 +252,8 @@
             "en": "/loop off"
           },
           {
-            "zh": "停止此会话的循环",
-            "en": "Stop this session's loops"
+            "zh": "停止此会话的循环（也可以使用 clear、stop）",
+            "en": "Stop this session's loops (clear or stop works too)"
           }
         ]
       ]

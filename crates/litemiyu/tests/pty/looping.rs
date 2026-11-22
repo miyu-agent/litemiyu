@@ -43,6 +43,57 @@ fn a_loop_runs_once_at_once_shows_its_next_time_and_stops() {
     );
 }
 
+/// LM-44（2026-11-22 项目主人：「我 /loop 会提示参数错误而不是直接发一个 /loop 出去」）：光打 `/loop` 开一个由 AI 自己
+/// 决定的循环。回执照 Miyu 的字，正文里照你敲的画 `/loop`，交给模型的是出厂的那一句；她这一轮没定下一次，循环结束，
+/// 输入框上面那一行不留标记。
+#[test]
+fn a_bare_loop_lets_the_ai_decide_and_ends_when_she_schedules_nothing() {
+    let server = served(vec![says(&["先看了一眼，没有要做的。"])]);
+    let session = Session::start(&server.base_url, &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("/loop");
+    session.press_enter();
+    session.wait_for(
+        "已开始循环：由 AI 决定执行的内容和下一次运行的时间",
+        "光打的回执",
+    );
+    session.wait_for("先看了一眼，没有要做的。", "交进去的那一句她回了");
+    let screen = session.screen();
+    assert!(
+        !screen.contains("命令的参数不正确") && !screen.contains("No new instructions"),
+        "不是参数错误，正文里也不露那句内置的英文：{screen}"
+    );
+    session.wait_until("回执收了", |s| !s.screen().contains("已开始循环"));
+    assert!(
+        !session.screen().contains('\u{f017}'),
+        "她没定下一次：循环结束，标记不留着"
+    );
+    let first = String::from_utf8_lossy(&server.received()[0]).into_owned();
+    assert!(
+        first.contains("No new instructions. Continue on your own judgment"),
+        "交给模型的是出厂的那一句：{first}"
+    );
+}
+
+/// LM-44（2026-11-22 项目主人：「开启 loop 后，我没法 /stop 清理掉」）：`/stop` 一并停掉循环，输入框上面那一行的标记跟着
+/// 没了；再 `/loop off` 答的是「没有循环」。
+#[test]
+fn stop_also_stops_the_loop() {
+    let server = served(vec![says(&["CI 还在跑。"])]);
+    let session = Session::start(&server.base_url, &[]);
+    session.wait_for("❯", "输入框");
+    session.type_text("/loop 5m 看看 CI");
+    session.press_enter();
+    session.wait_for("CI 还在跑。", "交进去的那一句她回了");
+    session.wait_for("\u{f017} ", "输入框上面那一行的记号");
+    session.type_text("/stop");
+    session.press_enter();
+    session.wait_until("标记没了", |s| !s.screen().contains('\u{f017}'));
+    session.type_text("/loop off");
+    session.press_enter();
+    session.wait_for("此会话没有循环。", "循环已经被 /stop 停掉了");
+}
+
 #[test]
 fn stopping_without_a_session_says_there_is_none() {
     let server = served(Vec::new());

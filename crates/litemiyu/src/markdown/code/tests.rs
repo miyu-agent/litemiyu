@@ -6,7 +6,42 @@ use super::{Highlighter, Languages};
 use crate::theme;
 
 fn languages() -> Languages {
-    serde_json::from_str(include_str!("../../../../../resources/tui/code.json")).unwrap()
+    Languages::new(include_str!("../../../../../resources/tui/code.json"))
+}
+
+/// 编进程序的那一份（去过空白的）每一条都解得出来：表是用到哪种语言才解哪种，坏的那一条平常碰不到。
+#[test]
+fn every_language_in_the_shipped_table_reads() {
+    let langs = Languages::new(tui_json!("code.json"));
+    let firsts = langs.firsts();
+    assert!(firsts.len() > 10, "表里有几十种语言：{firsts:?}");
+    for name in &firsts {
+        assert!(langs.find(name).is_some(), "{name} 找得到");
+    }
+    assert_eq!(langs.read(), firsts.len(), "每一条都解过了");
+    assert_eq!(
+        firsts,
+        languages().firsts(),
+        "和仓库里没去空白的那一份是同一张表"
+    );
+}
+
+/// 用到哪种语言才解哪种（LM-43）：没写语言的不读表，没登记的只切开不解，找到的只解那一条；别名、大小写照旧认。
+#[test]
+fn only_the_language_in_use_is_read() {
+    let langs = languages();
+    assert!(langs.find("").is_none() && langs.find("  ").is_none());
+    assert!(!langs.opened(), "没写语言的代码块不读表");
+    assert!(langs.find("no-such-language").is_none());
+    assert!(langs.opened());
+    assert_eq!(langs.read(), 0, "没登记的语言一条都不解");
+    let rust = langs.find("Rust").expect("rust 在表里");
+    assert!(rust.macros && rust.attributes, "解出来的是 Rust 那一条");
+    assert!(std::ptr::eq(
+        rust,
+        langs.find(" rs ").expect("别名也找得到")
+    ));
+    assert_eq!(langs.read(), 1, "只解了用到的那一种");
 }
 
 /// 一段代码照 `lang` 逐行着色，交回每一段的字和样子；顺手查一个字都不丢。

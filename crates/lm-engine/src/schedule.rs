@@ -20,6 +20,17 @@ pub use parse::{Asked, BadLoop, parse};
 /// 字放在 `resources/software/loop` 下，也是给人看的字的键 `software/loop/…` 的那一段：日志里存着。
 pub const SOFTWARE: &str = "loop";
 
+/// 光打 `/loop` 交进去的那一句（`software/loop/autonomous.txt`，原文同 Miyu 施工 LO-1，去掉行尾空白）：和 `/loop <话>` 一样是
+/// 她自己定节奏的循环，只是交进去的不是人写的话。每次到点交的、记进日志的都是这句原文；界面照它认出这种循环，正文里不原样
+/// 显示它（2026-11-22 项目主人）。
+///
+/// # Errors
+///
+/// 程序里没有这一份、是空的（安装坏了才会有，测试守着）。
+pub fn autonomous() -> Result<&'static str, LoadError> {
+    crate::tool::load::plain(SOFTWARE, "autonomous")
+}
+
 /// 这一组的工具：只有 `schedule_wakeup`。
 ///
 /// # Errors

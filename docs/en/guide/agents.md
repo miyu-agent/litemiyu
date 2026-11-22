@@ -133,7 +133,15 @@ Without an interval, the AI decides after each run when to come back (at least 1
 
 The `/loop` line you typed is shown in the conversation exactly as you typed it, the same way as your other messages, and the AI runs it right away.
 
-Each later run adds one dim line to the conversation with the words the loop handed to the AI, for example `Loop · check the time`. A long line is cut short; click it to read the whole text.
+### No prompt
+
+```text
+/loop
+```
+
+With `/loop` alone and nothing after it, the AI decides both what to do and when to come back, based on what is already in this session. You see `Loop started: the AI decides what to do and when to run next`. As with the previous form, the loop ends when the AI schedules no further run, and the time above the input box disappears.
+
+Each later run adds one dim line to the conversation with the words the loop handed to the AI, for example `Loop · check the time`. A long line is cut short; click it to read the whole text. A loop started without a prompt shows `Loop · decided by the AI`.
 
 ### Viewing and stopping
 
@@ -144,7 +152,7 @@ While a loop is running, the time of the next run is shown above the input box o
 - If you run `/loop` right after an `/undo` that could still be brought back with `/restore`, it counts as you saying something new: the loop runs its first time right away, and the undone turn can no longer be restored. `/restore` then says `Nothing to restore`.
 - If a loop is already running and you `/undo` a turn before its next run is due, that run is held back: nothing is sent and nothing is written to the conversation, and the right side above the input box says `Loop waiting on undo`. Once you say something and that turn finishes, or once you run `/restore`, the loop makes up that run, only once however many times it came due meanwhile, and then carries on at its usual pace. A scheduled continuation behaves the same way.
 
-Run `/loop off` to stop it; you see `Stopped this session's loops and scheduled continuations.`.
+Run `/loop off` to stop it; you see `Stopped this session's loops and scheduled continuations.`. `/loop clear` and `/loop stop` do the same. `/stop` stops the loop and any scheduled continuation along with the current turn.
 
 > Loops only run while the window is open. Closing the window stops the loop, and the next time you open the session it says `Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again`. For scheduled tasks that keep running with the window closed, use [Miyu](https://github.com/miyu-agent/miyu).
 
@@ -161,7 +169,7 @@ The time is then shown above the input box on the right, the same way a loop is 
 - The delay is at least 1 minute.
 - A session has one scheduled continuation at a time; when the AI schedules again, the new one replaces the old one.
 - If the AI is in the middle of a turn when the time comes, the prompt is queued and handed to the AI at the next step of that turn, without interrupting what it is doing.
-- Pressing `Esc` to interrupt the current reply does not cancel the scheduled continuation. To cancel it, run `/loop off` or ask the AI to cancel it.
+- Pressing `Esc` to interrupt the current reply does not cancel the scheduled continuation. To cancel it, run `/loop off` or `/stop`, or ask the AI to cancel it.
 - Subagents and `litemiyu ask` cannot schedule a continuation, because they end as soon as they have answered.
 
 > Like loops, a scheduled continuation only works while the window is open, because LiteMiyu has no process that stays in the background. Closing the window, or switching to another session in this window, cancels it and it will not run; the next time you open the session it says `Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again`. If you still need it, ask the AI to schedule it again.

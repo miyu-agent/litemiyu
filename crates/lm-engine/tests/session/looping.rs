@@ -116,7 +116,7 @@ async fn a_self_paced_loop_wakes_when_she_says_and_stops_when_she_does_not() {
         // 开的那一刻交的一轮：她定十分钟以后再看。
         Play::calls(&[("schedule_wakeup", wakeup)]),
         Play::Says("十分钟以后再看。"),
-        // 到点叫醒的一轮：她不再定，循环停着。
+        // 到点叫醒的一轮：她不再定，循环结束（LM-44）。
         Play::Says("CI 绿了。"),
     ]);
     let handle = home.create_with(&models, &catalog()).await;
@@ -154,11 +154,13 @@ async fn a_self_paced_loop_wakes_when_she_says_and_stops_when_she_does_not() {
             && woken.contains("Call schedule_wakeup to continue the loop."),
         "到点交进来的话包着循环的标签：{woken}"
     );
-    assert_eq!(
-        handle.looping().and_then(|looping| looping.next),
-        None,
-        "那一轮没再定，停着等"
-    );
+    within("循环结束", async {
+        while handle.looping().is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert_eq!(handle.looping(), None, "那一轮没再定：循环结束，不再挂着");
 }
 
 #[tokio::test]

@@ -409,7 +409,14 @@ impl Transcript {
             Push::EffortSet(level) => self.own_effort_set(level),
             Push::Said { seq, text } => self.said(seq, text),
             Push::Woke { seq, text, looping } => {
-                let woke = if looping { Woke::Loop } else { Woke::Once };
+                // 光打 `/loop` 开的循环交进来的是出厂的那一句（LM-44）：照原文认出来。
+                let auto = looping
+                    && lm_engine::schedule::autonomous().is_ok_and(|words| words == text.trim());
+                let woke = match (looping, auto) {
+                    (_, true) => Woke::Auto,
+                    (true, false) => Woke::Loop,
+                    (false, false) => Woke::Once,
+                };
                 self.woke(seq, text, woke);
             }
             Push::Images { seq, files } => self.images(seq, files, &texts.image_label),

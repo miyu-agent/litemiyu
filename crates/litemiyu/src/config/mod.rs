@@ -115,6 +115,9 @@ texts! {
         pub loop_held: String,
         /// 循环到点交进来的那一句前面的字（LM-41）：正文里写「循环 · 那句话」。
         pub woke_loop: String,
+        /// 光打 `/loop` 开的循环到点交进来的那一句写成的字（LM-44）：交给模型的是一句内置的英文，正文里不原样显示，写
+        /// 「循环 · 由 AI 自己决定」。
+        pub woke_auto: String,
         /// AI 自己定的到点继续交进来的那一句前面的字。
         pub woke_once: String,
         /// 一条请求被拒，`{reason}` 是核心说的原因。
@@ -225,8 +228,8 @@ pub struct Config {
     pub commands: Commands,
     /// 时间线的样子。
     pub timeline: Timeline,
-    /// 代码着色：每种语言的关键字、注释记号。第一次排 Markdown 时才读（[`Config::languages`]）。
-    languages: OnceLock<Languages>,
+    /// 代码着色：每种语言的关键字、注释记号。拿着原文，哪一种语言第一次用到才解哪一种（[`Languages::find`]）。
+    languages: Languages,
     /// `<sup>`、`<sub>` 的上下标字符：比代码着色的表还晚，排到这两种标签那一刻才读（[`ScriptTable`]）。
     scripts: ScriptTable,
     /// 运行状态行的词库。
@@ -277,7 +280,7 @@ impl Config {
                 &table,
             )?,
             timeline: parse("timeline.json", tui_json!("timeline.json"))?,
-            languages: OnceLock::new(),
+            languages: Languages::new(tui_json!("code.json")),
             scripts: ScriptTable::default(),
 
             pulse: localized("pulse.json", tui_json!("pulse.json"), language, &table)?,
@@ -374,15 +377,10 @@ pub fn why_table(code: &str) -> Result<crate::human::why::Table, String> {
 }
 
 impl Config {
-    /// 代码着色的表：第一次要时才读（`docs/00-设计.md` 第七节「守红线要做的」第 1 条：启动只做画第一屏要的事）。
-    ///
-    /// # Panics
-    ///
-    /// 编进程序的 `code.json` 读不懂：安装坏了才会有，测试守着（`config/tests.rs`）。
-    pub fn languages(&self) -> &Languages {
-        self.languages.get_or_init(|| {
-            parse("code.json", tui_json!("code.json")).expect("编进程序的 code.json 读得懂")
-        })
+    /// 代码着色的表：拿到手还没读，排到带语言的代码块那一刻才读用到的那一种（[`Languages::find`]；
+    /// `docs/00-设计.md` 第七节「守红线要做的」第 1 条：启动只做画第一屏要的事）。
+    pub const fn languages(&self) -> &Languages {
+        &self.languages
     }
 
     /// 上下标字符的表：拿到手还没读，排到 `<sup>`、`<sub>` 那一刻才读（[`ScriptTable::get`]）。

@@ -96,6 +96,63 @@ fn a_loop_command_or_the_model_stopping_it_settles_it() {
     assert!(!left(&[fired(1, Some("dynamic")), stopped]));
 }
 
+/// LM-44：`/stop` 也停掉循环；她自己定节奏的循环交过一句、那一轮结束了没定下一次的，循环那时已经自己结束。
+#[test]
+fn a_stop_command_or_an_unpaced_turn_ending_settles_it() {
+    let stop = event(
+        2,
+        "command.ran",
+        PERSON,
+        r#"{"text":"/stop","command":"stop"}"#,
+    );
+    assert!(!left(&[fired(1, Some("fixed")), stop]), "/stop 停掉了");
+    let ended = |seq| event(seq, "turn.ended", KERNEL, r#"{"reason":"completed"}"#);
+    assert!(
+        !left(&[fired(1, Some("dynamic")), ended(2)]),
+        "那一轮结束了她没定下一次：循环自己结束了"
+    );
+    let set = event(
+        2,
+        "tool.result",
+        r#"{"kind":"tool","call_id":"call_2_1"}"#,
+        r#"{"call_id":"call_2_1","status":"ok","blocks":[],"human":{"key":"software/loop/wakeup/set","fields":{}}}"#,
+    );
+    assert!(
+        left(&[fired(1, Some("dynamic")), set, ended(3)]),
+        "她定了下一次的照旧开着"
+    );
+    assert!(
+        left(&[fired(1, Some("fixed")), ended(2)]),
+        "固定间隔的不看她定不定"
+    );
+}
+
+#[test]
+fn an_unpaced_run_is_a_self_paced_loop_that_fired_and_waits() {
+    let at = lm_kernel::kernel::time::Timestamp::parse("2026-11-12T01:00:00.000Z").expect("合写法");
+    let mut run = LoopRun::default();
+    assert!(!run.unpaced(), "没有循环");
+    run.start(Pace::Dynamic, "盯着".to_string(), at);
+    assert!(!run.unpaced(), "还没交：下一次就是现在");
+    if let Some(looping) = run.now.as_mut() {
+        looping.next = None;
+    }
+    assert!(run.unpaced(), "交过了，她还没定");
+    run.hold();
+    assert!(!run.unpaced(), "欠着一次的等撤回处理");
+    run.release();
+    run.start(Pace::Fixed { every: 60 }, "看".to_string(), at);
+    if let Some(looping) = run.now.as_mut() {
+        looping.next = None;
+    }
+    assert!(!run.unpaced(), "固定间隔的不算");
+    run.start_once("到点".to_string(), at);
+    if let Some(looping) = run.now.as_mut() {
+        looping.next = None;
+    }
+    assert!(!run.unpaced(), "到点继续的不算");
+}
+
 #[tokio::test]
 async fn an_old_timer_is_not_due() {
     let mut run = LoopRun::default();

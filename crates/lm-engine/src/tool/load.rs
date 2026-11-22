@@ -146,6 +146,22 @@ fn text_file(package: &str, tool: &str, name: &str) -> String {
     format!("software/{package}/{tool}/{name}.txt")
 }
 
+/// 软件包 `package` 下直接放着的一句 `name`（`software/<软件包>/<名字>.txt`）的原文，去掉行尾空白：不当模板读，原样交。
+///
+/// # Errors
+///
+/// 程序里没有这一份；是空的。
+pub fn plain(package: &str, name: &str) -> Result<&'static str, LoadError> {
+    let file = format!("software/{package}/{name}.txt");
+    match read(&file)?.trim_end() {
+        "" => Err(LoadError {
+            file: PathBuf::from(&file),
+            why: "empty".to_string(),
+        }),
+        text => Ok(text),
+    }
+}
+
 /// 编进程序的一份。
 fn read(file: &str) -> Result<&'static str, LoadError> {
     super::shipped::get(file).ok_or_else(|| LoadError {

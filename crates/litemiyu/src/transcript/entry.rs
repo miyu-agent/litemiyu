@@ -28,6 +28,8 @@ pub enum Kind {
 pub enum Woke {
     /// 循环的一次。
     Loop,
+    /// 光打 `/loop` 开的循环的一次（LM-44）：交进来的是出厂的那一句英文，正文里写成「由 AI 自己决定」。
+    Auto,
     /// AI 自己定的到点继续。
     Once,
 }

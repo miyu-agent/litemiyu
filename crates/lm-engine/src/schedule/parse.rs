@@ -4,7 +4,8 @@
 //! - `/loop <间隔> <话>`、`/loop <话> every <间隔>`、`/loop every <间隔> <话>`：固定间隔。间隔写 `30s`、`5m`、`2h`、`1d`，不到
 //!   [`WAKEUP_MIN`] 秒的照它。
 //! - `/loop <话>`：动态，她每轮自己调 `schedule_wakeup` 定下一次，不调就停。
-//! - `/loop off`：停掉这个会话的循环。
+//! - 光打 `/loop`：自主（Miyu 施工 LO-1，LM-44）。同动态，交进去的是出厂的那一句（[`super::autonomous`]）。
+//! - `/loop off`：停掉这个会话的循环；单独一个 `clear`、`stop` 同它，大小写不论（Miyu 施工 LO-3）。
 
 use std::fmt;
 
@@ -25,11 +26,17 @@ pub enum Asked<'a> {
         /// 每次交进去的话。
         prompt: &'a str,
     },
+    /// 自主：光打 `/loop`，同动态，说的是出厂的那一句（[`super::autonomous`]）。
+    Autonomous,
     /// 停掉这个会话的循环。
     Off,
 }
 
-/// 参数不对：什么都没写，或者只写了间隔没写话（Miyu 回 `bad_params`）。
+/// 单独一个就是关掉循环的词（Miyu 施工 LO-3，项目主人 2026-11-16 定 `clear`、`stop` 同 `off`）：大小写不论；后面带了字的是
+/// 要说的话。
+const OFF: [&str; 3] = ["off", "clear", "stop"];
+
+/// 参数不对：只写了间隔没写话（Miyu 回 `bad_params`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BadLoop;
 
@@ -41,18 +48,19 @@ impl fmt::Display for BadLoop {
 
 impl std::error::Error for BadLoop {}
 
-/// 读 `/loop` 后面的字（去掉了前后空白）。
+/// 读 `/loop` 后面的字（前后空白不算）。什么都没写的是自主。
 ///
 /// # Errors
 ///
-/// 什么都没写的、只写了间隔没写话的（[`BadLoop`]）。
+/// 只写了间隔没写话的（[`BadLoop`]）。
 pub fn parse(asked: &str) -> Result<Asked<'_>, BadLoop> {
-    if asked == "off" {
+    let asked = asked.trim();
+    if OFF.iter().any(|word| asked.eq_ignore_ascii_case(word)) {
         return Ok(Asked::Off);
     }
     let words: Vec<&str> = asked.split_whitespace().collect();
     let fixed = match words.as_slice() {
-        [] => return Err(BadLoop),
+        [] => return Ok(Asked::Autonomous),
         ["every", interval, ..] => seconds(interval).map(|every| (every, after(asked, 2))),
         [interval, ..] if seconds(interval).is_some() => {
             seconds(interval).map(|every| (every, after(asked, 1)))

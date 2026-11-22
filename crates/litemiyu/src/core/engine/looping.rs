@@ -4,7 +4,8 @@
 //!
 //! - `/loop <间隔> <话>`、`/loop <话> every <间隔>`、`/loop every <间隔> <话>`：固定间隔；
 //! - `/loop <话>`：她每轮自己定下一次；
-//! - `/loop off`：停掉。
+//! - 光打 `/loop`：同上，交进去的是出厂的那一句（由 AI 自己决定做什么，LM-44，Miyu 施工 LO-1）；
+//! - `/loop off`（`clear`、`stop` 同它）：停掉。`/stop` 也停掉循环（`engine.rs` 的 `stop`）。
 //!
 //! 只在工具面上有 `schedule_wakeup` 的会话里认（`Handle::loops`），别的照「没有这个命令」答，同 Miyu。Miyu 的循环在核心的
 //! 唤醒表里、关了窗口照跑；这里只在会话的 actor 内存里，窗口关了就停（设计第五节第 9 条）。
@@ -16,9 +17,17 @@ use lm_kernel::kernel::event::Said;
 ///
 /// # Errors
 ///
-/// 什么都没写的、只写了间隔没写话的。
+/// 只写了间隔没写话的。
 pub fn parse(words: &str) -> Result<Asked<'_>, BadLoop> {
     lm_engine::schedule::parse(words.trim())
+}
+
+/// 人敲的那一整行：`/loop` 和后面的字，光打的就是 `/loop`。
+pub fn typed(words: &str) -> String {
+    match words.trim() {
+        "" => "/loop".to_string(),
+        words => format!("/loop {words}"),
+    }
 }
 
 /// 开了、停了的回执：`stopped` 是停的时候真停掉了一个。
@@ -32,6 +41,7 @@ pub fn receipt(asked: &Asked<'_>, stopped: bool) -> Said {
         Asked::Dynamic { prompt } => {
             Said::new("core/commands/loop-dynamic").with("text", one_line(prompt))
         }
+        Asked::Autonomous => Said::new("core/commands/loop-auto"),
     }
 }
 
@@ -53,7 +63,7 @@ fn one_line(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{interval, parse, receipt};
+    use super::{interval, parse, receipt, typed};
 
     #[test]
     fn receipts_read_like_miyu() {
@@ -68,7 +78,22 @@ mod tests {
         assert_eq!(receipt(&off, true).key, "core/commands/loop-off");
         assert_eq!(receipt(&off, false).key, "core/commands/loop-none");
         assert!(parse("5m").is_err(), "只写了间隔");
-        assert!(parse("").is_err());
+        let auto = parse("  ").unwrap();
+        assert_eq!(receipt(&auto, false).key, "core/commands/loop-auto");
+        assert!(
+            receipt(&auto, true).fields.is_empty(),
+            "光打的回执不带那句英文"
+        );
+        assert_eq!(
+            receipt(&parse("Stop").unwrap(), true).key,
+            "core/commands/loop-off"
+        );
+    }
+
+    #[test]
+    fn the_typed_line_is_what_the_person_typed() {
+        assert_eq!(typed("  "), "/loop");
+        assert_eq!(typed(" 5m 看看 CI "), "/loop 5m 看看 CI");
     }
 
     #[test]
