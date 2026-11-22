@@ -44,7 +44,8 @@ const LICENSE_ID: &str = "AGPL-3.0-or-later";
 /// 一行的说明（deb 的 synopsis、rpm 的 Summary）：不到 80 个字符，不带包名（namcap、lintian 都不喜欢）。
 const SUMMARY: &str = "Single-process agent harness for the terminal, one static program";
 /// pacman 的 pkgdesc：和 AUR 的 PKGBUILD 一字不差。
-const PKGDESC: &str = "Single-process agent harness for the terminal, one static program; also a fallback when Miyu cannot start (--rescue)";
+const PKGDESC: &str =
+    "Distilled Miyu: under 5 MB of RAM, yet capable enough for everyday work and for rescue";
 /// 长说明（deb、rpm）：每行一句。
 const DESCRIPTION: [&str; 3] = [
     "LiteMiyu is a coding agent for the terminal in a single, fully static program.",
