@@ -67,11 +67,20 @@ fn json_lists_the_refused_step_and_jsonl_warns_before_done() {
 
 #[test]
 fn yes_lets_a_risky_command_run_once() {
-    let server = serve(shell_then_say("git push --force; touch pushed"));
+    let server = serve(shell_then_say(
+        "git push --force; echo \"push=$?\"; touch pushed",
+    ));
     let home = Home::new(Some(&server.base_url));
     let out = home.run(&["ask", "--yes", "推上去"], Input::Null);
     assert_eq!(out.code, Some(0), "{out:?}");
     assert!(home.work.join("pushed").exists(), "放行了");
+    // 放行了它就真的跑：测试的目录不许被 git 认成外面这个真的仓库（`Home::new` 放的那个 `.git` 文件），推一定是失败的。
+    let talks = server.talks();
+    assert!(
+        talks[1].contains("push=128"),
+        "git 在测试的目录里认不到仓库，什么都没推：{}",
+        &talks[1][talks[1].find("\"role\":\"tool\"").unwrap_or(0)..]
+    );
 }
 
 #[test]

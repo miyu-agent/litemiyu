@@ -4,7 +4,11 @@
 
 use std::cell::Cell;
 
-use ratatui::text::Line;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Block;
+use unicode_width::UnicodeWidthStr;
 
 use super::App;
 use super::sessions::Opening;
@@ -48,13 +52,172 @@ impl App {
             .map_or(0, |entry| entry.id)
     }
 
-    /// 了结了：没有一轮在跑、没有在等开轮的、没有还在转的步，派出去的后台命令、子代理都报了。
+    /// 了结了：没有一轮在跑、没有在等开轮的、没有还在转的步，派出去的后台命令、子代理都报了；没有开着的抽屉、没有排着
+    /// 还没被听到的话、没有在撤掉「还没开口就打断」的那一轮。
     pub fn settled_inline(&self) -> bool {
         let transcript = &self.talk.transcript;
-        transcript.running.is_none()
-            && transcript.starting == Starting::No
+        !self.answering_inline()
             && !transcript.busy()
             && self.talk.jobs.pending() == 0
+            && !self.talk.drawers.open()
+            && self.talk.takeback.is_none()
+            && !transcript.entries.iter().any(|entry| entry.queued)
+    }
+
+    /// 在回答：一轮在跑，或者话发出去了还在等开轮。
+    pub fn answering_inline(&self) -> bool {
+        let transcript = &self.talk.transcript;
+        transcript.running.is_some() || transcript.starting != Starting::No
+    }
+
+    /// `Ctrl+C`：照全屏打断这一轮（排着的话退回输入框；AI 还没开口的，这一轮撤掉、那一句放回输入框）。
+    pub fn interrupt_inline(&mut self) {
+        self.interrupt();
+    }
+
+    /// 回车插话：输入框里的话照全屏回车发出去的那一套办（正在回答，这一句先排着，AI 下一次请求时听到）。交回发了没有。
+    /// 不发的：空的；斜杠、`!` 打头的（命令答完回到 shell 的命令行再办）；没在回答的（字留着，答完回到命令行）。
+    pub fn interject_inline(&mut self) -> bool {
+        let text = self.typing.input.editor.text().trim_start();
+        let command = text.starts_with('/') || self.typing.input.shell();
+        if text.is_empty() || command || !self.answering_inline() {
+            return false;
+        }
+        let draft = self.typing.input.editor.take_draft();
+        self.submit(draft);
+        true
+    }
+
+    /// 没有抽屉的时候按的一个键：照输入框自己的办（挪光标、删字、`Alt+回车` 换行）。它要整个界面办的那几样（退出、挂起、
+    /// 开编辑器）在 shell 里不办。
+    pub fn type_inline(&mut self, key: crossterm::event::KeyEvent) {
+        let _ignored = self.typing.input.key(key);
+    }
+
+    /// 抽屉开着的时候按的一个键：归抽屉（同全屏）。
+    pub fn drawer_key_inline(&mut self, key: crossterm::event::KeyEvent) {
+        self.drawer_key(key);
+    }
+
+    /// 粘贴来的一段字：照全屏的粘贴办（长的收成块；抽屉在写字的归它）。
+    pub fn paste_inline(&mut self, text: &str) {
+        self.paste(text);
+    }
+
+    /// 输入框里没发出去的字（粘贴块换回原文）：答完交还给 shell 的命令行。
+    pub fn typed_inline(&self) -> String {
+        self.typing.input.draft().expand()
+    }
+
+    /// 有抽屉开着。
+    pub fn asking_inline(&self) -> bool {
+        self.talk.drawers.open()
+    }
+
+    /// 活动区最下面的输入那几行，`width` 是终端的宽：排着还没被听到的话各一行暗色的，下面是输入框里的字（照全屏输入框
+    /// 排，前面是提示符）。另交回光标在第几行、第几列（坑 P9：没打字的时候也有这一行、光标停在这里，输入法的候选框一开始
+    /// 就在对的地方）。`after` 同 [`App::lay_inline`]。
+    pub fn input_inline(&self, after: u64, width: u16) -> (Vec<Line<'static>>, (usize, u16)) {
+        let config = &self.config;
+        let room = usize::from(width).saturating_sub(2);
+        let mut lines: Vec<Line<'static>> = self
+            .talk
+            .transcript
+            .entries
+            .iter()
+            .filter(|entry| entry.queued && entry.id > after)
+            .map(|entry| {
+                let said = entry.text.replace(['\r', '\n'], " ");
+                let text = format!("{}{said}", config.layout.queued_mark);
+                Line::styled(
+                    format!("  {}", crate::cells::clip(&text, room)),
+                    crate::theme::dim(),
+                )
+            })
+            .collect();
+        let prompt = config.layout.prompt.as_str();
+        // 两格槽、提示符、一个空格。
+        let lead = 2 + prompt.width() + 1;
+        let input = &self.typing.input;
+        let editor = &input.editor;
+        if editor.is_empty() {
+            lines.push(Line::default());
+            let at = (lines.len() - 1, u16::try_from(lead).unwrap_or(0));
+            return (lines, at);
+        }
+        let columns = u16::try_from(room.saturating_sub(lead))
+            .unwrap_or(u16::MAX)
+            .max(1);
+        let wrapped = input.lines(columns);
+        let (row, column) = crate::input::locate(editor.text(), &wrapped, editor.cursor());
+        // 最多露这么多行，露着光标那一行。
+        let most = usize::from(config.layout.max_rows).max(1);
+        let top = (row + 1).saturating_sub(most);
+        let blocks = editor.blocks();
+        let first = lines.len();
+        for (index, visual) in wrapped.iter().enumerate().skip(top).take(most) {
+            let styled =
+                crate::ui::styled_line(editor.text(), *visual, editor.selection(), &blocks, None);
+            let mut spans = vec![Span::raw("  ")];
+            spans.push(match index {
+                0 => Span::styled(format!("{prompt} "), crate::theme::level()),
+                _ => Span::raw(" ".repeat(prompt.width() + 1)),
+            });
+            spans.extend(
+                styled
+                    .spans
+                    .into_iter()
+                    .map(|span| Span::styled(span.content.into_owned(), span.style)),
+            );
+            lines.push(Line::from(spans));
+        }
+        let at = (
+            first + row - top,
+            u16::try_from(lead + column).unwrap_or(u16::MAX),
+        );
+        (lines, at)
+    }
+
+    /// 开着的抽屉画成一块（`width` 宽，最高 `most` 行，连边框）：一个暗色的圆角框，里面照全屏的画法画（`ui/drawer`）。
+    /// 另交回里面写字的那一格在这一块的第几行、第几列（坑 P10：输入法的候选框跟着它）；没在写字的没有。没有抽屉的是
+    /// `None`。
+    pub fn drawer_inline(
+        &mut self,
+        width: u16,
+        most: u16,
+    ) -> Option<(Buffer, Option<(usize, u16)>)> {
+        let texts = &self.config.text().drawer;
+        let look = &self.config.layout.drawer_preview;
+        let vim = self.config.layout.vim;
+        let drawer = self.talk.drawers.current.as_mut()?;
+        // 左右各一条边线、一格空。
+        let inner = width.saturating_sub(4).max(1);
+        let rows =
+            crate::ui::drawer_rows(drawer, texts, look, inner, most.saturating_sub(2).max(1))
+                .max(1);
+        let frame = Rect::new(0, 0, width, rows + 2);
+        let mut buffer = Buffer::empty(frame);
+        let mut caret = crate::caret::Caret::default();
+        {
+            let mut canvas = crate::ui::Frame::new(&mut buffer);
+            canvas.render_widget(
+                Block::bordered()
+                    .border_set(crate::sheet::read(|sheet| sheet.frame.input.set()))
+                    .border_style(crate::theme::dim()),
+                frame,
+            );
+            crate::ui::draw_drawer(
+                &mut canvas,
+                (Rect::new(2, 1, inner, rows), 0),
+                drawer,
+                texts,
+                look,
+                vim,
+                &mut caret,
+            );
+        }
+        let at = caret.shown.then(|| (usize::from(caret.at.y), caret.at.x));
+        Some((buffer, at))
     }
 
     /// 编号在 `after` 以后的正文排成行，照全屏界面的排法（`ui/rows.rs` 的 `entry_rows`），内容宽 `width`（调的一方照终端

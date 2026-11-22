@@ -163,6 +163,14 @@ impl Home {
         for dir in [&home.data, &home.home, &home.work] {
             std::fs::create_dir_all(dir).expect("建得了目录");
         }
+        // 这一套目录在 `target/` 下面，也就是在这个仓库里面：测试里让模型跑的 `git` 命令（`git push --force` 这类高危命令的
+        // 例子）不许认到外面这个真的仓库。放一个指向不存在的地方的 `.git` 文件：git 找到它就停下、报不是仓库，不再往上找。
+        // 2026-11-23 才发现以前没有这一道：放行高危命令的那条测试每跑一次，就把开发仓库的当前分支真的强推了一次。
+        std::fs::write(
+            home.root.join(".git"),
+            "gitdir: /nonexistent/litemiyu-tests\n",
+        )
+        .expect("写得进");
         if let Some(base_url) = base_url {
             home.write_config(&config(base_url));
         }

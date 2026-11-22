@@ -1,10 +1,14 @@
 //! 在 shell 里跑一轮（施工线 shellhook，SH-2）：后台的进程里起全屏界面的那一份状态（[`App`]），不画整屏，只把「这一句
 //! 以后的正文」照全屏时间线的样子排成行，交给 `paint.rs` 印在光标下面。
 //!
-//! 引擎的消息照全屏交给 `App::core`，所以正文、任务、提示都是全屏的那一套；这里只管四件事：说那一句、每一帧把排好的行
-//! 分成「定下来的」（印进滚动历史）和「还会变的」（留在活动区，最多终端高减一行）、认 `Ctrl+C`、认出了结。
+//! 引擎的消息照全屏交给 `App::core`，所以正文、任务、抽屉、输入框都是全屏的那一套；这里只管几件事：说那一句、每一帧
+//! 把排好的行分成「定下来的」（印进滚动历史）和「还会变的」（留在活动区，最多终端高减一行）、把按键分给抽屉或者输入框、
+//! 认出了结。
 //!
-//! 现在还没有的：答话时的输入行和抽屉（提前敲的字只是收着，要人确认的高危命令照没人能确认的办）、斜杠命令的框、留下来。
+//! 活动区从上到下：还会变的那几行正文；空一行；开着的抽屉（一个圆角框，最多占终端一半高），没有抽屉的时候是排着的插话
+//! 和输入那几行。AI 一开始答输入那一行就在、光标亮着停在那里（坑 P9）。
+//!
+//! 现在还没有的：斜杠命令的框、留下来；kitty 键盘协议没开，`Shift+回车`、`Ctrl+回车` 认不出来（换行用 `Alt+回车`、`Ctrl+J`）。
 
 use std::io::{self, IsTerminal, Write};
 use std::os::unix::net::UnixStream;
@@ -29,6 +33,9 @@ const BARRIER: Duration = Duration::from_secs(30);
 
 /// 被打断的退出码（同 `ask`）。
 const INTERRUPTED: u8 = 3;
+
+/// 一个抽屉开着满这么久才画（坑 P7）：接上会话时补发来的、以前问过又答了的，开一下马上收起，画出来会一闪。
+const DRAWER_SETTLE: Duration = Duration::from_millis(150);
 
 /// 主循环等的东西。
 enum In {
@@ -90,13 +97,11 @@ pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<
         mark: (0, None),
         laying: Laying::default(),
         printed: 0,
-        typed: String::new(),
+        asked: None,
         interrupted: false,
         failed: false,
         gone: false,
     };
-    // 没有抽屉以前，要人确认的照没人能确认的办（同 `ask` 不加 `--yes`）。
-    run.app.link.core.send(Command::Unattended);
     let code = run.go(text, session);
     // 先让读按键的线程停下（它停好了才回，读走的按键都收下了，坑 P8），之后敲的字留在终端的缓冲里给 shell。
     if let Some(reader) = &reader {
@@ -104,6 +109,7 @@ pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<
     }
     run.drain_keys();
     let session = run.app.talk.transcript.session.clone();
+    let typed = run.app.typed_inline();
     // 有计划地停下会话：日志落好盘、放锁，后台命令整组停掉。
     let until = Instant::now() + CLOSING;
     run.app.finish_writes(until);
@@ -111,7 +117,7 @@ pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<
     Ok(Outcome {
         code,
         session,
-        typed: run.typed,
+        typed,
     })
 }
 
@@ -146,8 +152,8 @@ struct Run {
     laying: Laying,
     /// 印进滚动历史的有几行。
     printed: usize,
-    /// 提前敲的字。
-    typed: String,
+    /// 抽屉从什么时候开着的（没开着的是 `None`）：开满 [`DRAWER_SETTLE`] 才画。
+    asked: Option<Instant>,
     /// 按过 `Ctrl+C`。
     interrupted: bool,
     /// 没发出去、被拒、引擎起不来。
@@ -181,9 +187,18 @@ impl Run {
             if self.stopping() || self.settled() {
                 return self.end();
             }
-            // 最晚到界面自己要醒的时刻（转圈、用时跳秒）。
-            self.wait(self.app.deadline());
+            // 最晚到界面自己要醒的时刻（转圈、用时跳秒），和刚开的抽屉该画出来的时刻。
+            let drawer = self
+                .asked
+                .map(|since| since + DRAWER_SETTLE)
+                .filter(|due| *due > Instant::now());
+            let until = [self.app.deadline(), drawer].into_iter().flatten().min();
+            self.wait(until);
             self.app.tick();
+            self.asked = match (self.app.asking_inline(), self.asked) {
+                (true, since) => since.or(Some(Instant::now())),
+                (false, _) => None,
+            };
         }
     }
 
@@ -259,31 +274,34 @@ impl Run {
         }
     }
 
-    /// 终端的一个事件。`Ctrl+C` 打断这一轮（排着的话退回来），已经按过一下的不等了；别的字收成提前敲的一行，退格删一个；
-    /// 方向键这类不算，回车不算（提前敲的命令不替人执行）。
+    /// 终端的一个事件。`Ctrl+C` 打断这一轮（照全屏：排着的话退回输入框），没有一轮在跑的、已经按过一下的不等了（坑
+    /// P15）；抽屉开着的时候别的键归抽屉；没有抽屉的时候回车是插话，别的键归输入框。
     fn key(&mut self, event: Event) {
         let key = match event {
             Event::Key(key) if key.kind != KeyEventKind::Release => key,
-            Event::Paste(text) => return self.typed.push_str(&text),
+            Event::Paste(text) => return self.app.paste_inline(&text),
             Event::Resize(width, height) => return self.size = (width, height),
             _ => return,
         };
-        let plain = !key
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if std::mem::replace(&mut self.interrupted, true) {
-                    self.gone = true;
-                } else {
-                    self.app.link.core.send(Command::Interrupt { send: false });
-                }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if control && key.code == KeyCode::Char('c') {
+            let again = std::mem::replace(&mut self.interrupted, true);
+            match again || !self.app.answering_inline() {
+                true => self.gone = true,
+                false => self.app.interrupt_inline(),
             }
-            KeyCode::Char(c) if plain => self.typed.push(c),
-            KeyCode::Backspace => {
-                self.typed.pop();
+        } else if self.app.asking_inline() {
+            // 抽屉还没画出来（刚开、没满那一小会儿）的时候按的键不算：人还没看到问的是什么。
+            if self
+                .asked
+                .is_some_and(|since| since.elapsed() >= DRAWER_SETTLE)
+            {
+                self.app.drawer_key_inline(key);
             }
-            _ => {}
+        } else if key.code == KeyCode::Enter && key.modifiers.is_empty() {
+            self.app.interject_inline();
+        } else {
+            self.app.type_inline(key);
         }
     }
 
@@ -296,8 +314,8 @@ impl Run {
         }
     }
 
-    /// 画一帧：定下来的印进滚动历史，还会变的画在活动区（最多终端高减一行，露最新的那一截，坑 P4）。`last` 是收尾的
-    /// 那一帧：都印上去，不留活动区。写不进终端的没处可报。
+    /// 画一帧：定下来的印进滚动历史，还会变的画在活动区（最多终端高减一行，露最新的那一截，坑 P4），最下面是抽屉或者
+    /// 输入那几行。`last` 是收尾的那一帧：都印上去，不留活动区。写不进终端的没处可报。
     fn paint(&mut self, last: bool) {
         let (width, height) = self.size;
         let beat = u128::from(self.app.config.timeline.spinner_ms.max(1));
@@ -313,12 +331,44 @@ impl Run {
             false => laid.settled.clamp(from, total),
         };
         let text = paint::lines(width, &laid.lines[from..]);
-        let (now, live) = text.split_at(settled - from);
+        let (now, changing) = text.split_at(settled - from);
         let room = usize::from(height.saturating_sub(1)).max(1);
-        let live = &live[live.len().saturating_sub(room)..];
-        drop(self.painter.frame(now, live, None));
+        let (below, caret) = match last {
+            true => (Vec::new(), None),
+            false => self.below(width, height),
+        };
+        // 最下面那一块先占地方（太高的只露它的上半截），剩下的给正文，露最新的那一截。
+        let below = &below[..below.len().min(room)];
+        let keep = room - below.len();
+        let changing = &changing[changing.len().saturating_sub(keep)..];
+        let live = [changing, below].concat();
+        let caret = caret
+            .filter(|(row, _)| *row < below.len())
+            .map(|(row, column)| (changing.len() + row, column));
+        drop(self.painter.frame(now, &live, caret));
         self.printed = settled;
         self.painted = Instant::now();
+    }
+
+    /// 活动区最下面的那一块：前面空一行；抽屉开着（开满了那一小会儿）的是抽屉，没开着、在回答的是排着的插话和输入那几行。
+    /// 另交回光标停在这一块的第几行、第几列。什么都不用画的是空的。
+    fn below(&mut self, width: u16, height: u16) -> (Vec<String>, paint::Caret) {
+        let shown = self
+            .asked
+            .is_some_and(|since| since.elapsed() >= DRAWER_SETTLE);
+        if shown && let Some((mut drawn, at)) = self.app.drawer_inline(width, (height / 2).max(5)) {
+            let mut lines = vec![String::new()];
+            lines.extend(paint::rendered(&mut drawn));
+            return (lines, at.map(|(row, column)| (row + 1, column)));
+        }
+        // 抽屉刚开、还没画出来：输入那几行也不画（按键这时归抽屉）。
+        if self.app.asking_inline() || !self.app.answering_inline() {
+            return (Vec::new(), None);
+        }
+        let (rows, (row, column)) = self.app.input_inline(self.mark.0, width);
+        let mut lines = vec![String::new()];
+        lines.extend(paint::lines(width, &rows));
+        (lines, Some((row + 1, column)))
     }
 
     /// 收尾：没印过的照最后的样子印出来，擦掉活动区，界面要说的那一句提示印在后面；交回退出码。

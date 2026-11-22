@@ -58,6 +58,9 @@ mod status;
 pub(crate) mod status_box;
 mod timeline;
 pub use timeline::{release_on_fold, tail_rows};
+// shell 集成借的几样（`app/inline.rs`）：抽屉排几行、画抽屉，输入框里的一行字。
+pub(crate) use drawer::{draw as draw_drawer, rows as drawer_rows};
+pub(crate) use input_box::styled_line;
 mod shell_rows;
 pub(crate) mod sidebar;
 mod undo_rows;

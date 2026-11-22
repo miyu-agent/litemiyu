@@ -11,7 +11,7 @@ use lm_engine::http::testkit::{Piece, Reply};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use crate::cli::{Home, Input, serve, stream, until, wait_child_in_pty};
-use crate::replies::says;
+use crate::replies::{calls, says};
 
 /// 这个测试进程里的一个终端记号：进程号是测试进程的（活着，不会被当成退出了的 shell 清掉）。
 fn terminal(name: &str) -> String {
@@ -218,7 +218,7 @@ fn a_sentence_is_answered_in_the_terminal_and_each_terminal_keeps_its_own_sessio
 
 #[test]
 fn what_is_typed_during_the_answer_goes_back_to_the_command_line() {
-    // 坑 S13、P8：答话的时候提前敲的字写进 `--leftover` 的文件，脚本放回命令行。
+    // 坑 S13、P8、P9：答话的时候敲的字画在回答下面的输入那一行；没按回车的，答完写进 `--leftover` 的文件，脚本放回命令行。
     let server = serve(vec![slow("前半截", "后半截")]);
     let home = Home::new(Some(&server.base_url));
     let leftover = home.work.join("leftover");
@@ -229,23 +229,148 @@ fn what_is_typed_during_the_answer_goes_back_to_the_command_line() {
         &["--leftover", &leftover.to_string_lossy()],
         |keys, shown| {
             until("前半截印出来了", || shown().contains("前半截"));
-            // 敲几个字、退格改一个、按一下方向键和回车：方向键、回车不算字。
-            keys.write_all("git stx\u{7f}atus 状态\u{1b}[A\r".as_bytes())
-                .expect("敲得进");
+            // 敲几个字、退格改一个、往左挪两格再插一个字（照全屏输入框的编辑）。
+            keys.write_all(
+                "git stx\u{7f}aus 状态\u{1b}[D\u{1b}[D\u{1b}[D\u{1b}[D\u{1b}[Dt".as_bytes(),
+            )
+            .expect("敲得进");
             keys.flush().expect("敲得进");
+            until("敲的字画在输入那一行", || {
+                shown().contains("git stat")
+            });
         },
     );
     assert_eq!(said.code, Some(0), "{:?}", said.shown);
     assert!(said.shown.contains("后半截"), "{:?}", said.shown);
-    assert!(
-        !said.shown.contains("git st"),
-        "原始模式里敲的字不回显在回答中间：{:?}",
-        said.shown
-    );
     assert_eq!(
         std::fs::read_to_string(&leftover).expect("写了"),
         "git status 状态"
     );
+    assert_eq!(server.talks().len(), 1, "没按回车的不发");
+    // 答完以后屏幕上不留输入那一行：它回到 shell 的命令行上了。
+    let lines = said.lines(120);
+    assert!(
+        !lines.iter().any(|line| line.contains("git stat")),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn enter_during_the_answer_interjects_and_the_model_hears_it() {
+    // 答话的时候回车是插话：这一句排着，AI 下一次请求时听到。
+    let server = serve(vec![
+        slow("前半截", "后半截"),
+        stream(says(&["听到了插的话"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let leftover = home.work.join("leftover");
+    let said = say(
+        &home,
+        &home.work,
+        ("说慢一点", &terminal("interject"), None),
+        &["--leftover", &leftover.to_string_lossy()],
+        |keys, shown| {
+            until("前半截印出来了", || shown().contains("前半截"));
+            keys.write_all("顺便看看日期\r".as_bytes()).expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 2, "插的话另开了一次请求");
+    assert!(talks[1].contains("顺便看看日期"), "{}", talks[1]);
+    let lines = said.lines(120);
+    let at = |needle: &str| {
+        lines
+            .iter()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("屏幕上有「{needle}」：{lines:#?}"))
+    };
+    assert!(at("后半截") < at("顺便看看日期"), "{lines:#?}");
+    assert!(at("顺便看看日期") < at("听到了插的话"), "{lines:#?}");
+    assert!(!leftover.exists(), "发出去了的不回到命令行");
+    assert_eq!(home.sessions().len(), 1);
+}
+
+#[test]
+fn a_hazardous_command_opens_the_drawer_in_the_shell_and_runs_once_allowed() {
+    // 项目主人列的必需品：确认的抽屉。高危命令弹出和全屏一样的抽屉，按数字作答，允许了才跑。
+    let run = r#"{"command":"git push --force","description":"Push"}"#;
+    let server = serve(vec![
+        stream(calls("shell", run)),
+        stream(says(&["推不上去：这里不是仓库。"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let said = say(
+        &home,
+        &home.work,
+        ("推一下", &terminal("approve"), None),
+        &[],
+        |keys, shown| {
+            until(
+                "确认的抽屉画出来了，写着要跑的命令",
+                || {
+                    // 时间线里那一步也写着这条命令，比抽屉早：等抽屉的框（开满一小会儿才画，那之前按的键不算）。
+                    let shown = shown();
+                    shown.contains('╭') && shown.contains("git push --force")
+                },
+            );
+            assert_eq!(server.talks().len(), 1, "没答之前不往下走");
+            keys.write_all(b"1").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 2);
+    assert!(
+        talks[1].contains("Exit code 128"),
+        "命令真的跑了（不是仓库，git 退出码 128），结果交回给模型：{}",
+        &talks[1][talks[1].find("\"role\":\"tool\"").unwrap_or(0)..]
+    );
+    let lines = said.lines(120);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("推不上去：这里不是仓库。")),
+        "{lines:#?}"
+    );
+    // 答完以后抽屉的框不留在屏幕上。
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains('╭') || line.contains('╰')),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn a_question_opens_the_drawer_in_the_shell_and_the_answer_reaches_the_model() {
+    let asked = r#"{"questions":[{"question":"用哪种颜色？","header":"颜色","options":[{"label":"紫色"},{"label":"绿色"}]}]}"#;
+    let server = serve(vec![
+        stream(calls("ask_user", asked)),
+        stream(says(&["好，用紫色。"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let said = say(
+        &home,
+        &home.work,
+        ("挑个颜色", &terminal("ask"), None),
+        &[],
+        |keys, shown| {
+            until("提问的抽屉", || {
+                let shown = shown();
+                shown.contains("用哪种颜色？") && shown.contains("紫色")
+            });
+            keys.write_all(b"1").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 2);
+    assert!(talks[1].contains("紫色"), "答的交回给模型：{}", talks[1]);
+    assert!(said.shown.contains("好，用紫色。"), "{:?}", said.shown);
 }
 
 #[test]
