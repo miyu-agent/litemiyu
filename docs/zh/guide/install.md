@@ -4,7 +4,7 @@
 
 这一页是 LiteMiyu 的安装、升级和卸载方法。如果只是想尽快用上，看[快速上手](quickstart.md)就够了。
 
-> 目前公开发布的是预发布版，版本号的写法是 `2026.11.0-rc.1`。下面各节命令里的 `<版本>` 请换成[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上的版本号。
+> 下面各节命令里的 `<版本>` 请换成[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上的版本号，例如 `2026.11.0`。预发布版的版本号写成 `2026.11.0-rc.1` 这样。
 
 ## 选择安装方式
 

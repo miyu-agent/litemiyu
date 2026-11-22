@@ -166,7 +166,17 @@ These pages cover installation and basic use.
 - [Quick start](docs/en/guide/quickstart.md)
 - [Full documentation](docs/README.md)
 
-The packages published so far are pre-releases. The [releases page](https://github.com/miyu-agent/litemiyu/releases) has an archive for each system, and deb, rpm and Arch packages for Linux; install one as described in [Install](docs/en/guide/install.md).
+Ways to install:
+
+| System | Install |
+|---|---|
+| Arch Linux | `paru -S litemiyu-bin` |
+| macOS (Apple silicon), or Linux with Homebrew | `brew install miyu-agent/tap/litemiyu` |
+| Linux or macOS with Node.js installed | `npm install -g litemiyu` |
+| Debian, Ubuntu, Fedora, RHEL, openSUSE | Download the deb or rpm package from the [releases page](https://github.com/miyu-agent/litemiyu/releases/latest) |
+| Other Linux distributions, macOS | Download the archive from the [releases page](https://github.com/miyu-agent/litemiyu/releases/latest), unpack it, and put `litemiyu` on your `PATH` |
+
+The full steps for each method, checksum verification, upgrading and uninstalling are in [Install](docs/en/guide/install.md).
 
 ## License
 

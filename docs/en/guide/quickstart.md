@@ -11,6 +11,9 @@ This page gets LiteMiyu installed, walks you through the first-run setup, sends 
 LiteMiyu is a single program file, `litemiyu`. Once it is on your `PATH`, it is installed. It runs on Linux, macOS and BSD; on Windows, use the Linux build inside WSL2.
 
 - Arch Linux: install from the AUR with `paru -S litemiyu-bin`. This is the recommended way.
+- macOS (Apple silicon): install with Homebrew, `brew install miyu-agent/tap/litemiyu`. This is the recommended way.
+- Debian, Ubuntu, Fedora and similar distributions: download the deb or rpm package from the [releases page](https://github.com/miyu-agent/litemiyu/releases) and install it.
+- Machines that already have Node.js: `npm install -g litemiyu` works too.
 - Other Linux distributions and macOS (Apple silicon): download the archive for your system from the [releases page](https://github.com/miyu-agent/litemiyu/releases), unpack it, and put the `litemiyu` inside into `~/.local/bin`.
 - Intel Macs and BSD: there is no release package, so build from source.
 

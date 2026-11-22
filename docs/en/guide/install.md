@@ -4,7 +4,7 @@
 
 This page covers installing, upgrading and uninstalling LiteMiyu. If you just want to get going, [Quick start](quickstart.md) is enough.
 
-> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In the commands below, replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases).
+> In the commands below, replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases), for example `2026.11.0`. Pre-release versions are written like `2026.11.0-rc.1`.
 
 ## Choose a method
 

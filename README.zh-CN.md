@@ -166,7 +166,17 @@ CPU 和硬盘：
 - [快速上手](docs/zh/guide/quickstart.md)
 - [完整文档](docs/README.md)
 
-目前公开发布的是预发布版。[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上有每个系统的压缩包，Linux 另有 deb、rpm 和 Arch 的包，安装方法请阅读[安装](docs/zh/guide/install.md)。
+安装方法一览：
+
+| 系统 | 安装 |
+|---|---|
+| Arch Linux | `paru -S litemiyu-bin` |
+| macOS（Apple 芯片）、装了 Homebrew 的 Linux | `brew install miyu-agent/tap/litemiyu` |
+| 已经装了 Node.js 的 Linux、macOS | `npm install -g litemiyu` |
+| Debian、Ubuntu、Fedora、RHEL、openSUSE | 到[发行版页面](https://github.com/miyu-agent/litemiyu/releases/latest)下载 deb 或 rpm 包 |
+| 其他 Linux、macOS | 到[发行版页面](https://github.com/miyu-agent/litemiyu/releases/latest)下载压缩包，解压后把 `litemiyu` 放进 `PATH` |
+
+每种方法的完整步骤、校验、升级和卸载请阅读[安装](docs/zh/guide/install.md)。
 
 ## 许可证
 
