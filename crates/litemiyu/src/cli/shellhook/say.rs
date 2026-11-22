@@ -7,7 +7,7 @@
 //!
 //! 终端的规矩都在这一头：
 //!
-//! - 那句话是从管道交来的，读完以后终端另开 `/dev/tty` 来用（坑 P1）。
+//! - 那句话是从管道交来的，读完以后终端另开一份来用（坑 P1；开的是终端的设备本身，见 `terminal`）。
 //! - 只关掉输入这一边的处理（不回显、不攒整行、`Ctrl+C` 是一个字节不是信号），输出照旧把换行补成回车换行：后台的进程印的是
 //!   平常的字。
 //! - 任何退出的路上先把终端还原（发行版是 `panic = "abort"`，另装了一个出错时还原的钩子）。
@@ -99,7 +99,7 @@ fn relay(parsed: &Parsed, text: &str) -> io::Result<u8> {
             .spawn()?
     };
     // 终端：那句话是从管道交来的，标准输入不是它（坑 P1）。没有终端的（测试、被别的程序调）照样办，只是没有按键可转交。
-    let tty = File::options().read(true).write(true).open("/dev/tty").ok();
+    let tty = terminal();
     let raw = tty.as_ref().and_then(|tty| Raw::enter(tty).ok());
     ToWorker::Message(text.to_string()).write(&mut control)?;
     if let Some(size) = tty.as_ref().and_then(size) {
@@ -123,6 +123,22 @@ fn relay(parsed: &Parsed, text: &str) -> io::Result<u8> {
             .filter(|code| *code != 0)
             .unwrap_or(1),
     })
+}
+
+/// 这个进程的终端，能读能写的一份；没有终端的是 `None`。
+///
+/// 先照标准错误、标准输出认出终端的设备名（`/dev/pts/3`、`/dev/ttys003`）再开，认不出的才开 `/dev/tty`：macOS 的 `poll`
+/// 等不了 `/dev/tty` 这个设备（当场回「这个描述符不对」），只等得了真的终端设备。shell 的脚本调过来时这两样都接着终端。
+fn terminal() -> Option<File> {
+    use std::os::unix::ffi::OsStrExt;
+    let open = |path: &std::ffi::OsStr| File::options().read(true).write(true).open(path).ok();
+    let named = |fd: rustix::fd::BorrowedFd<'_>| {
+        let name = rustix::termios::ttyname(fd, Vec::new()).ok()?;
+        open(std::ffi::OsStr::from_bytes(name.to_bytes()))
+    };
+    named(rustix::stdio::stderr())
+        .or_else(|| named(rustix::stdio::stdout()))
+        .or_else(|| open(std::ffi::OsStr::new("/dev/tty")))
 }
 
 /// 终端现在多大。
@@ -193,6 +209,8 @@ struct Ready {
     resized: bool,
     ended: bool,
     typed: bool,
+    /// 终端这个描述符等不了（`POLLNVAL`）：不再等它，不然每一圈都当场回来、空转。
+    deaf: bool,
 }
 
 impl Relay<'_> {
@@ -230,6 +248,9 @@ impl Relay<'_> {
             resized: ready(signal),
             ended: ready(signal.map(|at| at + 1)),
             typed: ready(keys),
+            deaf: keys
+                .and_then(|at| fds.get(at))
+                .is_some_and(|fd| fd.revents().contains(PollFlags::NVAL)),
         })
     }
 
@@ -276,6 +297,9 @@ impl Relay<'_> {
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                     Err(_) => return Ok(code.or_else(|| self.last_word())),
                 }
+            }
+            if ready.deaf {
+                self.stop_typing();
             }
             if ready.typed
                 && let Some(mut tty) = self.tty
