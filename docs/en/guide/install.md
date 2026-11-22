@@ -4,7 +4,7 @@
 
 This page covers installing, upgrading and uninstalling LiteMiyu. If you just want to get going, [Quick start](quickstart.md) is enough.
 
-> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In the commands below, replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases). The AUR package will be provided once the first stable version is released; until then, install the [Arch package](#arch-package-arch-linux-arch-linux-arm) on Arch Linux.
+> The packages published so far are pre-releases, with versions written like `2026.11.0-rc.1`. In the commands below, replace `<version>` with the version shown on the [releases page](https://github.com/miyu-agent/litemiyu/releases).
 
 ## Choose a method
 
@@ -32,8 +32,9 @@ The recommended method for each system:
 |---|---|
 | Debian, Ubuntu | [deb](#deb-debian-ubuntu) |
 | Fedora, RHEL, openSUSE | [rpm](#rpm-fedora-rhel-opensuse) |
-| Arch Linux, Arch Linux ARM | [Arch package](#arch-package-arch-linux-arch-linux-arm); once a stable version is released, the [AUR](#arch-linux-aur) as well |
-| Other Linux distributions, macOS (Apple silicon) | [Download a release package](#download-a-release-package-linux-macos) |
+| Arch Linux, Arch Linux ARM | [AUR](#arch-linux-aur); if you prefer not to use the AUR, the [Arch package](#arch-package-arch-linux-arch-linux-arm) |
+| macOS (Apple silicon) | [Homebrew](#homebrew-macos-linux), or [download a release package](#download-a-release-package-linux-macos) |
+| Other Linux distributions | [Download a release package](#download-a-release-package-linux-macos); if you already use Homebrew, [Homebrew](#homebrew-macos-linux) works too |
 | Intel Macs, FreeBSD and other BSDs | [Build from source](#building-from-source) |
 | Windows | Install inside WSL2 the same way as on Linux |
 
@@ -123,13 +124,31 @@ The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/sh
 
 ## Arch Linux (AUR)
 
-The AUR package will be provided once a stable version is released. If you install from the AUR, upgrades come with your system updates:
+The package on the AUR is named [`litemiyu-bin`](https://aur.archlinux.org/packages/litemiyu-bin). If you install from the AUR, upgrades come with your system updates:
 
 ```bash
-paru -S litemiyu   # or: yay -S litemiyu
+paru -S litemiyu-bin   # or: yay -S litemiyu-bin
 ```
 
-The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/share/licenses/litemiyu/`. Both x86_64 and aarch64 are supported.
+The package installs the program from the release package; nothing is compiled on your machine. Both x86_64 and aarch64 are supported.
+
+- Upgrade: it follows your system updates, for example `paru -Syu`.
+- Uninstall: `sudo pacman -R litemiyu-bin`.
+
+The program is installed at `/usr/bin/litemiyu`, and the licenses under `/usr/share/licenses/litemiyu-bin/`. `litemiyu-bin` and the Arch package from the previous section (named `litemiyu`) install the same file, so the two cannot be installed together.
+
+## Homebrew (macOS, Linux)
+
+```bash
+brew install miyu-agent/tap/litemiyu
+```
+
+This command adds the [miyu-agent/tap](https://github.com/miyu-agent/homebrew-tap) tap, then downloads the release package for your system, verifies its checksum and installs it. It supports macOS on Apple silicon and Homebrew on Linux (x86_64, aarch64); Intel Macs are not supported.
+
+- Upgrade: `brew upgrade litemiyu`.
+- Uninstall: `brew uninstall litemiyu`. If you no longer need the tap, also run `brew untap miyu-agent/tap`.
+
+The installed program is the same file as the one in the release package.
 
 ## Download a release package (Linux, macOS)
 
@@ -197,6 +216,7 @@ LiteMiyu has no automatic updates and no upgrade command. Upgrading means replac
 
 - deb, rpm, Arch package: download the package of the new version and install it again with the command you used to install it; see the sections above.
 - AUR: it follows your system updates, for example `paru -Syu`.
+- Homebrew: `brew upgrade litemiyu`.
 - Release package: download the new version and overwrite `~/.local/bin/litemiyu` with `install`, as in step 3 above.
 - Source: run `git pull`, then `cargo build --release -p litemiyu` again, and overwrite the file once more.
 
@@ -211,7 +231,9 @@ If you once put the program into `~/.local/bin` by hand, delete `~/.local/bin/li
     ```bash
     sudo apt remove litemiyu      # installed from the deb
     sudo dnf remove litemiyu      # installed from the rpm (on openSUSE: sudo zypper remove litemiyu)
-    sudo pacman -R litemiyu       # installed from the Arch package or the AUR
+    sudo pacman -R litemiyu       # installed from the Arch package
+    sudo pacman -R litemiyu-bin   # installed from the AUR
+    brew uninstall litemiyu       # installed with Homebrew
     rm ~/.local/bin/litemiyu      # installed by hand
     ```
 

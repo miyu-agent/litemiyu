@@ -10,7 +10,8 @@
 # Linux 两份是全静态的单文件（静态 PIE），排过函数、去了符号，同 `cargo xtask measure` 量的做法（bench/order.py 在 qemu 的用户态
 # 模拟器里照剧本跑一遍记下先后，链接器照它排；aarch64 宿主上跑 aarch64 的客户机照样是模拟）。排函数的轨迹是空的，`dist` 报错停下，
 # 不出一份没排过的。链接器是工具链自带的 rust-lld（`-fuse-ld=lld`，order.py 找工具链里的 gcc-ld/ld.lld），不另装。
-# macOS 那一份不排函数（qemu 用户态只模拟 Linux 的程序，链接器是苹果的 ld），照平常的 release 编（`xtask dist` 自己分）。
+# macOS 那一份照录好的清单排函数（`bench/macos-order.txt`，`xtask dist` 自己分：先不去符号链一遍、照清单写排序文件、
+# 再链一遍、最后去符号）；清单不在 CI 上录（qemu 用户态只模拟 Linux 的程序），是在真机上录好提交进仓库的。
 #
 # 系统包（LM-35）：Linux 两个目标查过压缩包以后，各从压缩包出 deb、rpm、pacman 三种包（`cargo xtask pkg`，不重编，包里的程序和
 # 压缩包里的一字不差），各打两次比可重现，各自查（`cargo xtask pkg-check`）。macOS 只有压缩包。一共九个文件，加 SHA256SUMS。
@@ -270,7 +271,7 @@ jobs:
             echo
             echo "核对：\`sha256sum -c SHA256SUMS\`（macOS：\`shasum -a 256 -c SHA256SUMS\`）；构建出处：\`gh attestation verify <文件> -R $GITHUB_REPOSITORY\`。"
             echo "三份：\`linux-x86_64\`、\`linux-aarch64\`（musl 全静态，任何发行版都能跑）、\`macos-aarch64\`（Apple 芯片）。"
-            echo "解开以后把 \`litemiyu\` 放进 PATH；Arch 上也可以装 AUR 的 \`litemiyu\`。"
+            echo "解开以后把 \`litemiyu\` 放进 PATH。也可以从软件源安装：AUR 的 \`litemiyu-bin\`，Homebrew 的 \`miyu-agent/tap/litemiyu\`（这两处在这次发布公开以后才更新到这个版本）。"
             echo
             echo "系统包（Linux x86_64、aarch64 各一个；里面的程序和压缩包里的一字不差，装在 \`/usr/bin/litemiyu\`，没有依赖，包本身没有签名，先照 SHA256SUMS 核对）："
             echo "- Debian、Ubuntu：\`sudo apt install ./litemiyu_${version}-1_amd64.deb\`（aarch64 是 \`_arm64.deb\`）；卸载 \`sudo apt remove litemiyu\`。"

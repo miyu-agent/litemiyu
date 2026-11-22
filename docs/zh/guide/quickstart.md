@@ -12,7 +12,7 @@ LiteMiyu 只有一个程序文件 `litemiyu`，放进 `PATH` 就算装好了。�
 
 > 发行包还没有公开发布。下面写的是发布以后的安装方法；现在想用的话，请看[从源码编译](install.md#从源码编译)。
 
-- Arch Linux：推荐从 AUR 安装，运行 `paru -S litemiyu`。
+- Arch Linux：推荐从 AUR 安装，运行 `paru -S litemiyu-bin`。
 - 其他 Linux 发行版、macOS（Apple 芯片）：到[发行版页面](https://github.com/miyu-agent/litemiyu/releases)下载对应系统的压缩包，解压后把里面的 `litemiyu` 放进 `~/.local/bin`。
 - Intel 芯片的 Mac、BSD：没有发行包，需要从源码编译。
 

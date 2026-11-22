@@ -4,7 +4,7 @@
 
 这一页是 LiteMiyu 的安装、升级和卸载方法。如果只是想尽快用上，看[快速上手](quickstart.md)就够了。
 
-> 目前公开发布的是预发布版，版本号的写法是 `2026.11.0-rc.1`。下面各节命令里的 `<版本>` 请换成[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上的版本号。AUR 的包在正式版发布以后才会提供，在那之前 Arch Linux 上请安装 [Arch 的包](#arch-的包arch-linuxarch-linux-arm)。
+> 目前公开发布的是预发布版，版本号的写法是 `2026.11.0-rc.1`。下面各节命令里的 `<版本>` 请换成[发行版页面](https://github.com/miyu-agent/litemiyu/releases)上的版本号。
 
 ## 选择安装方式
 
@@ -32,8 +32,9 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 |---|---|
 | Debian、Ubuntu | [deb](#debdebianubuntu) |
 | Fedora、RHEL、openSUSE | [rpm](#rpmfedorarhelopensuse) |
-| Arch Linux、Arch Linux ARM | [Arch 的包](#arch-的包arch-linuxarch-linux-arm)；正式版发布以后也可以用 [AUR](#arch-linuxaur) |
-| 其他 Linux 发行版、macOS（Apple 芯片） | [下载发行包](#下载发行包linuxmacos) |
+| Arch Linux、Arch Linux ARM | [AUR](#arch-linuxaur)；不想用 AUR 的话安装 [Arch 的包](#arch-的包arch-linuxarch-linux-arm) |
+| macOS（Apple 芯片） | [Homebrew](#homebrewmacoslinux)，或者[下载发行包](#下载发行包linuxmacos) |
+| 其他 Linux 发行版 | [下载发行包](#下载发行包linuxmacos)；已经在用 Homebrew 的话也可以用 [Homebrew](#homebrewmacoslinux) |
 | Intel 芯片的 Mac、FreeBSD 等 BSD | [从源码编译](#从源码编译) |
 | Windows | 在 WSL2 里按照 Linux 的方法安装 |
 
@@ -123,13 +124,31 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 
 ## Arch Linux（AUR）
 
-AUR 的包在正式版发布以后提供。用 AUR 安装的话，升级可以跟着系统一起做：
+AUR 上的包名是 [`litemiyu-bin`](https://aur.archlinux.org/packages/litemiyu-bin)。用 AUR 安装的话，升级可以跟着系统一起做：
 
 ```bash
-paru -S litemiyu   # 或者 yay -S litemiyu
+paru -S litemiyu-bin   # 或者 yay -S litemiyu-bin
 ```
 
-程序安装在 `/usr/bin/litemiyu`，许可证在 `/usr/share/licenses/litemiyu/`。x86_64 和 aarch64 都可以安装。
+这个包安装的是发行包里的那一个程序，不在你的电脑上编译。x86_64 和 aarch64 都可以安装。
+
+- 升级：跟着系统更新，例如 `paru -Syu`。
+- 卸载：`sudo pacman -R litemiyu-bin`。
+
+程序安装在 `/usr/bin/litemiyu`，许可证在 `/usr/share/licenses/litemiyu-bin/`。`litemiyu-bin` 和上一节的 Arch 的包（包名 `litemiyu`）装的是同一个文件，两个不能同时安装。
+
+## Homebrew（macOS、Linux）
+
+```bash
+brew install miyu-agent/tap/litemiyu
+```
+
+这条命令会添加 [miyu-agent/tap](https://github.com/miyu-agent/homebrew-tap) 这个软件源，然后下载对应系统的发行包、核对校验和、安装。它支持 Apple 芯片的 macOS，以及 Linux 上的 Homebrew（x86_64、aarch64）；不支持 Intel 芯片的 Mac。
+
+- 升级：`brew upgrade litemiyu`。
+- 卸载：`brew uninstall litemiyu`。不再需要这个软件源的话，再运行 `brew untap miyu-agent/tap`。
+
+安装的程序和发行包里的是同一个文件。
 
 ## 下载发行包（Linux、macOS）
 
@@ -197,6 +216,7 @@ LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一�
 
 - deb、rpm、Arch 的包：下载新版本的包，用安装时的命令再装一次，见上面各节。
 - AUR：跟着系统更新，例如 `paru -Syu`。
+- Homebrew：`brew upgrade litemiyu`。
 - 发行包：下载新版本，按照上面的第 3 步用 `install` 覆盖 `~/.local/bin/litemiyu`。
 - 源码：`git pull` 之后重新运行 `cargo build --release -p litemiyu`，再覆盖一次。
 
@@ -211,7 +231,9 @@ LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一�
     ```bash
     sudo apt remove litemiyu      # 用 deb 安装的
     sudo dnf remove litemiyu      # 用 rpm 安装的（openSUSE 上是 sudo zypper remove litemiyu）
-    sudo pacman -R litemiyu       # 用 Arch 的包或者 AUR 安装的
+    sudo pacman -R litemiyu       # 用 Arch 的包安装的
+    sudo pacman -R litemiyu-bin   # 用 AUR 安装的
+    brew uninstall litemiyu       # 用 Homebrew 安装的
     rm ~/.local/bin/litemiyu      # 手动安装的
     ```
 
