@@ -347,7 +347,7 @@ mod tests {
         let text = std::fs::read_to_string(super::root().join("packaging/homebrew/litemiyu.rb.in"))
             .unwrap();
         for platform in ["macos-aarch64", "linux-x86_64", "linux-aarch64"] {
-            let url = format!("litemiyu-#{{version}}-{platform}.tar.gz\"");
+            let url = format!("litemiyu-@VERSION@-{platform}.tar.gz\"");
             let at = text
                 .find(&url)
                 .unwrap_or_else(|| panic!("没有 {platform} 的地址"));

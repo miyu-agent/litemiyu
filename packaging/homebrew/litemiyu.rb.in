@@ -3,29 +3,30 @@
 #
 # 程序是发版时排过函数、去了符号的那一份（`cargo xtask dist`），装上的和发行包里的一字不差。macOS 只有 Apple 芯片的；
 # Linux 上的 Homebrew 装 musl 全静态的那一份（x86_64、aarch64），不要任何共享库。
+#
+# 不写 version：Homebrew 照下载地址里的文件名认版本（`brew audit` 嫌多写的那一行重复）。
 class Litemiyu < Formula
   desc "Single-process agent harness for the terminal, one static program"
   homepage "https://github.com/miyu-agent/litemiyu"
-  version "@VERSION@"
   license "AGPL-3.0-or-later"
 
   on_macos do
     depends_on arch: :arm64
 
     on_arm do
-      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-macos-aarch64.tar.gz"
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v@VERSION@/litemiyu-@VERSION@-macos-aarch64.tar.gz"
       sha256 "@SHA256_MACOS_AARCH64@"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-linux-x86_64.tar.gz"
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v@VERSION@/litemiyu-@VERSION@-linux-x86_64.tar.gz"
       sha256 "@SHA256_LINUX_X86_64@"
     end
 
     on_arm do
-      url "https://github.com/miyu-agent/litemiyu/releases/download/v#{version}/litemiyu-#{version}-linux-aarch64.tar.gz"
+      url "https://github.com/miyu-agent/litemiyu/releases/download/v@VERSION@/litemiyu-@VERSION@-linux-aarch64.tar.gz"
       sha256 "@SHA256_LINUX_AARCH64@"
     end
   end
