@@ -235,7 +235,7 @@ mod tests {
         };
         assert_eq!(said("done"), "完成");
         assert_eq!(said("stopped"), "已停止");
-        assert_eq!(said("undone"), "撤销时已停止");
+        assert_eq!(said("undone"), "撤回时已停止");
         assert_eq!(said("aborted"), "上次退出时已停止");
     }
 }

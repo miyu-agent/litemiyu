@@ -113,6 +113,10 @@ texts! {
         pub loop_stopped: String,
         /// 循环搁着（LM-34）：到点时有一次撤回还能恢复，等撤回处理了再补交。输入框上面那一行写的。
         pub loop_held: String,
+        /// 循环到点交进来的那一句前面的字（LM-41）：正文里写「循环 · 那句话」。
+        pub woke_loop: String,
+        /// AI 自己定的到点继续交进来的那一句前面的字。
+        pub woke_once: String,
         /// 一条请求被拒，`{reason}` 是核心说的原因。
         pub refused: String,
         /// 编辑上一句时输入框上边框写的（`/edit`，「输入框」第 13 条）。

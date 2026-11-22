@@ -133,6 +133,8 @@ Without an interval, the AI decides after each run when to come back (at least 1
 
 The `/loop` line you typed is shown in the conversation exactly as you typed it, the same way as your other messages, and the AI runs it right away.
 
+Each later run adds one dim line to the conversation with the words the loop handed to the AI, for example `Loop · check the time`. A long line is cut short; click it to read the whole text.
+
 ### Viewing and stopping
 
 While a loop is running, the time of the next run is shown above the input box on the right.

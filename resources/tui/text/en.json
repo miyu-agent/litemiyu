@@ -21,6 +21,8 @@
   "core_failed": "LiteMiyu can't continue: {reason}",
   "loop_stopped": "Loops and scheduled continuations stopped when the window was closed. Run /loop to start a loop again",
   "loop_held": "Loop waiting on undo",
+  "woke_loop": "Loop",
+  "woke_once": "Scheduled",
   "refused": "Couldn't do that: {reason}",
   "editing": " Editing your last message · Esc to cancel ",
   "interrupted": "Interrupted",

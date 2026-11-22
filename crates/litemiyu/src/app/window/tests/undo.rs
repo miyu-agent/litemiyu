@@ -185,7 +185,7 @@ fn undoing_the_last_turn_while_watching_matches_after_paging() {
     assert_eq!(a, b, "撤掉以后一样");
     assert!(
         a.iter()
-            .any(|l| l.contains("↶ 已撤销 · /restore 恢复 · 第 89 轮")),
+            .any(|l| l.contains("↶ 已撤回 · /restore 恢复 · 第 89 轮")),
         "撤销说明那一行贴着底：\n{}",
         a.join("\n")
     );
@@ -231,18 +231,18 @@ fn what_the_undo_also_undid_is_drawn_whichever_comes_first_and_after_paging() {
     assert_eq!(a, b, "谁先到都一样");
     let has = |screen: &[String], text: &str| screen.iter().any(|l| l.contains(text));
     assert!(
-        has(&a, "↶ 已撤销 · /restore 恢复")
-            && has(&a, "  已撤销压缩，上下文恢复到压缩前")
-            && has(&a, "  已撤销清空，上下文恢复到清空前"),
-        "头一行下面两行，和「已撤销」对齐：\n{}",
+        has(&a, "↶ 已撤回 · /restore 恢复")
+            && has(&a, "  已撤回压缩，上下文恢复到压缩前")
+            && has(&a, "  已撤回清空，上下文恢复到清空前"),
+        "头一行下面两行，和「已撤回」对齐：\n{}",
         a.join("\n")
     );
     assert!(!has(&a, "已停止 2 个任务"), "停了几个任务收着不写");
     page_up_and_back(&mut full, &mut kept);
     let back = kept.settle();
     assert!(
-        has(&back, "已撤销压缩，上下文恢复到压缩前")
-            && has(&back, "已撤销清空，上下文恢复到清空前"),
+        has(&back, "已撤回压缩，上下文恢复到压缩前")
+            && has(&back, "已撤回清空，上下文恢复到清空前"),
         "放掉又读回来的那一段照旧写着：\n{}",
         back.join("\n")
     );

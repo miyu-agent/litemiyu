@@ -46,7 +46,7 @@ use crate::core::{CallError, EndReason, Limits, Push, ToolStatus, Update, Usage}
 pub use cache::CacheWatch;
 pub use chips::Chip;
 pub use climb::Progress;
-pub use entry::{Entry, Kind, MarkTone, Shell};
+pub use entry::{Entry, Kind, MarkTone, Shell, Woke};
 pub use stuck::Stuck;
 
 pub use steps::{ReportClass, ReportNote, Segment, Step, StepKind, Tally, ToolState};
@@ -408,6 +408,10 @@ impl Transcript {
             } => self.model_set(reference, replaced, texts),
             Push::EffortSet(level) => self.own_effort_set(level),
             Push::Said { seq, text } => self.said(seq, text),
+            Push::Woke { seq, text, looping } => {
+                let woke = if looping { Woke::Loop } else { Woke::Once };
+                self.woke(seq, text, woke);
+            }
             Push::Images { seq, files } => self.images(seq, files, &texts.image_label),
             Push::BlockStart { index, block } => {
                 self.spoke = true;

@@ -9,7 +9,7 @@ use super::Engine;
 use crate::core::Update;
 
 impl Engine {
-    /// 撤销上一轮（`restore` 为假），或者恢复刚撤销的。
+    /// 撤回上一轮（`restore` 为假），或者恢复刚撤销的。
     pub(super) async fn undo(&mut self, restore: bool) {
         let command = if restore {
             Kernel::Unrevert

@@ -36,7 +36,7 @@ fn redo_runs_the_last_turn_again_without_an_undo_line() {
         s.screen().contains("❱ 头一句话")
     });
     let screen = session.screen();
-    assert!(!screen.contains("已撤销"), "重做不留撤销说明：\n{screen}");
+    assert!(!screen.contains("已撤回"), "重做不留撤销说明：\n{screen}");
     assert_eq!(
         screen.matches("头一句话").count(),
         3,
@@ -82,7 +82,7 @@ fn edit_puts_the_last_message_back_and_sends_it_changed() {
     let screen = session.screen();
     assert!(screen.contains("头一句话，改过"), "{screen}");
     assert!(
-        !screen.contains("已撤销") && !screen.contains("编辑上一条"),
+        !screen.contains("已撤回") && !screen.contains("编辑上一条"),
         "{screen}"
     );
     let resent = request(&server, 1);

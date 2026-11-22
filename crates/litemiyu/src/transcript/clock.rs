@@ -64,6 +64,14 @@ impl Transcript {
         }
     }
 
+    /// 循环、定时触发到点交进来的一句（LM-41）：和你说的话一样记序号（开轮、撤回照它认），画成一行暗色的旁白。
+    pub(super) fn woke(&mut self, seq: u64, text: String, woke: super::Woke) {
+        self.said(seq, text);
+        if let Some(entry) = self.entries.last_mut() {
+            entry.woke = Some(woke);
+        }
+    }
+
     /// 补发来的你说的话：照你说的画，记下序号（开轮时照它认，第 6 条）。
     pub(super) fn said(&mut self, seq: u64, text: String) {
         self.user(text, Vec::new());

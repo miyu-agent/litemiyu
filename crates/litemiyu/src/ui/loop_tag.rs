@@ -133,7 +133,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../../resources/tui/text/zh.json")).unwrap();
         let en: serde_json::Value =
             serde_json::from_str(include_str!("../../../../resources/tui/text/en.json")).unwrap();
-        assert_eq!(zh["loop_held"], "循环在等撤销处理");
+        assert_eq!(zh["loop_held"], "循环在等撤回处理");
         assert_eq!(en["loop_held"], "Loop waiting on undo");
         held.pace = Pace::Dynamic;
         held.next = None;

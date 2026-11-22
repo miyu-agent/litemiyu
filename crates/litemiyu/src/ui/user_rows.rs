@@ -21,6 +21,15 @@ pub fn rows(i: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
     if let Some(from) = &entry.from {
         return super::foreign_rows::rows(i, entry, from, ctx);
     }
+    // 循环、定时触发到点交进来的（LM-41）：一行暗色的旁白「循环 · 那句话」，点开看全文。
+    if let Some(woke) = entry.woke {
+        let text = ctx.config.text();
+        let label = match woke {
+            crate::transcript::Woke::Loop => &text.woke_loop,
+            crate::transcript::Woke::Once => &text.woke_once,
+        };
+        return super::foreign_rows::rows(i, entry, label, ctx);
+    }
     let bar_style = theme::user_bar();
     let bar = Span::styled(ctx.config.layout.user_bar.clone(), bar_style);
     let said = entry.text.trim_matches('\n');

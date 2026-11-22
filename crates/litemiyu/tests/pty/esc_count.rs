@@ -121,9 +121,9 @@ fn another_key_between_two_escs_makes_the_second_a_new_first() {
 fn closing_the_command_list_with_esc_is_not_the_first_esc() {
     let (_server, session) = running();
     session.type_text("/");
-    session.wait_for("撤销上一轮", "命令列表开了");
+    session.wait_for("撤回上一轮", "命令列表开了");
     session.press(ESC);
-    session.wait_until("命令列表关了", |s| !s.screen().contains("撤销上一轮"));
+    session.wait_until("命令列表关了", |s| !s.screen().contains("撤回上一轮"));
     // 那个 `/` 用 `Ctrl+C` 清掉（再敲字会又把列表筛出来；退格删掉的话，空输入框轮换的提示里也有 `/`，等不出删没删）。
     session.press(CTRL_C);
     session.wait_for(CLEARED, "提示换成清空的那一句");

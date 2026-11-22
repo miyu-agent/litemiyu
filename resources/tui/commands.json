@@ -6,7 +6,7 @@
         "rewind"
       ],
       "summary": {
-        "zh": "撤销上一轮",
+        "zh": "撤回上一轮",
         "en": "Undo the last turn"
       },
       "run": "revert"
@@ -14,7 +14,7 @@
     {
       "name": "restore",
       "summary": {
-        "zh": "恢复刚才撤销的一轮",
+        "zh": "恢复刚才撤回的一轮",
         "en": "Bring back the turn you just undid"
       },
       "run": "unrevert"

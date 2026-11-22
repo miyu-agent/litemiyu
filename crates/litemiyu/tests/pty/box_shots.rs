@@ -69,7 +69,7 @@ fn boxes(ground: bool) {
     session.press_enter();
     session.wait_for("第二问的回答", "第二轮");
     let name = |what: &str| format!("{side}-{what}");
-    // 等的是框线上的标题，不等「/undo」：空输入框轮换的提示里有一句「/undo 撤销上一轮，/restore 恢复」，轮到它时框关了
+    // 等的是框线上的标题，不等「/undo」：空输入框轮换的提示里有一句「/undo 撤回上一轮，/restore 恢复」，轮到它时框关了
     // 屏上照样有「/undo」，「关了」永远等不到（2026-11-16 整套测试里红过）。
     shoot(&session, (&name("menu"), "/", false), "─ 命令", (1, 1));
     shoot(

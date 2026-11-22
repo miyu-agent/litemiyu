@@ -399,6 +399,7 @@ fn fingerprint(i: usize, entry: &Entry, ctx: &Ctx) -> Option<u64> {
     (entry.hidden, entry.queued, entry.open).hash(&mut h);
     entry.shell.hash(&mut h);
     entry.from.hash(&mut h);
+    entry.woke.hash(&mut h);
     (entry.pasted.len(), &entry.details).hash(&mut h);
     // 后台命令结束那一行：输出读回来了补进点开看的全文（Miyu 哈希 `job.detail.len()`），有了全文才能点。
     (entry.report, entry.detail.len()).hash(&mut h);

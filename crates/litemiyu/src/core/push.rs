@@ -129,6 +129,15 @@ pub enum Push {
         /// 说的字。
         text: String,
     },
+    /// 循环、定时触发到点交进来的一句（`by: schedule`，LM-41）：正文里画成一行暗色的旁白「循环 · 那句话」，不画成你说的话。
+    Woke {
+        /// 落盘的序号。
+        seq: u64,
+        /// 到点交进来的那句话。
+        text: String,
+        /// 是循环的一次（真），还是 AI 自己定的到点继续（假）。
+        looping: bool,
+    },
     /// 一句你说的话带着图片（`message.user` 的 `image` 块，LM-28）：序号，和每一张原来在本机的哪儿（会话没记路径的是
     /// `None`：应急模式里贴的）。紧跟在那一句的 [`Push::UserMessage`]、[`Push::Said`] 后面。
     Images {
@@ -338,25 +347,32 @@ pub fn read(event: &Event) -> Vec<Push> {
             out.push(Push::UserMessage(seq));
             out.push(Push::ShellAsked(seq));
         }
-        // 循环到点交进来的（`by: schedule`）：照你说的话画（同 Miyu 终端 `push/jobs.rs`：「正常和用户消息类似」）。人亲手敲
-        // `/loop` 的那一刻交的第一句带着人敲的那一行（LM-34）：照原文画，「敲什么显示什么」（2026-11-22 项目主人）。
-        Body::MessageUser(message) if matches!(event.by, By::Schedule(_)) => out.push(Push::Said {
-            seq,
-            text: message.typed().map_or_else(
-                || {
-                    message
-                        .blocks
-                        .iter()
-                        .filter_map(|block| match block {
-                            Content::Text(text) => Some(text.text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                },
-                str::to_string,
-            ),
-        }),
+        // 人亲手敲 `/loop` 的那一刻交的第一句带着人敲的那一行（LM-34）：照原文画成你说的话，「敲什么显示什么」
+        // （2026-11-22 项目主人）。
+        Body::MessageUser(message)
+            if matches!(event.by, By::Schedule(_)) && message.typed().is_some() =>
+        {
+            out.push(Push::Said {
+                seq,
+                text: message.typed().unwrap_or_default().to_string(),
+            });
+        }
+        // 之后到点交进来的（LM-41，2026-11-22 项目主人）：一行暗色的旁白，带着循环这次说的原话。
+        Body::MessageUser(message) if let By::Schedule(schedule) = &event.by => {
+            out.push(Push::Woke {
+                seq,
+                text: message
+                    .blocks
+                    .iter()
+                    .filter_map(|block| match block {
+                        Content::Text(text) => Some(text.text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                looping: schedule.looping.is_some(),
+            });
+        }
         // 别的会话发来的（收件目录里读到的、派它的父会话留的言）：照别处来的话画。
         Body::MessageUser(message) if let By::Session(from) = &event.by => {
             out.push(Push::Foreign {
@@ -519,9 +535,10 @@ mod tests {
         );
         assert_eq!(
             read(&woke),
-            [Push::Said {
+            [Push::Woke {
                 seq: 7,
-                text: "看看 CI".into()
+                text: "看看 CI".into(),
+                looping: true
             }]
         );
         let stopped = event(

@@ -104,7 +104,7 @@ impl Writer {
         }
     }
 
-    /// 两轮之间：过一会儿（偶尔过整点）、置顶、撤销上一轮（撤了又恢复的也有）、压缩。
+    /// 两轮之间：过一会儿（偶尔过整点）、置顶、撤回上一轮（撤了又恢复的也有）、压缩。
     fn between(&mut self, s: &mut Stage) {
         let minutes = match self.rng.chance(25) {
             true => 60,

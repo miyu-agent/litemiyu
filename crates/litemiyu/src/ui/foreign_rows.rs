@@ -128,4 +128,42 @@ mod tests {
             ]
         );
     }
+
+    /// LM-41（2026-11-22 项目主人）：循环到点交进来的那一句画成一行暗色的旁白，带着循环这次说的原话；AI 自己定的
+    /// 到点继续写「定时触发」。和别处来的话不同，撤回那一轮时它跟着藏起来。
+    #[test]
+    fn a_loop_wakeup_is_one_dim_line_with_its_own_words_and_undo_takes_it() {
+        use crate::core::{Push, Update};
+        let f = Fixture::new();
+        let mut t = Transcript::default();
+        let texts = f.config.text();
+        for (seq, looping) in [(3, true), (9, false)] {
+            let woke = Push::Woke {
+                seq,
+                text: "看一眼时间".into(),
+                looping,
+            };
+            t.update(Update::Push(woke), texts);
+            t.update(Update::Push(Push::TurnStarted(seq + 1, Some(seq))), texts);
+        }
+        let bar = f.config.layout.user_bar.trim_end();
+        let drawn = |i: usize| text(&crate::ui::user_rows::rows(i, &t.entries[i], &f.ctx()));
+        let (first, second) = (0, t.entries.len() - 1);
+        assert_eq!(drawn(first)[1], format!("{bar} 循环 · 看一眼时间"));
+        assert_eq!(drawn(second)[1], format!("{bar} 定时触发 · 看一眼时间"));
+        let rows = crate::ui::user_rows::rows(first, &t.entries[first], &f.ctx());
+        assert!(
+            rows[1].line.spans.iter().any(|s| s.style == theme::dim()),
+            "字暗：{:?}",
+            rows[1].line.spans
+        );
+        let reverted = Push::Reverted {
+            turns: vec![10],
+            seq: 20,
+            cause: None,
+        };
+        t.update(Update::Push(reverted), texts);
+        assert!(t.entries[second].hidden, "撤回带走到点交进来的那一句");
+        assert!(!t.entries[first].hidden);
+    }
 }

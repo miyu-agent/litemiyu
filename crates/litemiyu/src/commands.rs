@@ -50,7 +50,7 @@ pub enum Line<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Run {
-    /// 撤销上一轮（改过的文件不改回，Miyu 核心 U-1）；有排着队的先退回最新的那一条（`app/undo.rs`）。
+    /// 撤回上一轮（改过的文件不改回，Miyu 核心 U-1）；有排着队的先退回最新的那一条（`app/undo.rs`）。
     Revert,
     /// 恢复刚撤销的那一轮（`app/undo.rs`）。
     Unrevert,

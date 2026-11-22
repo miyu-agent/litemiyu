@@ -85,7 +85,7 @@ fn redoing_the_last_turn_while_watching_matches_after_paging() {
     let (a, b) = (full.settle(), kept.settle());
     assert_eq!(a, b, "重做以后一样");
     assert!(
-        !a.iter().any(|l| l.contains("已撤销")),
+        !a.iter().any(|l| l.contains("已撤回")),
         "重做不留撤销说明：\n{}",
         a.join("\n")
     );

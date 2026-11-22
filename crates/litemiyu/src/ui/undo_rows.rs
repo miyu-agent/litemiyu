@@ -1,4 +1,4 @@
-//! 撤销说明那一行（Miyu 终端 `ui/undo_rows.rs`，蓝图 `tui.md`「正文」第 5 条）：收着一行 `↶ 已撤销 · /restore 恢复 · 那一句的
+//! 撤销说明那一行（Miyu 终端 `ui/undo_rows.rs`，蓝图 `tui.md`「正文」第 5 条）：收着一行 `↶ 已撤回 · /restore 恢复 · 那一句的
 //! 预览`，撤掉的几轮里有压缩、清空的下面各一行；点开铺底色写你说的那句全文，最后一行停掉了几个任务。几个数照撤销的回应
 //! （内核的 `Outcome::Reverted`，同 Miyu 回应的 `Report`）；补发来的没有回应，同 Miyu 补发的样子不写。
 //!
@@ -34,7 +34,7 @@ pub(super) fn rows(i: usize, entry: &Entry, ctx: &Ctx) -> Vec<Row> {
         vec![Span::styled(clip(&head, ctx.width), style)],
     )];
     let report = entry.undo.as_deref();
-    // 撤掉的几轮里有压缩、有清空：下面一行说一句，和「已撤销」对齐（Miyu 施工 6-9、6-8 补，照 `miyu undo`）。
+    // 撤掉的几轮里有压缩、有清空：下面一行说一句，和「已撤回」对齐（Miyu 施工 6-9、6-8 补，照 `miyu undo`）。
     for (count, said) in [
         (report.map_or(0, |r| r.compactions), &text.undo_compactions),
         (report.map_or(0, |r| r.clears), &text.undo_clears),

@@ -138,7 +138,7 @@ pub enum Command {
     /// 换会话的模型（`litemiyu ask --model`，内核的 `Configure`）：模型 `<供应商>/<模型>` 或 `@池`，调的一方照配置查过。还没开会话
     /// 的先开一个；下一个回合起用它，以后都用它。
     Configure(String),
-    /// 撤销上一轮（`/undo`，内核的 `Revert`）：撤成了交回 [`Update::Undone`]，被拒的照原因码报。
+    /// 撤回上一轮（`/undo`，内核的 `Revert`）：撤成了交回 [`Update::Undone`]，被拒的照原因码报。
     Revert,
     /// 恢复刚撤销的那几轮（`/restore`，内核的 `Unrevert`）：恢复了交回 `Update::Undone { restore: true }`，被拒的照原因码报。
     Unrevert,

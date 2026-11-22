@@ -23,6 +23,15 @@ pub enum Kind {
     Answered,
 }
 
+/// 到点交进来的一句是谁定的时间（LM-41）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Woke {
+    /// 循环的一次。
+    Loop,
+    /// AI 自己定的到点继续。
+    Once,
+}
+
 /// 正文里的一条。
 #[derive(Debug, Clone)]
 pub struct Entry {
@@ -60,6 +69,8 @@ pub struct Entry {
     pub shell: Option<Shell>,
     /// 别处来的话（别的会话发来的）的来处那一句（Miyu「别处来的话」第 2 条）：照它画成别处来的样子。你说的、别的条是 `None`。
     pub from: Option<String>,
+    /// 循环、定时触发到点交进来的一句（LM-41）：画成一行暗色的旁白。和别处来的话不同，撤回照样带走它。别的条是 `None`。
+    pub woke: Option<Woke>,
     /// 点开看的全文（Miyu「后台命令、子代理和侧边栏」第 5 条）：子代理结束那一行带它交回来的报告。别的条是空的。
     pub detail: String,
     /// 后台任务、别的会话那几行（[`super::Transcript::marked_with`] 写的，Miyu `Kind::Job`）：一行，放不下截掉；有全文的能点开
@@ -114,6 +125,7 @@ impl Entry {
             at: None,
             shell: None,
             from: None,
+            woke: None,
             detail: String::new(),
             report: false,
             piece: 0,

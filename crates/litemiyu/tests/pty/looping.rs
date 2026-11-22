@@ -128,7 +128,7 @@ fn a_loop_typed_after_an_undo_runs_at_once_and_reads_as_typed() {
     session.type_text("/undo");
     session.wait_for("❯ /undo", "打进去了");
     session.press_enter();
-    session.wait_for("↶ 已撤销", "撤了");
+    session.wait_for("↶ 已撤回", "撤了");
     session.wait_until("那一句放回输入框", |s| {
         s.screen().lines().any(|l| l.contains("❯ 说一句"))
     });
@@ -149,7 +149,7 @@ fn a_loop_typed_after_an_undo_runs_at_once_and_reads_as_typed() {
     session.type_text("/restore");
     session.wait_for("❯ /restore", "打进去了");
     session.press_enter();
-    session.wait_for("没有可恢复的撤销", "撤掉的那一轮恢复不了");
+    session.wait_for("没有可恢复的撤回", "撤掉的那一轮恢复不了");
     session.type_text("后来这一句");
     session.wait_for("❯ 后来这一句", "打进去了");
     session.press_enter();
