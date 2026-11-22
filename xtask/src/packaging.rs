@@ -357,6 +357,14 @@ mod tests {
         }
     }
 
+    /// 配方里单写着版本：不写的话 Homebrew 照文件名猜，`…-linux-x86_64.tar.gz` 会被猜成 86.64（演练时撞到过）。
+    #[test]
+    fn the_formula_states_its_version() {
+        let text = std::fs::read_to_string(super::root().join("packaging/homebrew/litemiyu.rb.in"))
+            .unwrap();
+        assert!(text.contains("\n  version \"@VERSION@\"\n"));
+    }
+
     /// npm 主包的可选依赖正好是三个平台包，版本同主包；启动脚本认的平台和它们对得上。
     #[test]
     fn the_npm_main_package_depends_on_exactly_the_platform_packages() {

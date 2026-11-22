@@ -4,10 +4,12 @@
 # 程序是发版时排过函数、去了符号的那一份（`cargo xtask dist`），装上的和发行包里的一字不差。macOS 只有 Apple 芯片的；
 # Linux 上的 Homebrew 装 musl 全静态的那一份（x86_64、aarch64），不要任何共享库。
 #
-# 不写 version：Homebrew 照下载地址里的文件名认版本（`brew audit` 嫌多写的那一行重复）。
+# version 一行必须写：不写的话 Homebrew 照下载地址里的文件名猜版本，Linux x86_64 那个文件名（…-linux-x86_64.tar.gz）会被
+# 猜成 86.64。`brew audit` 在另外两个平台上会说这一行「和从地址里认出的版本重复」，不用照办。
 class Litemiyu < Formula
   desc "Single-process agent harness for the terminal, one static program"
   homepage "https://github.com/miyu-agent/litemiyu"
+  version "@VERSION@"
   license "AGPL-3.0-or-later"
 
   on_macos do
