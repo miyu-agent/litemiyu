@@ -197,6 +197,9 @@
     },
     {
       "name": "exit",
+      "aliases": [
+        "quit"
+      ],
       "summary": {
         "zh": "退出",
         "en": "Exit"

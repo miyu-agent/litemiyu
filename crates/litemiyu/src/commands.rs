@@ -202,6 +202,8 @@ mod tests {
             matches!(c.read("/reset"), Line::Command(s, None) if s.name == "clear"),
             "别名"
         );
+        // 2026-11-23 项目主人：/quit 也是 /exit。
+        assert!(matches!(c.read("/quit"), Line::Command(s, None) if s.name == "exit"));
         assert!(
             matches!(c.read("/icons 深色"), Line::Talk),
             "不带参数的命令后面跟了字：一句话"

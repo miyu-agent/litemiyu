@@ -33,7 +33,7 @@ LiteMiyu has 24 commands:
 | [`/icons`](#icons) | Switch icons |
 | [`/config`](#config) (`/settings`) | Open the settings screen |
 | [`/help`](#help) | See keys and commands |
-| [`/exit`](#exit) | Exit |
+| [`/exit`](#exit) (`/quit`) | Exit |
 
 Names in parentheses are aliases and behave exactly the same.
 
@@ -207,7 +207,7 @@ Opens the settings screen, the same one `litemiyu config` opens from the shell. 
 
 ### /exit
 
-Exits LiteMiyu. Pressing `Ctrl+D` with an empty input box does the same.
+Exits LiteMiyu. `/quit` is an alias and does the same. Pressing `Ctrl+D` with an empty input box also exits.
 
 ## Commands in rescue mode
 

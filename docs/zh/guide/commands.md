@@ -33,7 +33,7 @@ LiteMiyu 一共有 24 条命令：
 | [`/icons`](#icons) | 切换图标 |
 | [`/config`](#config)（`/settings`） | 打开配置界面 |
 | [`/help`](#help) | 查看按键和命令 |
-| [`/exit`](#exit) | 退出 |
+| [`/exit`](#exit)（`/quit`） | 退出 |
 
 括号里的是别名，作用完全一样。
 
@@ -207,7 +207,7 @@ LiteMiyu 一共有 24 条命令：
 
 ### /exit
 
-退出 LiteMiyu。也可以在输入框为空时按 `Ctrl+D`。
+退出 LiteMiyu。`/quit` 是它的别名，效果相同。也可以在输入框为空时按 `Ctrl+D`。
 
 ## 应急模式下的命令
 
