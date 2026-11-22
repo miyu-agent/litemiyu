@@ -72,19 +72,6 @@ impl<'w> Text<'w> {
         }
     }
 
-    /// 同 [`Text::new`]，但是不看标准输出、标准错误是不是终端，一律照接着终端办（shell 集成的后台进程：它的标准输出是一条
-    /// 转交给终端的套接字，印的字最后到的是终端）。回答、思考里的终端控制序列照样洗掉（审计 2026-11-18 #064）。
-    pub fn relayed(words: &'w Words) -> Text<'w> {
-        let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
-        Text {
-            terminal: true,
-            answer: Some(Wash::default()),
-            thought: Some(Wash::default()),
-            color: !no_color,
-            ..Text::new(words)
-        }
-    }
-
     /// 标准错误上写一段（写不进的没处可报）。
     fn err(&self, text: &str) {
         let mut err = std::io::stderr().lock();

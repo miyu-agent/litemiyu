@@ -1,35 +1,27 @@
 //! `shellhook worker`：后台的那个进程，`say`（`say.rs`）起的，不是给人敲的。它拿着会话：载入这个终端的会话（没有的新开）、
-//! 说那一句、跟到这一轮了结。它不碰终端：标准输入是前台转交来的按键，标准输出、标准错误是要印的字，另有一条控制线
-//! （`wire.rs`，起来时在标准错误的位置上）。
+//! 说那一句、跟到这一轮了结。它的标准输入、标准输出就是终端这个设备（原始模式是前台进的），另有一条控制线（`wire.rs`，
+//! 起来时在标准错误的位置上）。读按键用全屏界面的那条线程（`reader.rs`）。
 //!
-//! 施工 SH-1 的最小版本：回答用 `ask` 现成的文字输出、流式地印；没有抽屉，要人确认的高危命令照 `ask` 不加 `--yes` 时那样
+//! 现在的最小版本：回答用 `ask` 现成的文字输出、流式地印；没有抽屉，要人确认的高危命令照 `ask` 不加 `--yes` 时那样
 //! 跳过；这一轮派出去的后台命令、子代理像 `ask` 一样等它们报完；办完就退出，不留下来。画法、抽屉、留下来是后面几步。
 
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Write};
 use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Duration;
 
 use lm_engine::store::paths::{Env, Paths};
 
 use super::terminal::{self, Terminal};
-use super::typed::Typed;
 use super::wire::{ToFront, ToWorker};
 use crate::cli::ask::{Event, Follow, Out, Output, Plan, Sink, Text, drive_with, model_ready};
 use crate::cli::misuse;
 use crate::cli::parse::Parsed;
 use crate::cli::words::Words;
 
-/// 前台说了不再转交按键以后，最多等多久把路上的按键收齐。
-const DRAIN: Duration = Duration::from_secs(2);
-
-/// `Ctrl+C` 在原始模式的终端里敲出来的那个字节。
-const INTERRUPT: u8 = 3;
-
 /// 办 `shellhook worker`。
 pub fn run(parsed: &Parsed) -> ExitCode {
-    // 控制线在标准错误的位置上：另存一份，再把标准错误接到数据线（标准输出）上，之后报错的字照常印得出来。
+    // 控制线在标准错误的位置上：另存一份，再把标准错误接到标准输出（终端）上，之后报错的字照常印得出来。
     let Ok(mut control) = rustix::io::dup(rustix::stdio::stderr()).map(UnixStream::from) else {
         return ExitCode::from(misuse::USAGE);
     };
@@ -79,15 +71,15 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
         // 人在两句话之间可能 `cd` 过：这一句在 shell 现在的目录里办。
         here: true,
     };
-    let typed = Arc::new(Mutex::new(Typed::default()));
-    let (drained, all_typed) = mpsc::channel();
+    let typed = Arc::new(Mutex::new(String::new()));
+    let mut reader = None;
     let mut output = Kept {
-        // 印的字经前台的进程到终端：照接着终端办（控制序列洗掉、上色）。
-        text: Text::relayed(words),
+        // 标准输出、标准错误都是终端：回答、思考里的终端控制序列照 `ask` 接着终端时那样洗掉（审计 #064）。
+        text: Text::new(words),
         session: None,
     };
     let ended = drive_with(plan, words, &mut output, |events| {
-        keys(events.clone(), Arc::clone(&typed), drained);
+        reader = keys(events.clone(), Arc::clone(&typed));
         orders(events.clone(), control);
     });
     if let (Some(terminal), Some(id)) = (&terminal, &output.session)
@@ -99,13 +91,16 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
             None,
         );
     }
-    // 办完了：请前台不再转交按键，等路上的收齐，没交出去的字写给脚本放回命令行（坑 S13）。
-    let mut control = control;
-    if ToFront::Done.write(&mut control).is_ok() {
-        let _waited = all_typed.recv_timeout(DRAIN);
+    // 办完了：先让读按键的线程停下（它停好了才回，读走的按键都收下了，坑 P8），之后敲的字留在终端的缓冲里给 shell；
+    // 没交出去的字写给脚本放回命令行（坑 S13）。
+    if let Some(reader) = &reader {
+        reader.pause();
     }
+    let mut control = control;
+    // 写不进的（前台不在了）没处可报。
+    drop(ToFront::Done.write(&mut control));
     if let Some(path) = parsed.value("leftover") {
-        let left = typed.lock().map(|typed| typed.text().to_string());
+        let left = typed.lock().map(|typed| typed.clone());
         if let Ok(left) = left
             && !left.is_empty()
         {
@@ -115,37 +110,56 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
     ended.exit
 }
 
-/// 读前台转交来的按键（标准输入）：`Ctrl+C` 打断这一轮，别的收成提前敲的字；读到头了说一声。
-fn keys(events: mpsc::Sender<Event>, typed: Arc<Mutex<Typed>>, drained: mpsc::Sender<()>) {
-    let spawned = std::thread::Builder::new()
-        .name("keys".into())
-        .spawn(move || {
-            let mut input = std::io::stdin().lock();
-            let mut buffer = [0u8; 4096];
-            loop {
-                let count = match input.read(&mut buffer) {
-                    Ok(0) | Err(_) => break,
-                    Ok(count) => count,
-                };
-                for piece in buffer[..count].split_inclusive(|byte| *byte == INTERRUPT) {
-                    let (text, interrupted) = match piece.split_last() {
-                        Some((&INTERRUPT, text)) => (text, true),
-                        _ => (piece, false),
-                    };
-                    if let Ok(mut typed) = typed.lock() {
-                        typed.push(text);
-                    }
-                    // 主线程不等了的（已经在收尾）交不进，不算错。
-                    if interrupted && events.send(Event::Signal(false)).is_err() {}
+/// 起读按键的线程（全屏界面的那一条）：`Ctrl+C` 打断这一轮，别的字收成提前敲的一行，退格删一个；方向键这类不算，回车
+/// 不算（提前敲的命令不替人执行）。终端读不了了（终端关了）照 `SIGTERM` 收场。标准输入不是终端的不起。
+///
+/// 这是最小的版本：做了答话时的输入行以后换成全屏界面的那个输入框。
+fn keys(events: mpsc::Sender<Event>, typed: Arc<Mutex<String>>) -> Option<crate::reader::Reader> {
+    use crossterm::event::{Event as Terminal, KeyCode, KeyEventKind, KeyModifiers};
+    if !std::io::stdin().is_terminal() {
+        return None;
+    }
+    crate::reader::spawn(move |got| {
+        let key = match got {
+            crate::reader::Got::Event(Ok(Terminal::Key(key))) => key,
+            crate::reader::Got::Event(Ok(Terminal::Paste(text))) => {
+                if let Ok(mut typed) = typed.lock() {
+                    typed.push_str(&text);
+                }
+                return true;
+            }
+            // 终端读不了了：主线程不等了的交不进，线程照样结束。
+            crate::reader::Got::Event(Err(_)) => return events.send(Event::Signal(true)).is_ok(),
+            _ => return true,
+        };
+        if key.kind == KeyEventKind::Release {
+            return true;
+        }
+        let plain = !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return events.send(Event::Signal(false)).is_ok();
+            }
+            KeyCode::Char(c) if plain => {
+                if let Ok(mut typed) = typed.lock() {
+                    typed.push(c);
                 }
             }
-            let _told = drained.send(());
-        });
-    if spawned.is_err() {}
+            KeyCode::Backspace => {
+                if let Ok(mut typed) = typed.lock() {
+                    typed.pop();
+                }
+            }
+            _ => {}
+        }
+        true
+    })
+    .ok()
 }
 
-/// 读控制线上前台交来的：终端的大小先收下不用（SH-2 的画法才用）；控制线关了就是前台不在了（终端关了、被杀了），照
-/// `SIGTERM` 收场。
+/// 等控制线关上：那就是前台不在了（终端关了、被杀了），照 `SIGTERM` 收场。
 fn orders(events: mpsc::Sender<Event>, control: &UnixStream) {
     let Ok(mut control) = control.try_clone() else {
         return;

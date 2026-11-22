@@ -11,7 +11,6 @@ mod say;
 mod script;
 mod shells;
 mod terminal;
-mod typed;
 mod wire;
 mod worker;
 

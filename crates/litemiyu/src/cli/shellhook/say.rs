@@ -1,20 +1,23 @@
 //! `shellhook say`：前台的那个进程。shell 的脚本把那句话从标准输入交来，这里起一个后台的进程（`worker.rs`）去办，自己只
-//! 管终端：把敲的字转交过去、把要印的字印出来、终端变了大小说一声。它一退出，shell 就回到提示符。
+//! 做三件事：把终端切到原始模式并在任何退出的路上还原、把那句话交过去、等后台的进程说办完了。它一退出，shell 就回到提示符。
 //!
 //! 为什么分两个进程（施工线 shellhook 第三节「后台、循环和到点继续」）：后台命令、循环、到点继续都活在拿着会话的那个进程里，
 //! 一轮结束以后提示符要马上回来、这些又不能跟着没了，所以拿着会话的进程要能比这一句活得久。这个仓库禁用 `unsafe`，不能
-//! `fork`，后台的进程是再启动一次自己（`shellhook worker`）。施工 SH-1 里后台的进程还不留下来，这一句办完就一起退出。
+//! `fork`，后台的进程是再启动一次自己（`shellhook worker`）。现在后台的进程还不留下来，这一句办完就一起退出。
 //!
-//! 终端的规矩都在这一头：
+//! 终端直接交给后台的进程用（它的标准输入、标准输出就是终端这个设备），不经这里转交字节：读按键用的是全屏界面那一套
+//! （crossterm），它只认「0 号描述符是终端就读它」，接成套接字的话它会绕过这里自己去开终端。后台的进程和这个进程在同一个
+//! 进程组里（shell 给这条命令的前台进程组），读得到按键、收得到终端变大小的信号。
+//!
+//! 终端的规矩：
 //!
 //! - 那句话是从管道交来的，读完以后终端另开一份来用（坑 P1；开的是终端的设备本身，见 `terminal`）。
-//! - 只关掉输入这一边的处理（不回显、不攒整行、`Ctrl+C` 是一个字节不是信号），输出照旧把换行补成回车换行：后台的进程印的是
-//!   平常的字。
-//! - 任何退出的路上先把终端还原（发行版是 `panic = "abort"`，另装了一个出错时还原的钩子）。
-//! - 后台的进程说办完了（`D`）以后不再读终端：之后敲的字留在终端自己的缓冲里，shell 回到提示符时自己读得到，不丢（坑 P8）。
+//! - 原始模式在这一头进、这一头出：只关掉输入这一边的处理（不回显、不攒整行、`Ctrl+C` 是一个字节不是信号），输出照旧把换行
+//!   补成回车换行。后台的进程崩了、被杀了，终端也由这一头还原（发行版是 `panic = "abort"`，另装了一个出错时还原的钩子）。
+//! - 后台的进程说办完了以后不再读终端：之后敲的字留在终端自己的缓冲里，shell 回到提示符时自己读得到，不丢（坑 P8）。
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::process::{Command, ExitCode, Stdio};
@@ -22,7 +25,7 @@ use std::process::{Command, ExitCode, Stdio};
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::termios::{
     InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios, tcgetattr,
-    tcgetwinsize, tcsetattr,
+    tcsetattr,
 };
 
 use super::wire::{ToFront, ToWorker};
@@ -49,7 +52,7 @@ pub fn run(parsed: &Parsed, stale: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let code = match relay(parsed, &text) {
+    let code = match hand_over(parsed, &text) {
         Ok(code) => code,
         Err(error) => {
             let words = Words::current();
@@ -75,13 +78,17 @@ fn told(code: u8, key: &str) -> ExitCode {
     ExitCode::from(code)
 }
 
-/// 起后台的进程，转交到它办完，交回退出码。
-fn relay(parsed: &Parsed, text: &str) -> io::Result<u8> {
-    let (data, data_far) = UnixStream::pair()?;
+/// 起后台的进程，等到它办完，交回退出码。
+fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
+    // 终端：那句话是从管道交来的，标准输入不是它（坑 P1）。没有终端的（被别的程序调）照样办：后台的进程没有按键可读，
+    // 印在这个进程的标准输出上。
+    let tty = terminal();
+    // 先进原始模式再起后台的进程：中间没有「`Ctrl+C` 还是信号、后台的进程还没装好处理」的空当。
+    let raw = tty.as_ref().and_then(|tty| Raw::enter(tty).ok());
     let (mut control, control_far) = UnixStream::pair()?;
     let mut child = {
-        // 后台进程的标准输入、标准输出是数据线，标准错误先是控制线（它起来以后另存一份、再把标准错误接到数据线上）。
-        // 这个 `Command` 拿着对面那几头，起完就放掉：不放的话后台进程退出了这里也等不到数据线关上。
+        // 后台进程的标准输入、标准输出是终端，标准错误先是控制线（它起来以后另存一份、再把标准错误接到标准输出上）。
+        // 这个 `Command` 拿着控制线对面那一头，起完就放掉：不放的话后台进程退出了这里也等不到控制线关上。
         let mut command = Command::new(std::env::current_exe()?);
         command.args(["shellhook", "worker"]);
         for long in PASSED {
@@ -92,29 +99,21 @@ fn relay(parsed: &Parsed, text: &str) -> io::Result<u8> {
         if parsed.has("redo") {
             command.arg("--redo");
         }
+        match &tty {
+            Some(tty) => command
+                .stdin(Stdio::from(tty.try_clone()?))
+                .stdout(Stdio::from(tty.try_clone()?)),
+            None => command.stdin(Stdio::null()).stdout(Stdio::inherit()),
+        };
         command
-            .stdin(Stdio::from(OwnedFd::from(data_far.try_clone()?)))
-            .stdout(Stdio::from(OwnedFd::from(data_far)))
             .stderr(Stdio::from(OwnedFd::from(control_far)))
             .spawn()?
     };
-    // 终端：那句话是从管道交来的，标准输入不是它（坑 P1）。没有终端的（测试、被别的程序调）照样办，只是没有按键可转交。
-    let tty = terminal();
-    let raw = tty.as_ref().and_then(|tty| Raw::enter(tty).ok());
     ToWorker::Message(text.to_string()).write(&mut control)?;
-    if let Some(size) = tty.as_ref().and_then(size) {
-        size.write(&mut control)?;
-    }
-    let outcome = Relay {
-        tty: tty.as_ref(),
-        data,
-        control: Some(control),
-        typing: tty.is_some(),
-    }
-    .run();
+    let said = wait(&mut control);
     drop(raw);
     let status = child.wait()?;
-    Ok(match outcome? {
+    Ok(match said? {
         Some(code) => code,
         // 后台的进程没说退出码就没了（崩了、被杀了）：照它自己的退出码，没有的算出错。
         None => status
@@ -123,6 +122,40 @@ fn relay(parsed: &Parsed, text: &str) -> io::Result<u8> {
             .filter(|code| *code != 0)
             .unwrap_or(1),
     })
+}
+
+/// 等后台的进程说退出码（没说就关了控制线的是 `None`）。这期间被要求结束的（`SIGTERM`、`SIGHUP`：终端关了）当场回来：
+/// 调的一方还原终端就走，后台的进程看到控制线关了自己收场。
+fn wait(control: &mut UnixStream) -> io::Result<Option<u8>> {
+    let signals = Signals::listen();
+    let mut code = None;
+    loop {
+        let (told, ended) = {
+            let mut fds = vec![PollFd::new(&*control, PollFlags::IN)];
+            if let Some(signals) = &signals {
+                fds.push(PollFd::new(&signals.ended, PollFlags::IN));
+            }
+            match poll(&mut fds, None) {
+                Ok(_) => {}
+                // 被信号打断：再等一圈。
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(error) => return Err(error.into()),
+            }
+            let ready = |at: usize| fds.get(at).is_some_and(|fd| !fd.revents().is_empty());
+            (ready(0), ready(1))
+        };
+        if ended {
+            return Ok(Some(128 + 15));
+        }
+        if told {
+            match ToFront::read(control) {
+                Ok(Some(ToFront::Exit(exit))) => code = Some(exit),
+                // 办完了：下一格就是退出码。
+                Ok(Some(ToFront::Done)) => {}
+                Ok(None) | Err(_) => return Ok(code),
+            }
+        }
+    }
 }
 
 /// 这个进程的终端，能读能写的一份；没有终端的是 `None`。
@@ -139,12 +172,6 @@ fn terminal() -> Option<File> {
     named(rustix::stdio::stderr())
         .or_else(|| named(rustix::stdio::stdout()))
         .or_else(|| open(std::ffi::OsStr::new("/dev/tty")))
-}
-
-/// 终端现在多大。
-fn size(tty: &File) -> Option<ToWorker> {
-    let size = tcgetwinsize(tty).ok()?;
-    Some(ToWorker::Size(size.ws_col, size.ws_row))
 }
 
 /// 终端切到「只关输入处理」的原始模式；放掉时还原。
@@ -191,168 +218,8 @@ impl Drop for Raw {
     }
 }
 
-/// 转交的那一圈。
-struct Relay<'a> {
-    tty: Option<&'a File>,
-    data: UnixStream,
-    /// 控制线；对面关了以后不再等它。
-    control: Option<UnixStream>,
-    /// 还在把终端敲的字转交过去。
-    typing: bool,
-}
-
-/// 这一圈里哪几样有动静。
-#[derive(Default)]
-struct Ready {
-    printed: bool,
-    told: bool,
-    resized: bool,
-    ended: bool,
-    typed: bool,
-    /// 终端这个描述符等不了（`POLLNVAL`）：不再等它，不然每一圈都当场回来、空转。
-    deaf: bool,
-}
-
-impl Relay<'_> {
-    /// 等到有动静。
-    fn wait(&self, signals: Option<&Signals>) -> io::Result<Ready> {
-        let mut fds = vec![PollFd::new(&self.data, PollFlags::IN)];
-        let control = self.control.as_ref().map(|control| {
-            fds.push(PollFd::new(control, PollFlags::IN));
-            fds.len() - 1
-        });
-        let signal = signals.map(|signals| {
-            fds.push(PollFd::new(&signals.resized, PollFlags::IN));
-            fds.push(PollFd::new(&signals.ended, PollFlags::IN));
-            fds.len() - 2
-        });
-        let keys = self.tty.filter(|_| self.typing).map(|tty| {
-            fds.push(PollFd::new(tty, PollFlags::IN));
-            fds.len() - 1
-        });
-        match poll(&mut fds, None) {
-            Ok(_) => {}
-            // 被信号打断：照没动静再等一圈。
-            Err(rustix::io::Errno::INTR) => return Ok(Ready::default()),
-            Err(error) => return Err(error.into()),
-        }
-        let ready = |at: Option<usize>| {
-            at.and_then(|at| fds.get(at)).is_some_and(|fd| {
-                fd.revents()
-                    .intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR)
-            })
-        };
-        Ok(Ready {
-            printed: ready(Some(0)),
-            told: ready(control),
-            resized: ready(signal),
-            ended: ready(signal.map(|at| at + 1)),
-            typed: ready(keys),
-            deaf: keys
-                .and_then(|at| fds.get(at))
-                .is_some_and(|fd| fd.revents().contains(PollFlags::NVAL)),
-        })
-    }
-
-    /// 转到后台的进程把数据线关上；交回它说的退出码（没说的是 `None`）。
-    fn run(mut self) -> io::Result<Option<u8>> {
-        let signals = Signals::listen();
-        let mut code = None;
-        let mut buffer = [0u8; 8192];
-        if self.tty.is_none() {
-            self.stop_typing();
-        }
-        loop {
-            let ready = self.wait(signals.as_ref())?;
-            // 被要求结束（`SIGTERM`、`SIGHUP`：终端关了）：还原终端就走，后台的进程看到控制线关了自己收场。
-            if ready.ended {
-                return Ok(Some(128 + 15));
-            }
-            if ready.resized {
-                if let Some(signals) = &signals {
-                    signals.drain();
-                }
-                if let (Some(size), Some(control)) = (self.tty.and_then(size), &mut self.control) {
-                    // 后台的进程正在退出的写不进，不算错。
-                    drop(size.write(control));
-                }
-            }
-            if ready.told
-                && let Some(control) = &mut self.control
-            {
-                match ToFront::read(control) {
-                    Ok(Some(ToFront::Done)) => self.stop_typing(),
-                    Ok(Some(ToFront::Exit(exit))) => code = Some(exit),
-                    // 控制线关了：不再等它，等数据线也关上（剩下要印的印完）。
-                    Ok(None) | Err(_) => {
-                        self.control = None;
-                        self.stop_typing();
-                    }
-                }
-            }
-            if ready.printed {
-                match self.data.read(&mut buffer) {
-                    Ok(0) => return Ok(code.or_else(|| self.last_word())),
-                    Ok(count) => self.print(&buffer[..count]),
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(_) => return Ok(code.or_else(|| self.last_word())),
-                }
-            }
-            if ready.deaf {
-                self.stop_typing();
-            }
-            if ready.typed
-                && let Some(mut tty) = self.tty
-            {
-                match tty.read(&mut buffer) {
-                    // 终端没了：不再读它。
-                    Ok(0) | Err(_) => self.stop_typing(),
-                    Ok(count) => {
-                        if self.data.write_all(&buffer[..count]).is_err() {
-                            self.stop_typing();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// 不再转交按键：数据线自己写的那一头关上，后台的进程读到头就知道提前敲的字都到了。
-    fn stop_typing(&mut self) {
-        self.typing = false;
-        // 关过了的再关一次不算错。
-        drop(self.data.shutdown(std::net::Shutdown::Write));
-    }
-
-    /// 数据线关了以后控制线上可能还有一格没读的退出码。
-    fn last_word(&mut self) -> Option<u8> {
-        let control = self.control.as_mut()?;
-        drop(control.set_nonblocking(true));
-        loop {
-            match ToFront::read(control) {
-                Ok(Some(ToFront::Exit(code))) => return Some(code),
-                Ok(Some(ToFront::Done)) => {}
-                Ok(None) | Err(_) => return None,
-            }
-        }
-    }
-
-    /// 印一截：有终端的印在终端上，没有的印在标准输出上。写不进的没处可报。
-    fn print(&self, bytes: &[u8]) {
-        match self.tty {
-            Some(mut tty) => drop(tty.write_all(bytes)),
-            None => {
-                let mut out = io::stdout().lock();
-                drop(out.write_all(bytes).and_then(|()| out.flush()));
-            }
-        }
-    }
-}
-
-/// 这个进程等的几种信号：各写进一对套接字，转交的那一圈一起等（不轮询）。
+/// 这个进程等的信号：写进一对套接字，和控制线一起等（不轮询）。
 struct Signals {
-    /// 终端变了大小（`SIGWINCH`）。
-    resized: UnixStream,
     /// 被要求结束（`SIGTERM`、`SIGHUP`）。
     ended: UnixStream,
     /// `SIGINT` 写进去的那一对的这一头：留着不读（见 [`Signals::listen`]）。
@@ -360,29 +227,19 @@ struct Signals {
 }
 
 impl Signals {
-    /// 装上；装不上的照常转交，只是收不到。`SIGINT` 也接住、什么都不做：没有终端的时候 `Ctrl+C` 是发给整个进程组的信号，
+    /// 装上；装不上的照常等，只是收不到。`SIGINT` 也接住、什么都不做：没有终端的时候 `Ctrl+C` 是发给整个进程组的信号，
     /// 后台的进程照它打断这一轮，这一头得等到它收完场。
     fn listen() -> Option<Signals> {
-        use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGWINCH};
+        use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
         use signal_hook::low_level::pipe::register;
-        let (resized, on_resize) = UnixStream::pair().ok()?;
         let (ended, on_end) = UnixStream::pair().ok()?;
         let (interrupted, on_interrupt) = UnixStream::pair().ok()?;
-        resized.set_nonblocking(true).ok()?;
-        register(SIGWINCH, on_resize).ok()?;
         register(SIGTERM, on_end.try_clone().ok()?).ok()?;
         register(SIGHUP, on_end).ok()?;
         register(SIGINT, on_interrupt).ok()?;
         Some(Signals {
-            resized,
             ended,
             _interrupted: interrupted,
         })
-    }
-
-    /// 变大小的那几下读掉。
-    fn drain(&self) {
-        let mut buffer = [0u8; 64];
-        while matches!((&self.resized).read(&mut buffer), Ok(count) if count > 0) {}
     }
 }

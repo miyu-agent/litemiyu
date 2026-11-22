@@ -232,7 +232,7 @@ fn ctrl_c_interrupts_the_turn_and_the_prompt_comes_back() {
 
 #[test]
 fn control_sequences_in_the_answer_do_not_reach_the_terminal() {
-    // 审计 2026-11-18 #064：回答经前台的进程转交给终端，照样要洗掉（后台进程的标准输出是套接字，不是终端）。
+    // 审计 2026-11-18 #064：在 shell 里说话，回答印在终端上，控制序列照样要洗掉。
     let server = serve(vec![stream(says(&["前面 \u{1b}]52;c;QVVESVQ=\u{7} 后面"]))]);
     let home = Home::new(Some(&server.base_url));
     let said = say(
