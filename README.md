@@ -1,4 +1,8 @@
 <p align="center">
+  <a href="https://github.com/SHORiN-KiWATA/.github/blob/main/SPONSOR.md"><img src="https://img.shields.io/badge/-Sponsor-ea4aaa?style=flat&logo=githubsponsors&logoColor=white" alt="Sponsor"></a>
+</p>
+
+<p align="center">
   English | <a href="README.zh-CN.md">简体中文</a>
 </p>
 

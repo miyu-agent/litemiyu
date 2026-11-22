@@ -20,6 +20,7 @@ set -euo pipefail
 PUBLIC=(
   .cargo/config.toml
   .github/workflows
+  .github/FUNDING.yml   # 仓库页面上的「Sponsor」按钮
   .gitignore
   Cargo.toml
   Cargo.lock
