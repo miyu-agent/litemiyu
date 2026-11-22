@@ -3,6 +3,9 @@
 //! `provider`、`models`、`skills`、`mcp`、`session`、`rename`、`compact`、`doctor`、`completions` 和全屏里的界面重复，删了；
 //! 再敲的照不认识的命令说（退出码 2）。
 //!
+//! 后来加的一样：`shellhook`（shell 集成，2026-11-23 项目主人要，施工线 shellhook），自己读后面的参数
+//! （`shellhook/mod.rs`）。
+//!
 //! 命令一张表（[`ROOT`]，`spec.rs`）：解析、帮助页都照它。参数的名字、输出的格式、退出码照 Miyu 的命令行（`miyu-cli`）；底下是
 //! LiteMiyu 自己的引擎（`ask` 走全屏同一个引擎线程，`core::Core`）。
 
@@ -11,6 +14,7 @@ mod export;
 mod help;
 mod misuse;
 mod parse;
+mod shellhook;
 mod spec;
 mod words;
 
@@ -48,6 +52,7 @@ pub static ROOT: Cmd = Cmd {
     subs: &[
         ask::CMD,
         CONFIG,
+        shellhook::CMD,
         Cmd {
             name: "help",
             usage: "u.help",
@@ -110,6 +115,8 @@ pub fn start() -> Start {
     match args.first().map(String::as_str) {
         Some("config") => config(&args[1..]),
         Some("help") => Start::Done(help_command(&args[1..])),
+        // shell 集成自己读后面的（脚本调的头上带 `--hook`，子命令各有各的选项，`shellhook/mod.rs`）。
+        Some("shellhook") => Start::Done(shellhook::main(&args[1..])),
         Some(first) if !first.starts_with('-') => {
             let words = Words::current();
             match ROOT.sub(first) {

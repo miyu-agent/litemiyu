@@ -27,17 +27,22 @@ mod notices;
 mod packaging;
 mod pkg;
 
-/// 红线（`docs/00-设计.md` 第一节）。现在量得了的五条；长会话那一条（红线 5）另有 `bench/history.py`。
+/// 红线（`docs/00-设计.md` 第二节）。现在量得了的五条；长会话那一条（红线 5）另有 `bench/history.py`。
+///
+/// 2026-11-23 项目主人定：内存的三条降到现在的水平、留余量（原来是 3 MB、6 MB、17.1 MB，现在的程序远在线下，多占一两兆
+/// 也看不出来）。新的线照发行版程序（CI 编的 `v2026.11.0`，比本机编的同一份代码高一点）在本机量到的数留一成上下：
+/// 空闲 1104 kB、HTTPS 发过消息第二次起 5208 kB、十个窗口 4630 kB。启动时间跟着机器的负载跳（忙的时候同一个程序量到过
+/// 7 ms），不动；程序文件不卡发布，不动。
 mod limits {
     /// 空闲 PSS，kB。
-    pub const IDLE_PSS_KB: u64 = 3 * 1024;
+    pub const IDLE_PSS_KB: u64 = 1280;
     /// 发过消息、闲下来的 PSS，kB（短会话）。第一次起、第二次起（同一个数据目录先起一遍、说一句再起：真用的人每次都是
     /// 第二次以后，2026-11-14 定两样都判）都照它。2026-11-18 起照连本机 HTTPS 假服务器的两档判（`bench/measure.py`
     /// 的 `https_talked`、`https_second_start_talked`）：真用的人连的都是 HTTPS；线先不动，靠瘦身压回去，musl 静态版出来
     /// 再量再定。LM-9补 起照「缓存里有模型目录」的那两档判（用户平常的样子；没有目录的只打印）。
-    pub const TALKED_PSS_KB: u64 = 6 * 1024;
+    pub const TALKED_PSS_KB: u64 = 5632;
     /// 十个空闲窗口合计的 PSS，kB。
-    pub const TEN_IDLE_PSS_KB: u64 = 17_510;
+    pub const TEN_IDLE_PSS_KB: u64 = 5120;
     /// 启动到出现输入框，毫秒。
     pub const BOX_MS: f64 = 5.0;
     /// 程序文件，kB。

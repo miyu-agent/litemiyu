@@ -40,8 +40,9 @@ jiff = { version = "0.2", default-features = false, features = ["std", "tz-syste
 # 复制走 OSC 52 要 base64（同 Miyu 终端，依赖图里本来就有的同一版）。MIT 或 Apache-2.0。
 base64 = "0.22"
 # `Ctrl+Z` 给自己发 `SIGTSTP`、读按键的线程等在 `poll` 上（`event`），等的是 0 号描述符本身（`stdio`，不经标准库的 `io::stdin()`
-# 造读缓冲），不写 unsafe（lm-engine 本来就带进来的同一版）。MIT 或 Apache-2.0 或 Apache-2.0 WITH LLVM-exception。
-rustix = { version = "1", features = ["process", "event", "stdio"] }
+# 造读缓冲），shell 集成的前台进程把终端切到只关输入处理的原始模式（`termios`，`cli/shellhook/say.rs`），不写 unsafe
+# （lm-engine 本来就带进来的同一版）。MIT 或 Apache-2.0 或 Apache-2.0 WITH LLVM-exception。
+rustix = { version = "1", features = ["process", "event", "stdio", "termios"] }
 # 照终端的主色生成 MD3 的一套颜色（同 Miyu 终端 `theme/persona.rs`、`miyu-seeds`，同一版、同样只开量化和打分）。MIT 或 Apache-2.0。
 material-colors = { version = "0.5", default-features = false, features = ["std", "quantize"] }
 # 读按键的线程等在终端和一对本机套接字上，窗口变了大小（`SIGWINCH`）往套接字里写一个字叫醒它（`reader.rs`）。crossterm

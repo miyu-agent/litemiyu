@@ -65,6 +65,7 @@ mod settings_keys;
 mod settings_mouse;
 mod settings_narrow;
 mod settings_preview;
+mod shellhook;
 mod side_select;
 mod sidebar;
 mod status;

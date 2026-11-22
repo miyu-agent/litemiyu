@@ -138,6 +138,9 @@ pub enum Command {
     /// 换会话的模型（`litemiyu ask --model`，内核的 `Configure`）：模型 `<供应商>/<模型>` 或 `@池`，调的一方照配置查过。还没开会话
     /// 的先开一个；下一个回合起用它，以后都用它。
     Configure(String),
+    /// 把正在说话的会话的工作目录换成这个进程现在的目录（内核的 `SetWorkspace`，施工线 shellhook）：shell 集成里人会 `cd`，
+    /// 接着说的时候这一句要在 shell 现在的目录里办。和会话现在的一样的不记；没有会话的不办。下一轮开始生效。
+    Workspace,
     /// 撤回上一轮（`/undo`，内核的 `Revert`）：撤成了交回 [`Update::Undone`]，被拒的照原因码报。
     Revert,
     /// 恢复刚撤销的那几轮（`/restore`，内核的 `Unrevert`）：恢复了交回 `Update::Undone { restore: true }`，被拒的照原因码报。

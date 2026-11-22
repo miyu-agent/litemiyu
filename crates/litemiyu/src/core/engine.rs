@@ -244,6 +244,12 @@ impl Engine {
             }
             Command::Choices => self.choices().await,
             Command::Configure(model) => self.configure(model).await,
+            Command::Workspace => {
+                if let Ok(here) = std::env::current_dir() {
+                    let cwd = here.to_string_lossy().into_owned();
+                    self.tell(Kernel::SetWorkspace { cwd, dirs: None }).await;
+                }
+            }
             Command::ChatDefault(reference) => self.chat_default(reference).await,
             Command::Efforts(reference) => self.efforts(reference).await,
             Command::Effort(level) => self.set_effort(level).await,
