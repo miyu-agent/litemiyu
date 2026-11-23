@@ -161,9 +161,20 @@ impl App {
         self.talk.transcript.current_ref()
     }
 
-    /// 这个会话的标题；没起名的是 `None`。
+    /// 这个会话怎么叫：标题；没起名的照会话列表的叫法（`ui::session_list::title`），用你说的第一句话的开头；一句都没有的
+    /// 是 `None`。
     pub fn title_inline(&self) -> Option<String> {
-        self.talk.transcript.title.clone()
+        /// 第一句话最多写这么宽。
+        const WIDTH: usize = 40;
+        let transcript = &self.talk.transcript;
+        transcript.title.clone().or_else(|| {
+            let first = transcript
+                .entries
+                .iter()
+                .find(|entry| entry.kind == Kind::User && !entry.hidden)?;
+            let line = first.text.lines().next()?.trim();
+            (!line.is_empty()).then(|| crate::cells::clip(line, WIDTH))
+        })
     }
 
     /// 开着的面板在 shell 里怎么办：没有面板的是 `None`。
@@ -182,6 +193,16 @@ impl App {
     /// 关上面板。
     pub fn close_panel_inline(&mut self) {
         self.boxes.panel = None;
+    }
+
+    /// 面板开着时按的这个键，在全屏里是打开配置界面的（`/preset` 的框里 `e` 编辑、`a` 新建）。shell 里画不出配置界面：
+    /// 照全屏办的话它在看不见的地方开着，接着按的键都进了它（2026-11-23 实测：按了以后屏幕上什么都不变）。调的一方
+    /// 不把这个键交给面板，关框、说明一句。
+    pub fn opens_settings_inline(&self, key: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::KeyCode;
+        self.boxes.panel == Some(super::Panel::Presets)
+            && key.modifiers.is_empty()
+            && matches!(key.code, KeyCode::Char('e' | 'a'))
     }
 
     /// 开着的面板画成一块（`ui::panel_block`）；等人选的下边框写按键提示，整个印出来就完的不写。

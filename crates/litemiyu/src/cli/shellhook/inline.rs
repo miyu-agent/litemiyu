@@ -176,6 +176,7 @@ pub fn run(
         results: Vec::new(),
         restored: false,
         restored_text: words.get("shellhook.slash.restored").to_string(),
+        settings_text: words.get("shellhook.slash.preset_edit").to_string(),
         interrupted: false,
         failed: false,
         gone: false,
@@ -389,6 +390,8 @@ struct Run {
     restored: bool,
     /// 那一行写什么。
     restored_text: String,
+    /// 面板里按了要开配置界面的键时留的那一行（给人看的字开头就取好：按键那一步手里没有 `Words`）。
+    settings_text: String,
     /// 按过 `Ctrl+C`。
     interrupted: bool,
     /// 没发出去、被拒、引擎起不来。
@@ -723,6 +726,10 @@ impl Run {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         if control && key.code == KeyCode::Char('c') {
             self.interrupt();
+        } else if self.app.opens_settings_inline(key) {
+            // 这个键在全屏里开配置界面（`/preset` 框里的编辑、新建）：shell 里没有，关框、说明一句。
+            self.app.close_panel_inline();
+            self.results.push(self.settings_text.clone());
         } else if self.app.panel_inline().is_some() {
             self.app.panel_key_inline(key);
         } else if self.app.asking_inline() {

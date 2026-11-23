@@ -198,6 +198,7 @@
     "shellhook.slash.loop": "{name} works only in the full-screen interface for now: run litemiyu to open it",
     "shellhook.slash.new": "Started a new session; the next sentence in this terminal begins a new conversation",
     "shellhook.slash.restored": "Restored the turns that were just undone",
+    "shellhook.slash.preset_edit": "Presets are edited and created in the settings screen: type /config to open it",
     "shellhook.slash.model": "Model switched to {name}",
     "shellhook.slash.session": "Switched to session “{title}”; what you say next in this terminal goes there",
     "s.shellhook.report": "Print background reports (called by the script after it gets the signal)",

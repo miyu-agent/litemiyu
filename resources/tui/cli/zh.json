@@ -198,6 +198,7 @@
     "shellhook.slash.loop": "{name} 现在只能在全屏界面里使用：运行 litemiyu 打开全屏界面",
     "shellhook.slash.new": "已开始新会话，这个终端的下一句话开始新的对话",
     "shellhook.slash.restored": "已恢复刚才撤回的回合",
+    "shellhook.slash.preset_edit": "编辑和新建预设要在配置界面里进行：输入 /config 打开",
     "shellhook.slash.model": "模型已换成 {name}",
     "shellhook.slash.session": "已切换到会话「{title}」，这个终端接着说的话在它里面",
     "s.shellhook.report": "印出后台任务的回报（由脚本在收到信号以后调用）",

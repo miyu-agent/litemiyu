@@ -1447,3 +1447,125 @@ fn what_dead_shells_left_behind_is_swept_and_what_live_ones_have_is_kept() {
     assert!(socket(live).exists(), "还在的 shell 的套接字文件不碰");
     assert!(other.exists(), "别的程序的文件不碰");
 }
+
+#[test]
+fn the_sessions_picker_switches_this_terminal_to_the_picked_session() {
+    // `/sessions` 在提示符下面弹出会话列表；选了另一个会话，这个终端接着说的话就在它里面。
+    let server = serve(vec![
+        stream(says(&["甲的回答"])),
+        stream(says(&["乙的回答"])),
+        stream(says(&["第三句的回答"])),
+    ]);
+    let home = Home::new(None);
+    home.write_config(&two_models(&server.base_url));
+    let (one, two) = (terminal("pick-a"), terminal("pick-b"));
+    let said = say(&home, &home.work, ("甲的话", &one, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(&home, &home.work, ("乙的话", &two, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(
+        &home,
+        &home.work,
+        ("/sessions", &two, None),
+        &[],
+        |keys, shown| {
+            until("框开了，两个会话都在", || {
+                let shown = shown();
+                shown.contains('╰') && shown.contains("甲的话") && shown.contains("乙的话")
+            });
+            // 选中的是这个终端自己的会话：往下一个是另一个终端的，回车切过去。
+            keys.write_all(b"\x1b[B\r").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(120);
+    assert!(
+        !lines.iter().any(|line| line.contains('╭')),
+        "选完以后框不留在屏幕上：{lines:#?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("已切换到会话") && line.contains("甲的话")),
+        "留一行结果：{lines:#?}"
+    );
+    let said = say(&home, &home.work, ("第三句", &two, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 3);
+    assert!(
+        talks[2].contains("甲的回答") && !talks[2].contains("乙的回答"),
+        "第三句在选中的那个会话里：{}",
+        talks[2]
+    );
+    assert_eq!(home.sessions().len(), 2, "没有另开会话");
+}
+
+#[test]
+fn the_effort_and_preset_pickers_work_in_the_shell() {
+    let server = serve(vec![stream(says(&["答了"]))]);
+    let home = Home::new(None);
+    home.write_config(&two_models(&server.base_url));
+    let token = terminal("pick-c");
+    let said = say(&home, &home.work, ("说一句", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    // 在 `/preset`、`/effort` 的框里按 `keys`（框画出来以后），交回说完的样子。
+    let pick = |command: &str, pressed: &'static [u8]| {
+        say(
+            &home,
+            &home.work,
+            (command, &token, None),
+            &[],
+            move |keys, shown| {
+                until("框开了，里面的东西到齐了", || {
+                    let shown = shown();
+                    shown.contains('╰')
+                        && (shown.contains("全部功能") || shown.contains("没有可选"))
+                });
+                keys.write_all(pressed).expect("敲得进");
+                keys.flush().expect("敲得进");
+            },
+        )
+    };
+    let clean = |said: &Said, what: &str| {
+        assert_eq!(said.code, Some(0), "{what}：{:?}", said.shown);
+        let lines = said.lines(120);
+        assert!(
+            !lines.iter().any(|line| line.contains('╭')),
+            "{what}：框不留在屏幕上：{lines:#?}"
+        );
+        lines
+    };
+
+    // `/effort`：这个模型没有可选的思考程度，框里说明；`Esc` 关掉。
+    let said = pick("/effort", b"\x1b");
+    assert!(
+        said.shown.contains("没有可选的思考程度"),
+        "{:?}",
+        said.shown
+    );
+    clean(&said, "/effort");
+
+    // `/preset`：`e`（编辑）、`a`（新建）在全屏里开配置界面，shell 里没有那个界面：关框、说明去哪里做。2026-11-23 实测到
+    // 原来照全屏办：配置界面在看不见的地方开着，屏幕上什么都不变，接着按的键都进了它。
+    for pressed in [b"a" as &'static [u8], b"\x1b[Be"] {
+        let said = pick("/preset", pressed);
+        let lines = clean(&said, "/preset 里按编辑、新建");
+        assert!(
+            lines.iter().any(|line| line.contains("/config")),
+            "说明去哪里做：{lines:#?}"
+        );
+    }
+
+    // `/preset` 里 `s`：用选中的预设开新会话，留一行结果。
+    let said = pick("/preset", b"\x1b[Bs");
+    let lines = clean(&said, "/preset 里按 s");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("已新建会话") && line.contains("无功能")),
+        "{lines:#?}"
+    );
+    assert_eq!(server.talks().len(), 1, "这几条命令都不发请求");
+}

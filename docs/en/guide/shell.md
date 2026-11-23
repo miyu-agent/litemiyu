@@ -112,6 +112,7 @@ Commands beginning with `/` are typed at the prompt as well, just as in the inpu
 
 - `/model`, `/sessions`, `/preset`, `/help` and `/new` also work in a terminal where you have not said anything yet. The other commands need this terminal to have a session.
 - After you choose a session with `/sessions`, what you say next in this terminal goes into that session.
+- In the `/preset` picker you can set the default preset, start a new session with the selected preset, and delete a preset. Editing and creating presets happen in the settings screen; type `/config` to open it.
 - See [Commands](commands.md) for what each command does.
 
 ## Background commands, loops and reports
