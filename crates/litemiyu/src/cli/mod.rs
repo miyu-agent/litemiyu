@@ -9,6 +9,7 @@
 //! 命令一张表（[`ROOT`]，`spec.rs`）：解析、帮助页都照它。参数的名字、输出的格式、退出码照 Miyu 的命令行（`miyu-cli`）；底下是
 //! LiteMiyu 自己的引擎（`ask` 走全屏同一个引擎线程，`core::Core`）。
 
+mod acp;
 mod ask;
 mod export;
 mod help;
@@ -50,6 +51,7 @@ pub static ROOT: Cmd = Cmd {
     extra: "x.root",
     opts: ROOT_OPTS,
     subs: &[
+        acp::CMD,
         ask::CMD,
         CONFIG,
         shellhook::CMD,
@@ -132,7 +134,9 @@ pub fn start() -> Start {
                     Start::Done(run(cmd, &format!("litemiyu {first}"), &args[1..], &words))
                 }
                 None => {
-                    let near = nearest(first, ROOT.subs.iter().map(|cmd| cmd.name));
+                    // `acp` 是给编辑器起的，不是给人敲的：敲错的词不往它上面猜（删掉了的 `mcp` 离它只差一个字）。
+                    let names = ROOT.subs.iter().map(|cmd| cmd.name);
+                    let near = nearest(first, names.filter(|name| *name != acp::CMD.name));
                     Start::Done(misuse::unknown_command(&words, first, near))
                 }
             }

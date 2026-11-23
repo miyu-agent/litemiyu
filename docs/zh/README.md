@@ -23,6 +23,7 @@ LiteMiyu 是一个在终端里全屏运行的 Agent Harness（智能体框架）
 | [提示词、项目说明和记忆](guide/memory.md) | 自己写提示词、`AGENTS.md`、AI 的记忆 |
 | [命令行](guide/cli.md) | `litemiyu` 的选项、在脚本里使用 `litemiyu ask`、退出状态 |
 | [在 shell 里使用](guide/shell.md) | shell 集成：在 fish、bash、zsh 的提示符后面直接和 AI 说话 |
+| [在编辑器里使用](guide/acp.md) | 通过 ACP 把 LiteMiyu 接进 Zed 等编辑器 |
 | [应急模式](guide/rescue.md) | 电脑出问题时用 `litemiyu --rescue` |
 | [配置](guide/config.md) | 配置界面的每一页、配置文件里的每一项 |
 | [数据放在哪](guide/data.md) | 文件都放在哪、备份、搬家、清理 |

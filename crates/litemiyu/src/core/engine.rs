@@ -57,6 +57,7 @@ pub fn spawn(
     deliver: Deliver,
     preset: Option<String>,
     rescue: Option<crate::rescue::Prepared>,
+    cwd: Option<String>,
 ) -> (
     mpsc::UnboundedSender<Command>,
     std::sync::mpsc::Receiver<()>,
@@ -68,6 +69,7 @@ pub fn spawn(
         .name("engine".into())
         .stack_size(STACK)
         .spawn(move || {
+            HERE.with(|here| *here.borrow_mut() = cwd);
             run(inbox, deliver, preset, rescue);
             drop(finished);
         });
@@ -75,6 +77,20 @@ pub fn spawn(
         told(Update::Failed(format!("engine thread: {error}")));
     }
     (commands, ended)
+}
+
+thread_local! {
+    /// 这条引擎线程的工作目录（[`super::Core::workspace`] 定的；`litemiyu acp` 的会话各有各的引擎线程、各有各的工作目录）。
+    /// 没定的（全屏、`ask`、shell 集成）照进程的当前目录。
+    static HERE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 工作目录：这条引擎线程定了的照它，没定的照进程的当前目录。只在引擎线程上调（开会话、载入会话、读项目的配置）。
+fn here() -> std::io::Result<String> {
+    if let Some(fixed) = HERE.with(|here| here.borrow().clone()) {
+        return Ok(fixed);
+    }
+    std::env::current_dir().map(|dir| dir.to_string_lossy().into_owned())
 }
 
 /// 线程里跑的：造运行时，一条条收命令，界面那一头关了就停下会话、退出。
@@ -218,6 +234,13 @@ impl Engine {
                 .await
             }
             Command::Stop => self.stop().await,
+            Command::Begin => {
+                if self.session.is_none()
+                    && let Err(message) = self.open().await
+                {
+                    self.report(Update::Failed(message));
+                }
+            }
             Command::Barrier(done) => {
                 // 等的一头不等了的没处可回。
                 if done.send(()).is_err() {}
@@ -245,8 +268,7 @@ impl Engine {
             Command::Choices => self.choices().await,
             Command::Configure(model) => self.configure(model).await,
             Command::Workspace => {
-                if let Ok(here) = std::env::current_dir() {
-                    let cwd = here.to_string_lossy().into_owned();
+                if let Ok(cwd) = here() {
                     self.tell(Kernel::SetWorkspace { cwd, dirs: None }).await;
                 }
             }

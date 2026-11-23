@@ -9,6 +9,7 @@ LiteMiyu 的命令行很小，只有五样：
 | 命令 | 作用 |
 |---|---|
 | `litemiyu` | 打开全屏界面 |
+| `litemiyu acp` | 供编辑器通过 ACP 调用，见[在编辑器里使用](acp.md) |
 | `litemiyu ask` | 发送一句话并打印回答，不进入全屏界面 |
 | `litemiyu config` | 打开配置界面 |
 | `litemiyu shellhook` | shell 集成：在 shell 的提示符后面直接说话 |

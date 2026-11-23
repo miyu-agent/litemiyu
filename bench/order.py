@@ -36,7 +36,18 @@
 4. 量读到哪些只读数据（`rodata.py`：在 gdb 里起第 1 步那一份，记下读到的输入段），写成链接脚本 `hot.ld`：这些输入段挨在
    一起排在只读数据的最前面。启动时读到的在最前（LM-42：起来、闲下来），说一句话读到的接在后面（LM-43：连本机的 HTTPS
    假服务器说一句、等回完、闲下来，第一次起、第二次起各一遍）。要装 gdb；
-5. 带着清单和 `hot.ld` 再链一遍。
+5. 带着清单和 `hot.ld` 再链一遍；
+6. 挪一挪代码段（ACP 那条线量出来的，2026-11-23）：系统给程序文件缺页时，把周围对齐的 64 kB 一片一起映进来。空闲时用到
+   的代码是清单最前面的一截（第 0 段：起来、闲着，不敲字），它的最后一页落在一片的哪里，决定后面那一片进不进内存；而这又
+   跟着代码段的起点走，代码段前面的只读数据多几 kB、少几 kB，空闲占用就多出、少掉一整片（量到过 988 → 1088 kB，多的那些
+   代码一行都没跑）。所以链完以后看那一截结束在哪一页，把代码段的地址往后空出几页（`pad.ld`），让它正好是一片的最后一页，
+   再链一遍、核对。空出来的只是地址：代码段那一个装载段改成从一个只有几个字节的小段开头，它的地址写成「前一段的末尾 +
+   几页」，新的装载段的文件偏移只要和地址同余，文件里不多一个字节。试过往前面填零：填的那几页自己会跟着只读数据的那一片
+   进内存，白垫。
+   开头的那个小段装的是 `.init`、`.fini`（C 库启动、退出时各调一次的 `_init`、`_fini`，各 3 个字节）。它们平常排在代码段的
+   最后面，启动时调 `_init` 就把代码段最后那一片带进内存（量到 20～52 kB，跟着代码段的末尾落在一片的哪里变；在调试器里给
+   那一片的一百六十多个函数都下了断点，空闲时一个都没跑到，是 `_init` 带进来的）。挪到最前面，那一页本来就在内存里。
+   只在 x86_64 的 musl 上做（红线量的是它；别的目标页的大小、装载段的对齐、`_init` 怎么拼的不一样）。
 
 轨迹不落盘（占用 四）：一段剧本的轨迹有 9 GB 上下，模拟器写进临时目录里的一个命名管道，这边边读边认出跑过的地址（重复的
 只记第一次），读完的不留。盘慢的机器写整份轨迹要几分钟（2026-11-16 在一台盘慢的机器上量：写内存盘 67 秒、写磁盘 202 秒），也不占几个
@@ -78,6 +89,13 @@ import rodata  # noqa: E402
 
 TRIPLE = "x86_64-unknown-linux-gnu"
 NO_UNWIND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "no-unwind.ld")
+PAGE = 4096
+# 系统给文件映射缺页时一起映进来的那一片：16 页（`/sys/kernel/mm/` 下的 fault_around_bytes 默认 64 kB），照地址对齐。
+# 静态的位置无关程序装在 2 MB 对齐的地址上（映射够大，系统照大页对齐），所以这一片也就照程序里的地址对齐。
+AROUND = 16
+# 挪代码段时排到代码段前面、带着写明的地址的那个小段里装什么：C 库的 `_init`、`_fini`（几份目标文件里的 `.init`、`.fini`
+# 照链接的先后拼成的，要原样留着、不能丢）。
+HEAD = "KEEP(*(.init)) KEEP(*(.fini))"
 UNWIND_SECTIONS = (".eh_frame", ".eh_frame_hdr", ".gcc_except_table")
 TRACE = re.compile(rb"^Trace \d+: \S+ \[[0-9a-f]+/([0-9a-f]+)/", re.MULTILINE)
 # 从管道里一次读多少字节：一行一行读太慢（一段剧本上亿行），整块交给正则一次认完。
@@ -227,6 +245,9 @@ def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=T
         env = scratch(root, fake_model.start(host), catalog=text)
         pipe = os.path.join(root, "trace.fifo")
         os.mkfifo(pipe)
+        # 第 0 段：另一个新的数据目录，起来、闲着，不敲字（量尺的「空闲」）。它跑过的排在清单最前，垫的时候照它算。
+        idle = scratch(os.path.join(root, "idle"), fake_model.start(host), catalog=text)
+        runs.append(run_idle(binary, qemu, pipe, idle, settle))
         runs.append(run(binary, qemu, pipe, env, [], typed, settle, said, first=True, expect=expect))
         if said:
             for args in daily:
@@ -388,6 +409,44 @@ def run(binary, qemu, pipe, env, args, typed, settle, said, first, expect=None):
     finally:
         pty_run.kill(pid, fd)
     return reader.done(), base
+
+
+def run_idle(binary, qemu, pipe, env, settle):
+    """在模拟器里起一个、等输入框画出来、闲着，交回 (跑过的地址, 装载的起点)。不敲字、不说话：量尺的「空闲」那一次。"""
+    reader = Reader(pipe)
+    pid, fd = pty_run.spawn([qemu, "-d", "exec,nochain", "-D", pipe, binary], env)
+    try:
+        if not wait_for(fd, "❯".encode(), WAIT):
+            raise SystemExit("模拟器里没画出输入框（空闲那一段）")
+        base = load_base(pid, binary)
+        pty_run.pump(fd, settle)
+    finally:
+        pty_run.kill(pid, fd)
+    return reader.done(), base
+
+
+def idle_end(binary, order, count):
+    """清单最前面 `count` 个（空闲那一截）在程序里排到哪结束：清单里紧跟着的那个函数的地址。几个一模一样的函数合成一份的
+    （ICF）地址可能在别处，所以往后看二十个、取比那一截大半都高的里面最低的一个。认不出的交回 `None`。"""
+    where = {}
+    for address, name in symbols(binary):
+        where.setdefault(name, address)
+    inside = sorted(where[name] for name in order[:count] if name in where)
+    after = [where[name] for name in order[count : count + 20] if name in where]
+    if not inside or not after:
+        return None
+    most = inside[len(inside) * 9 // 10]
+    beyond = [address for address in after if address > most]
+    return min(beyond) if beyond else None
+
+
+def pad_script(pages):
+    """把代码段的地址往后空出 `pages` 页的链接脚本；`None` 的不挪（别的目标）。平常两个装载段之间本来就隔一页（同一页文件
+    映两次、权限不同），所以写的是「前一段的末尾 + (pages + 1) 页」。"""
+    note = "/* bench/order.py 算出来的：代码段的地址往后空出几页，让空闲时用到的那一截代码正好结束在 64 kB 一片的边界上。 */\n"
+    if pages is None:
+        return note + "SECTIONS\n{\n  .text.gap : { }\n}\nINSERT BEFORE .text;\n"
+    return note + f"SECTIONS\n{{\n  .text.gap (. + {(pages + 1) * PAGE}) : {{ {HEAD} }}\n}}\nINSERT BEFORE .text;\n"
 
 
 def run_in_herdr(binary, qemu, pipe, env, root, settle):
@@ -598,6 +657,7 @@ def main():
     order_file = os.path.join(ordered_dir, "order.txt")
     map_file = os.path.join(ordered_dir, "link.map")
     hot_file = os.path.join(ordered_dir, "hot.ld")
+    pad_file = os.path.join(ordered_dir, "pad.ld")
     # 重定位打包（RELR）：重定位表小一截，启动时少读进来约 90 kB（L0 在空壳上量的）。要 glibc 2.36 以上。
     # 一模一样的函数只留一份（链接器 lld 的 ICF，瘦身 一）：泛型展开出的同样的机器码不少，程序小 130 kB。
     # `--icf=safe` 一样也合不了（rustc 不写哪些地址被拿来比过），所以用 all：Rust 不保证函数的地址各不相同；
@@ -610,6 +670,8 @@ def main():
         f" -C link-arg=-Wl,-T,{NO_UNWIND}"
         # 启动时读到的只读数据排到一起（LM-42，`rodata.py`）：链接地图用来认输入段，`hot.ld` 是量出来的排法。
         f" -C link-arg=-Wl,-Map={map_file} -C link-arg=-Wl,-T,{hot_file}"
+        # 把代码段的地址往后空出几页（第 6 步）。
+        f" -C link-arg=-Wl,-T,{pad_file}"
     ) + remap() + lld(crate, args.target)
     if args.no_pie:
         link += " -C relocation-model=static"
@@ -621,6 +683,10 @@ def main():
         out.write("")
     with open(hot_file, "w") as out:
         out.write(rodata.script([]))
+    # 挪代码段只在 x86_64 的 musl 上做：一开始就带着开头那个小段（空出 0 页），前后几遍的排法才一样。
+    shifting = triple.startswith("x86_64") and triple.endswith("-musl")
+    with open(pad_file, "w") as out:
+        out.write(pad_script(0 if shifting else None))
     final = os.path.join(ordered_dir, triple, "release", args.binary)
     forget(final)
     cargo(crate, ordered_dir, link, triple)
@@ -631,6 +697,8 @@ def main():
         catalog=not args.no_catalog, herdr=not args.no_herdr, shell=not args.no_shell,
     )
     order, blocks = first_touch(runs, table)
+    # 空闲那一截：第 0 段跑过的，排在清单最前。
+    idle_count = len(first_touch(runs[:1], table)[0])
     with open(order_file, "w") as out:
         out.write("\n".join(order) + "\n")
     hot, notes = read_data(final, map_file, not args.no_catalog, args.said)
@@ -639,6 +707,24 @@ def main():
     # 清单不是 cargo 看着的文件：删掉程序让它重链。deps 里那一份也要删，不然 cargo 只是把它再连回来。
     forget(final)
     cargo(crate, ordered_dir, link, triple)
+    # 第 6 步：把代码段挪到空闲那一截正好结束在一片的最后一页上。挪了以后链完再看，不对再挪，最多三遍。
+    if shifting:
+        shifted = 0
+        for _ in range(3):
+            end = idle_end(final, order, idle_count)
+            if end is None:
+                raise SystemExit("认不出空闲那一截代码在程序里结束在哪：没法挪代码段")
+            need = (AROUND - 1 - ((end - 1) // PAGE) % AROUND) % AROUND
+            if need == 0:
+                break
+            shifted = (shifted + need) % AROUND
+            with open(pad_file, "w") as out:
+                out.write(pad_script(shifted))
+            forget(final)
+            cargo(crate, ordered_dir, link, triple)
+        else:
+            raise SystemExit("挪了三遍，空闲那一截代码还是没有结束在一片的边界上（开头那个小段在不在？看 link.map）")
+        print(f"空闲那一截 {idle_count} 个函数，代码段的地址往后空出 {shifted} 页，结束在 64 kB 一片的最后一页上")
     no_unwind(final)
     print(f"读到的只读输入段 {len(hot)} 个排到前面（{'；'.join(notes)}）")
     print(f"程序里 {len(table)} 个函数，轨迹里 {blocks} 块落在程序里，跑过 {len(order)} 个函数，照先后排到前面")

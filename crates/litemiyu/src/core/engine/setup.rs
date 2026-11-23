@@ -190,9 +190,7 @@ impl Ready {
         model: Option<String>,
     ) -> Result<(Handle, Option<String>), String> {
         let now = now().ok_or("the system clock is out of range")?;
-        let cwd = std::env::current_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .map_err(|error| error.to_string())?;
+        let cwd = super::here().map_err(|error| error.to_string())?;
         // 用哪个预设（设计第六节第 14 条，LM-29）：钉在会话上。应急模式不读配置里的预设，只认无功能。
         let values = self.configs.borrow().with_project(&cwd).values();
         let (chosen, missing) = match (preset, self.rescue) {
@@ -308,9 +306,7 @@ impl Ready {
         let failed = |why: &str| NotLoaded::Failed(why.to_string());
         let now = now().ok_or_else(|| failed("the system clock is out of range"))?;
         let offset = offset(now).ok_or_else(|| failed("the local time zone is out of range"))?;
-        let here = std::env::current_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .map_err(|error| NotLoaded::Failed(error.to_string()))?;
+        let here = super::here().map_err(|error| NotLoaded::Failed(error.to_string()))?;
         let pick = Box::new(move |last: Option<&str>| match last {
             Some(dir) if std::path::Path::new(dir).is_dir() => dir.to_string(),
             _ => here,
@@ -356,9 +352,7 @@ impl Ready {
 
     /// 这一刻配置里的最终值（比会话钉着的预设改没改，`presets.rs`）。
     pub fn values(&self) -> lm_kernel::config::Values {
-        let cwd = std::env::current_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let cwd = super::here().unwrap_or_default();
         self.configs.borrow().with_project(&cwd).values()
     }
 

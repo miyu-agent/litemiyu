@@ -25,6 +25,8 @@ pub struct Step {
     pub command: Option<String>,
     /// 改动那一块：参数 `edits` 里每一处的改掉的、改成的（读不出的那一处不算）。
     pub edits: Vec<(String, String)>,
+    /// 参数（读出来的 JSON；读不懂的是 `null`）：`litemiyu acp` 原样交给编辑器，照它取文件路径、写入的内容。
+    pub input: serde_json::Value,
 }
 
 /// 编辑的参数里那几格的名字（同 `edit` 工具的参数）。
@@ -79,6 +81,7 @@ impl Step {
             block,
             command,
             edits,
+            input: args,
         }
     }
 }

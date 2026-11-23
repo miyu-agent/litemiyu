@@ -9,6 +9,7 @@ LiteMiyu's command line is small. There are five things:
 | Command | What it does |
 |---|---|
 | `litemiyu` | Opens the full-screen interface |
+| `litemiyu acp` | Serves an editor over ACP; see [Using LiteMiyu in an editor](acp.md) |
 | `litemiyu ask` | Sends a message and prints the reply without going full-screen |
 | `litemiyu config` | Opens the settings screen |
 | `litemiyu shellhook` | Shell integration: talk to the AI at your shell prompt |

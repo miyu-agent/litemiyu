@@ -149,9 +149,7 @@ impl Engine {
             }
         }
         let ready = self.ready.as_ref()?;
-        let cwd = std::env::current_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let cwd = super::here().unwrap_or_default();
         Some((ready.source(), ready.model_data(), cwd))
     }
 }

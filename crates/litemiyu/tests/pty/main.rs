@@ -5,6 +5,7 @@
 //! 核心；LiteMiyu 的引擎在程序里，这里起的是本机的假模型服务器（`lm_engine::http::testkit`），引擎照真的路由、真的工具跑。
 //! 家目录、数据目录都在临时目录里，不碰人的家目录、不连外网。
 
+mod acp;
 mod agents;
 mod approval_wait;
 mod args;

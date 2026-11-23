@@ -31,6 +31,9 @@ pub use update::Update;
 /// 界面要引擎做的事。
 #[derive(Debug)]
 pub enum Command {
+    /// 现在就开会话，不等第一句话（`litemiyu acp` 的 `session/new`：编辑器要先拿到会话编号）。开好了交 [`Update::Ready`]，
+    /// 开不成交 [`Update::Failed`]。已经开着的不办。
+    Begin,
     /// 说一句话。还没开会话的先开一个。
     Send {
         /// 说的字。
@@ -205,6 +208,8 @@ pub struct Core {
     preset: Option<String>,
     /// 应急模式备好的（`litemiyu --rescue`，设计第五节第 16 条）：起引擎线程时交给它；不是应急模式的没有。
     rescue: std::cell::Cell<Option<crate::rescue::Prepared>>,
+    /// 这条引擎线程的工作目录（[`Core::workspace`]）：没定的照进程的当前目录。
+    cwd: Option<String>,
 }
 
 impl Core {
@@ -215,7 +220,14 @@ impl Core {
             deliver: Arc::new(deliver),
             preset: None,
             rescue: std::cell::Cell::new(None),
+            cwd: None,
         }
+    }
+
+    /// 这个引擎开的会话用工作目录 `cwd`，不照进程的当前目录（`litemiyu acp`：一个进程里几个会话各在各的目录）。同
+    /// [`Core::first_preset`]，起来时就要定。
+    pub fn workspace(&mut self, cwd: String) {
+        self.cwd = Some(cwd);
     }
 
     /// 测试用：不起引擎线程，发的命令都丢掉（单元测试经 `App::handle` 按键时会先 `warm`：起的是真的引擎线程，万一发出去
@@ -259,6 +271,7 @@ impl Core {
                     Arc::clone(&self.deliver),
                     self.preset.clone(),
                     self.rescue.take(),
+                    self.cwd.clone(),
                 )
             })
             .0

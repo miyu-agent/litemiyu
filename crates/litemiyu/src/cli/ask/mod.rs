@@ -340,6 +340,36 @@ pub use follow::Turn;
 
 // shell 集成的 `say` 借用的几样（`cli/shellhook/`）：读那句话、看有没有能用的模型。
 pub(super) use input::{NoMessage, message};
+// `litemiyu acp` 借用的记账的那一套（`cli/acp/`）。
+pub(super) use follow::{Failure, Follow, Out, Sink};
+pub(super) use steps::Step;
+
+/// 配置里默认的聊天模型（`models.chat`）：`litemiyu acp` 报给编辑器「现在用的是哪个模型」时的起点（会话自己换过的照
+/// 它推来的）。读不了配置、没配的是 `None`。
+pub(super) fn default_model() -> Option<String> {
+    use lm_engine::store::paths::{Env, Paths};
+    let paths = Paths::locate(&Env::current()).ok()?;
+    let loaded = lm_engine::configured::load(&paths, |name| std::env::var(name).ok()).ok()?;
+    lm_kernel::models::provider::chat(&loaded.resolved.values())
+}
+
+/// `litemiyu acp` 开会话以前看的：没有主对话的模型时先试自动导入（同 [`ready`]）。还是没有的不在标准错误上说，交回给
+/// 编辑器看的那一句（连同怎么办）；配置读不了的已经在标准错误上说过了，交回同一句。
+pub(super) fn model_or_why(words: &Words) -> Result<(), String> {
+    let lacking = || {
+        let fields = [
+            ("message", words.get("no_model")),
+            ("hint", words.get("no_model.hint")),
+        ];
+        words.say("acp.no_model", &fields)
+    };
+    match checked(words, None, true) {
+        Ok(_) => Ok(()),
+        Err(Unready::Lacking(_)) => Err(lacking()),
+        Err(Unready::Early(Early::Ended(ending))) => Err(ending.said.unwrap_or_else(lacking)),
+        Err(Unready::Early(Early::Misuse(_))) => Err(lacking()),
+    }
+}
 
 /// 有没有能用的模型（同 `ask` 说话以前看的，只看、不自动导入：`shellhook doctor` 用）：没有的话已经说过了，交回退出码。
 pub(super) fn model_ready(words: &Words) -> Result<(), u8> {
