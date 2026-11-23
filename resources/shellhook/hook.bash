@@ -98,7 +98,9 @@ __litemiyu_accept_line() {
     fi
     printf '\e[0m\n'
     local leftover
-    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
+    # 临时文件建不出来的（/tmp 只读、满了）：照样说话，只是提前敲的字留不下；不把 mktemp 的报错印在回答前面，
+    # 后面也不拿空的名字去删文件。
+    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX 2>/dev/null)
     __litemiyu_busy=1
     printf '%s' "$buffer" | __litemiyu_shellhook say --shell bash --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover" $redo
     printf '\e[?25h\n'
@@ -112,14 +114,16 @@ __litemiyu_accept_line() {
     # bash 只重画提示符最后一行：前面几行补上。
     [[ $prompt == *$'\n'* ]] && printf '%s\n' "${prompt%$'\n'*}"
     READLINE_LINE=
-    [[ -s $leftover ]] && READLINE_LINE=$(<"$leftover")
+    [[ -n $leftover && -s $leftover ]] && READLINE_LINE=$(<"$leftover")
     READLINE_POINT=${#READLINE_LINE}
     # /edit 放回来的：旁边有一份 .redo 标记，记着「在编辑」，下一次回车替换上一轮重来。
-    if [[ -e $leftover.redo ]]; then
+    if [[ -n $leftover && -e $leftover.redo ]]; then
         __litemiyu_editing=1
         rm -f -- "$leftover.redo"
     fi
-    rm -f -- "$leftover"
+    if [[ -n $leftover ]]; then
+        rm -f -- "$leftover"
+    fi
 }
 
 # 在编辑的那一句：Ctrl+C 清了命令行、执行了别的命令（都会画新的提示符），就不算在编辑了。

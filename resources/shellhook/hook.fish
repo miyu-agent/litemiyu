@@ -75,15 +75,19 @@ function __litemiyu_on_prompt --on-event fish_prompt
         # 清空输入行、重放都画完了：一次交给终端（开头在 __litemiyu_hand_to_ai）。
         printf '\e[?2026l'
         # AI 答话的时候提前敲的字：程序写进这个文件，答完放回命令行。$fish_pid 告诉它是哪个 shell：一个终端一个会话。
-        set -l leftover (mktemp -t litemiyu-shellhook.XXXXXX)
+        # 临时文件建不出来的（/tmp 只读、满了）：照样说话，只是提前敲的字留不下；不带 `--leftover`（空着带的话后面的
+        # 参数会被当成它的值，这句话就交不出去了），后面也不拿空的名字去认、去删文件。
+        set -l leftover (mktemp -t litemiyu-shellhook.XXXXXX 2>/dev/null)
+        set -l kept
+        test -n "$leftover"; and set kept --leftover $leftover
         # /edit 放回来改过的这一句：替换上一轮重来（`--redo`）。
         set -l redo
         set -q __litemiyu_pending_redo; and set redo --redo
         set -e __litemiyu_pending_redo
-        printf '%s' "$buffer" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --reports --leftover $leftover $redo
+        printf '%s' "$buffer" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --reports $kept $redo
         set litemiyu_status $status
         # /edit 放回命令行的：旁边有一份 .redo 标记，记着「在编辑」。
-        if test -e "$leftover.redo"
+        if test -n "$leftover"; and test -e "$leftover.redo"
             set -g __litemiyu_editing 1
             rm -f -- "$leftover.redo"
         end
@@ -146,10 +150,12 @@ function __litemiyu_report
     set -l above
     test (count $argv) -gt 0; and set above --above $argv[1]
     # 印的时候敲的字：接在命令行后面（原来敲到一半的 fish 自己留着）。
-    set -l leftover (mktemp -t litemiyu-shellhook.XXXXXX)
+    set -l leftover (mktemp -t litemiyu-shellhook.XXXXXX 2>/dev/null)
+    set -l kept
+    test -n "$leftover"; and set kept --leftover $leftover
     set -l was_busy (set -q __litemiyu_busy; and echo 1)
     set -g __litemiyu_busy 1
-    __litemiyu_shellhook report --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --leftover $leftover $above
+    __litemiyu_shellhook report --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal $kept $above
     set -l printed $status
     # 程序收工时不亮光标（亮早了停在最后一行末尾闪一下），这里亮。
     __litemiyu_restore_cursor
@@ -157,7 +163,7 @@ function __litemiyu_report
     if test -s "$leftover"
         commandline -i -- (string collect < $leftover)
     end
-    rm -f -- $leftover "$leftover.redo"
+    test -n "$leftover"; and rm -f -- $leftover "$leftover.redo"
     return $printed
 end
 

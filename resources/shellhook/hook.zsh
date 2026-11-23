@@ -17,14 +17,18 @@ command_not_found_handler() {
     fi
     # AI 答话的时候提前敲的字：程序写进这个文件，答完放到下一个提示符的命令行上。$$ 告诉它是哪个 shell：一个终端一个会话。
     local leftover
-    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
+    # 临时文件建不出来的（/tmp 只读、满了）：照样说话，只是提前敲的字留不下；不把 mktemp 的报错印在回答前面，
+    # 后面也不拿空的名字去删文件。
+    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX 2>/dev/null)
     printf '%s' "$*" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover"
     # 程序收工时不亮光标（亮早了停在最后一行末尾闪一下），这里亮。
     printf '\e[?25h'
     # 收尾行和下一个提示符之间空一行（fish 的提示符自带，zsh、bash 的不一定）。
     print
-    [[ -s $leftover ]] && print -z -- "$(<$leftover)"
-    rm -f -- "$leftover" "$leftover.redo"
+    if [[ -n $leftover ]]; then
+        [[ -s $leftover ]] && print -z -- "$(<$leftover)"
+        rm -f -- "$leftover" "$leftover.redo"
+    fi
     return 127
 }
 
@@ -99,7 +103,7 @@ __litemiyu_hand_to_ai() {
     # （2026-11-23 在真终端里看到，bash、fish 是一行）。
     zle -I
     local leftover
-    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
+    leftover=$(mktemp -t litemiyu-shellhook.XXXXXX 2>/dev/null)
     __litemiyu_busy=1
     printf '%s' "$buffer" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover" $redo
     printf '\e[?25h'
@@ -113,14 +117,16 @@ __litemiyu_hand_to_ai() {
     __litemiyu_busy=
     region_highlight=()
     BUFFER=
-    [[ -s $leftover ]] && BUFFER=$(<"$leftover")
+    [[ -n $leftover && -s $leftover ]] && BUFFER=$(<"$leftover")
     CURSOR=${#BUFFER}
     # /edit 放回来的：旁边有一份 .redo 标记，记着「在编辑」，下一次回车替换上一轮重来。
-    if [[ -e $leftover.redo ]]; then
+    if [[ -n $leftover && -e $leftover.redo ]]; then
         __litemiyu_editing=1
         rm -f -- "$leftover.redo"
     fi
-    rm -f -- "$leftover"
+    if [[ -n $leftover ]]; then
+        rm -f -- "$leftover"
+    fi
 }
 zle -N accept-line __litemiyu_accept_line
 
