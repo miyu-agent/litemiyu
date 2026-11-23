@@ -10,7 +10,7 @@ use lm_engine::session::testkit::{Play, Script};
 use lm_kernel::kernel::event::{Body, Effect, Event, JobKind};
 use lm_kernel::kernel::id::{JobId, SessionId, TurnId};
 use lm_kernel::kernel::request::{Message, Request};
-use lm_kernel::kernel::session::Command;
+use lm_kernel::kernel::session::{Command, Outcome, Reason};
 
 use crate::support::jobs::*;
 use crate::support::*;
@@ -448,8 +448,22 @@ async fn compacting_or_undoing_the_parent_later_leaves_the_fork_alone() {
     let (handle, log) = forked_after(&home, &script, &first).await;
     let (fork, _) = children(&log);
     let mut pushes = watch(&handle).await;
-    let compact = Command::Compact { instructions: None };
-    ask(&handle, "cmd-3", compact).await.expect("会话在跑");
+    // 两条回报前后脚到的时候，前一条开的那一轮结束（`settled` 认的是它）以后，后一条的那一轮可能刚开：这时压缩被拒绝
+    // （回合在跑），等那一轮结束再来。2026-11-23 公开仓库的 macOS 任务上撞到过一次：只发一次的话压缩没做成，下面那条
+    // 断言失败。
+    for attempt in 0.. {
+        let compact = Command::Compact { instructions: None };
+        let answered = ask(&handle, &format!("cmd-3-{attempt}"), compact).await;
+        match answered.expect("会话在跑") {
+            Outcome::Rejected {
+                reason: Reason::TurnRunning,
+            } if attempt < 5 => {
+                until_turn_ends(&mut pushes).await;
+            }
+            Outcome::Rejected { reason } => panic!("压缩被拒绝：{reason:?}"),
+            _ => break,
+        }
+    }
     until_turn_ends(&mut pushes).await;
     let parent_log = home.log(handle.id());
     assert!(
