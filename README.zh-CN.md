@@ -170,6 +170,19 @@ CPU 和硬盘：
 - [快速上手](docs/zh/guide/quickstart.md)
 - [完整文档](docs/README.md)
 
+用安装脚本安装（Linux、macOS）：
+
+```bash
+curl -fsSL https://shorin.xyz/litemiyusetup | sh
+```
+
+已经安装过时，再运行一次就是更新。卸载，以及卸载并删除配置和数据：
+
+```bash
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- uninstall
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- purge
+```
+
 安装方法一览：
 
 | 系统 | 安装 |

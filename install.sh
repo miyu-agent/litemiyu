@@ -23,8 +23,9 @@
 set -eu
 
 REPO="miyu-agent/litemiyu"
-# 短链做好以后换成短链。短链必须是 HTTP 301 或 302 的跳转（curl -L 不认网页里的 meta refresh）。
-SCRIPT_URL="https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh"
+# 短链，302 跳到公开仓库 main 上的这个文件（https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh）。
+# 短链必须是 HTTP 301 或 302 的跳转：curl -L 不认网页里的 meta refresh。
+SCRIPT_URL="https://shorin.xyz/litemiyusetup"
 AUR_PKG="litemiyu-bin"
 BREW_FORMULA="miyu-agent/tap/litemiyu"
 BIN_DIR="${LITEMIYU_BIN_DIR:-$HOME/.local/bin}"

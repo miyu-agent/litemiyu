@@ -44,7 +44,7 @@ The recommended method for each system:
 The install script picks a method that fits this computer, so you do not have to choose one:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh
+curl -fsSL https://shorin.xyz/litemiyusetup | sh
 ```
 
 | This computer | What the script does |
@@ -63,8 +63,8 @@ curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh
 To uninstall:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- uninstall   # uninstall, keep the configuration and data
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- purge       # uninstall, and delete the configuration and data
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- uninstall   # uninstall, keep the configuration and data
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- purge       # uninstall, and delete the configuration and data
 ```
 
 The script first lists what it will delete and what it will keep, and waits for you to confirm; add `--yes` to skip the question. Uninstalling also removes the [shell integration](shell.md). `purge` deletes the four directories listed in [Where your data lives](data.md), and they cannot be recovered afterwards; `purge` refuses to run while LiteMiyu's full-screen interface is still open.

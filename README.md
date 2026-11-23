@@ -170,6 +170,19 @@ These pages cover installation and basic use.
 - [Quick start](docs/en/guide/quickstart.md)
 - [Full documentation](docs/README.md)
 
+Install with the install script (Linux, macOS):
+
+```bash
+curl -fsSL https://shorin.xyz/litemiyusetup | sh
+```
+
+Run it again to update. To uninstall, or to uninstall and delete the configuration and data:
+
+```bash
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- uninstall
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- purge
+```
+
 Ways to install:
 
 | System | Install |

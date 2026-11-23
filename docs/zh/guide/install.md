@@ -44,7 +44,7 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 安装脚本会按这台电脑的情况选择安装方式，不需要你自己挑：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh
+curl -fsSL https://shorin.xyz/litemiyusetup | sh
 ```
 
 | 这台电脑的情况 | 脚本的做法 |
@@ -63,8 +63,8 @@ curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh
 卸载：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- uninstall   # 卸载，保留配置和数据
-curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- purge       # 卸载，并删除配置和数据
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- uninstall   # 卸载，保留配置和数据
+curl -fsSL https://shorin.xyz/litemiyusetup | sh -s -- purge       # 卸载，并删除配置和数据
 ```
 
 脚本会先列出将要删除和保留的内容，等你确认以后再执行；加上 `--yes` 可以跳过确认。卸载时脚本会一并移除 [shell 集成](shell.md)。`purge` 删除的是[数据放在哪](data.md)里列的四个目录，删除以后无法恢复；LiteMiyu 的全屏界面还开着时，`purge` 会拒绝执行。
