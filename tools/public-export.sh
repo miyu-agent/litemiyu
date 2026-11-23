@@ -30,6 +30,7 @@ PUBLIC=(
   THIRD-PARTY-LICENSES.txt
   README.md
   README.zh-CN.md
+  install.sh            # 一键安装脚本：README 里的安装命令取的就是公开仓库 main 上的这一份
   bench
   crates
   docs/00-设计.md
@@ -41,6 +42,7 @@ PUBLIC=(
   docs/designs          # 测试读的样例数据（事件、请求、回答的流），不是文档
   packaging
   resources
+  tools/install-containers.sh   # 在各发行版的容器里回归 install.sh
   tools/public-export.sh
   xtask
 )

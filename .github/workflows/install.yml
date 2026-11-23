@@ -1,0 +1,65 @@
+# 安装脚本（仓库根的 install.sh）在三种真机器上各跑一遍：安装、再跑一次、装 shell 集成、卸载并删数据。
+# - ubuntu-24.04、ubuntu-24.04-arm：没有 pacman、不是 macOS，走「下载发行包装到 ~/.local」的一路，x86_64 和 aarch64 各一遍；
+# - macos-15：机器上有 Homebrew，走 brew install 的一路。
+# 装的是公开的最新正式版，所以只在改了 install.sh、这个文件时跑，也可以手动触发（发完一版以后跑一遍）。
+# 各发行版、别的 shell 的情形在 tools/install-containers.sh 里（要 docker，在开发的机器上跑）。
+#
+# 不用任何密钥，只读仓库。只用 GitHub 官方的 action（actions/*）。
+name: install
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - .github/workflows/install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  script:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      # 提示印中文的那一套：macOS 自带的 sh（bash 3.2）对变量后面紧跟中文字符的写法会出错，要在这里暴露。
+      LANG: zh_CN.UTF-8
+    steps:
+      - uses: actions/checkout@v7
+      - name: 安装
+        run: sh install.sh
+      - name: 装上了，再跑一次说已经是最新版
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v litemiyu
+          litemiyu --version
+          latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/miyu-agent/litemiyu/releases/latest)
+          test "$(litemiyu --version)" = "litemiyu ${latest##*/v}"
+          sh install.sh | tee again.txt
+          grep -qE '最新版|already' again.txt
+      - name: 装 shell 集成
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          touch ~/.bashrc
+          litemiyu shellhook install --shell bash
+          grep -q 'litemiyu shellhook' ~/.bashrc
+          mkdir -p ~/.config/litemiyu && echo '# test' > ~/.config/litemiyu/config.toml
+      - name: 卸载并删数据
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          sh install.sh purge --yes
+          hash -r
+          if command -v litemiyu; then echo "程序还在"; exit 1; fi
+          if grep -q 'litemiyu shellhook' ~/.bashrc; then echo "shell 集成还在"; exit 1; fi
+          if [ -e ~/.config/litemiyu ]; then echo "配置还在"; exit 1; fi
+      - name: 卸载以后再装一遍还能装上
+        run: |
+          sh install.sh
+          export PATH="$HOME/.local/bin:$PATH"
+          litemiyu --version
+          sh install.sh uninstall --yes

@@ -39,6 +39,36 @@ Arch 的包的文件名里，预发布版的版本号写成 `2026.11.0rc1` 这�
 | Intel 芯片的 Mac、FreeBSD 等 BSD、其他 POSIX 兼容的系统 | [从源码编译](#从源码编译) |
 | Windows | 在 WSL2 里按照 Linux 的方法安装 |
 
+## 安装脚本（Linux、macOS）
+
+安装脚本会按这台电脑的情况选择安装方式，不需要你自己挑：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh
+```
+
+| 这台电脑的情况 | 脚本的做法 |
+|---|---|
+| Arch 系，并且装了 `base-devel` | 从 [AUR](#arch-linuxaur) 下载 `litemiyu-bin` 的打包文件，用 `makepkg -si` 装成系统包。安装进系统那一步会用到 `sudo` |
+| macOS，并且装了 Homebrew | 运行 `brew install miyu-agent/tap/litemiyu` |
+| 其他情况 | 下载[发行包](#下载发行包linuxmacos)，核对校验和，把程序放在 `~/.local/lib/litemiyu`，命令是 `~/.local/bin/litemiyu`。不需要管理员权限 |
+
+- 请用普通用户运行，脚本拒绝用 root 运行。
+- 已经安装过时，再运行一次就是更新到最新版。安装到 `~/.local` 的会保留上一个版本，更早的版本会被删除。
+- `PATH` 里没有 `~/.local/bin` 时，脚本会在 shell 的配置文件里加一段把它加进去，在新打开的终端里生效。不想让脚本修改配置文件的话，加上 `--no-modify-path`。
+- 电脑上已经有用别的方式安装的 LiteMiyu（系统包、npm）时，脚本不会再安装第二份，只说明那一份怎么更新和卸载。
+- 安装到 `~/.local` 时可以指定版本：把命令末尾的 `sh` 换成 `sh -s -- --version <版本>`。
+- 没有预编译包的系统（Intel 芯片的 Mac、BSD、其他架构的 Linux）上，脚本只给出提示，不做任何改动。
+
+卸载：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- uninstall   # 卸载，保留配置和数据
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- purge       # 卸载，并删除配置和数据
+```
+
+脚本会先列出将要删除和保留的内容，等你确认以后再执行；加上 `--yes` 可以跳过确认。卸载时脚本会一并移除 [shell 集成](shell.md)。`purge` 删除的是[数据放在哪](data.md)里列的四个目录，删除以后无法恢复；LiteMiyu 的全屏界面还开着时，`purge` 会拒绝执行。
+
 ## deb（Debian、Ubuntu）
 
 1. 下载包和校验文件，并校验
@@ -247,6 +277,7 @@ litemiyu --version
 LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一个程序文件：
 
 - deb、rpm、Arch 的包：下载新版本的包，用安装时的命令再装一次，见上面各节。
+- 安装脚本：再运行一次安装的那条命令。
 - AUR：跟着系统更新，例如 `paru -Syu`。
 - Homebrew：`brew upgrade litemiyu`。
 - npm：`npm install -g litemiyu@latest`。
@@ -258,6 +289,8 @@ LiteMiyu 没有自动更新，也没有升级命令，升级就是换掉那一�
 如果以前手动把程序放进过 `~/.local/bin`，改用系统包以后请删掉 `~/.local/bin/litemiyu`，因为 `~/.local/bin` 在 `PATH` 里通常排在 `/usr/bin` 前面，不删的话运行的还是旧的那一份。
 
 ## 卸载
+
+用[安装脚本](#安装脚本linuxmacos)安装的，请用那一节里的卸载命令。其他方式安装的，按下面两步做。
 
 1. 删除程序
 

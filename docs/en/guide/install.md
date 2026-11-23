@@ -39,6 +39,36 @@ The recommended method for each system:
 | Intel Macs, FreeBSD and other BSDs, other POSIX-compatible systems | [Build from source](#building-from-source) |
 | Windows | Install inside WSL2 the same way as on Linux |
 
+## Install script (Linux, macOS)
+
+The install script picks a method that fits this computer, so you do not have to choose one:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh
+```
+
+| This computer | What the script does |
+|---|---|
+| Arch-based, with `base-devel` installed | Downloads the packaging files of `litemiyu-bin` from the [AUR](#arch-linux-aur) and installs a system package with `makepkg -si`. The step that installs into the system uses `sudo` |
+| macOS with Homebrew | Runs `brew install miyu-agent/tap/litemiyu` |
+| Anything else | Downloads the [release package](#download-a-release-package-linux-macos), verifies its checksum, and puts the program in `~/.local/lib/litemiyu` with the command at `~/.local/bin/litemiyu`. No administrator rights are needed |
+
+- Run it as a normal user; the script refuses to run as root.
+- If LiteMiyu is already installed, running the script again updates it to the latest version. An installation in `~/.local` keeps the previous version and deletes older ones.
+- If `~/.local/bin` is not on your `PATH`, the script adds it in your shell's startup file; this takes effect in new terminals. Add `--no-modify-path` if you do not want the script to edit that file.
+- If LiteMiyu was already installed another way (a system package, npm), the script does not install a second copy; it only tells you how to update and uninstall that one.
+- An installation in `~/.local` can use a specific version: replace the final `sh` with `sh -s -- --version <version>`.
+- On systems without a prebuilt package (Intel Macs, the BSDs, Linux on other architectures), the script only prints a notice and changes nothing.
+
+To uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- uninstall   # uninstall, keep the configuration and data
+curl -fsSL https://raw.githubusercontent.com/miyu-agent/litemiyu/main/install.sh | sh -s -- purge       # uninstall, and delete the configuration and data
+```
+
+The script first lists what it will delete and what it will keep, and waits for you to confirm; add `--yes` to skip the question. Uninstalling also removes the [shell integration](shell.md). `purge` deletes the four directories listed in [Where your data lives](data.md), and they cannot be recovered afterwards; `purge` refuses to run while LiteMiyu's full-screen interface is still open.
+
 ## deb (Debian, Ubuntu)
 
 1. Download the package and the checksum file, and verify
@@ -247,6 +277,7 @@ If it prints `litemiyu <version>`, the installation worked. This command reads n
 LiteMiyu has no automatic updates and no upgrade command. Upgrading means replacing that one program file:
 
 - deb, rpm, Arch package: download the package of the new version and install it again with the command you used to install it; see the sections above.
+- Install script: run the install command again.
 - AUR: it follows your system updates, for example `paru -Syu`.
 - Homebrew: `brew upgrade litemiyu`.
 - npm: `npm install -g litemiyu@latest`.
@@ -258,6 +289,8 @@ Your configuration and sessions need no attention. Running windows are not affec
 If you once put the program into `~/.local/bin` by hand, delete `~/.local/bin/litemiyu` after switching to a system package; `~/.local/bin` usually comes before `/usr/bin` on your `PATH`, so otherwise the old copy keeps running.
 
 ## Uninstall
+
+If you installed with the [install script](#install-script-linux-macos), use the uninstall commands in that section. For the other methods, follow the two steps below.
 
 1. Remove the program
 
