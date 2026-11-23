@@ -34,6 +34,7 @@ pub(crate) fn in_own_thread<T: Send + 'static>(
     };
     let ran = std::thread::Builder::new()
         .name(name.to_string())
+        .stack_size(crate::threads::STACK)
         .spawn(job)
         .map(std::thread::JoinHandle::join);
     match ran {
@@ -55,6 +56,7 @@ pub(crate) fn release<T: Send + 'static>(taken: T) {
     drop(tokio::task::spawn_blocking(move || {
         if let Ok(thread) = std::thread::Builder::new()
             .name("lm-release".to_string())
+            .stack_size(crate::threads::STACK)
             .spawn(move || drop(taken))
         {
             drop(thread.join());

@@ -1,5 +1,5 @@
 //! shell 集成（`litemiyu shellhook …`，施工线 shellhook，底子是 Miyu 终端的 `shellhook/`）：在 shell 的提示符后面
-//! 直接说话。给人用的是 `install`、`uninstall`、`status`（帮助页列这三个）；`script`、`classify`、`say` 是装进 shell 的脚本
+//! 直接说话。给人用的是 `install`、`uninstall`、`status`、`doctor`（帮助页列这四个）；`script`、`classify`、`say` 是装进 shell 的脚本
 //! 调的，`worker` 是 `say` 起的后台进程，帮助页都不列，各自的 `-h` 照样有。
 //!
 //! 只在 `litemiyu shellhook` 这条路上执行：全屏界面启动时不读、不初始化这里的任何东西（项目主人的要求：不用的时候不增加
@@ -69,6 +69,16 @@ pub const CMD: Cmd = Cmd {
             about: "",
             extra: "",
             opts: &[],
+            subs: &[],
+            run: None,
+        },
+        Cmd {
+            name: "doctor",
+            usage: "u.options",
+            summary: "s.shellhook.doctor",
+            about: "a.shellhook.doctor",
+            extra: "",
+            opts: &[SHELL],
             subs: &[],
             run: None,
         },
@@ -199,6 +209,7 @@ fn run(args: &[String], stale: bool) -> ExitCode {
         "install" => install(&parsed, &Words::current()),
         "uninstall" => uninstall(&parsed, &Words::current()),
         "status" => status(&Words::current()),
+        "doctor" => doctor(&parsed, &Words::current()),
         "script" => print_script(&parsed, &path),
         "say" => say::run(&parsed, stale),
         "report" => say::report(&parsed),
@@ -360,16 +371,27 @@ fn uninstall(parsed: &Parsed, words: &Words) -> ExitCode {
 
 /// `shellhook status`：三种 shell 各一行；别家的集成也在的说明。
 fn status(words: &Words) -> ExitCode {
+    match listed(words) {
+        true => ExitCode::SUCCESS,
+        false => ExitCode::FAILURE,
+    }
+}
+
+/// 三种 shell 各印一行（`status`、`doctor` 都用）；没有 `HOME`、启动文件读不了的说一声，交回 `false`。
+fn listed(words: &Words) -> bool {
     for shell in ALL {
         let Some(path) = shell.target(&env) else {
             words.error(words.get("shellhook.no_home"), None);
-            return ExitCode::FAILURE;
+            return false;
         };
         let shown = path.display().to_string();
         let mut fields = vec![("path", shown.as_str()), ("shell", shell.name())];
         let found = match install::found(shell, &path) {
             Ok(found) => found,
-            Err(error) => return failed(words, "shellhook.unreadable", &path, &error),
+            Err(error) => {
+                let _code = failed(words, "shellhook.unreadable", &path, &error);
+                return false;
+            }
         };
         let gone;
         let line = match &found {
@@ -391,7 +413,58 @@ fn status(words: &Words) -> ExitCode {
             );
         }
     }
-    ExitCode::SUCCESS
+    true
+}
+
+/// `shellhook doctor`：逐条检查说话要用到的几样，有不对的说怎么办，退出码 1；都对的 0。
+///
+/// 查的：三种 shell 装没装（同 `status`）、当前这种 shell 装没装、有没有能用的模型、留下来的进程放不放得下套接字（放不下的
+/// 没有后台回报）、有没有记下终端的颜色（没有的照 16 色画）。
+fn doctor(parsed: &Parsed, words: &Words) -> ExitCode {
+    use lm_engine::store::paths::{Env, Paths};
+    if !listed(words) {
+        return ExitCode::FAILURE;
+    }
+    let mut wrong = false;
+    // 当前这种 shell：认不出的不查（`status` 已经三种都列了）。
+    if let Some(shell) = written(parsed).or_else(shells::detect)
+        && let Some(path) = shell.target(&env)
+        && matches!(install::found(shell, &path), Ok(Found::Missing))
+    {
+        let hint = words.say("shellhook.doctor.install", &[("shell", shell.name())]);
+        words.error(
+            &words.say("shellhook.doctor.not_here", &[("shell", shell.name())]),
+            Some(&hint),
+        );
+        wrong = true;
+    }
+    // 没有能用的模型：`model_ready` 自己说了原因和怎么办。
+    match crate::cli::ask::model_ready(words) {
+        Ok(()) => println!("{}", words.get("shellhook.doctor.model")),
+        Err(_) => wrong = true,
+    }
+    let paths = Paths::locate(&Env::current()).ok();
+    match paths
+        .as_ref()
+        .and_then(|paths| terminal::socket(paths, "0-0", true))
+    {
+        Some(_) => println!("{}", words.get("shellhook.doctor.reports")),
+        None => words.warn(
+            words.get("shellhook.doctor.no_reports"),
+            Some(words.get("shellhook.doctor.no_reports.hint")),
+        ),
+    }
+    let colors = crate::theme::record::path()
+        .as_deref()
+        .and_then(crate::theme::record::read);
+    match colors {
+        Some(_) => println!("{}", words.get("shellhook.doctor.colors")),
+        None => println!("{}", words.get("shellhook.doctor.no_colors")),
+    }
+    match wrong {
+        true => ExitCode::FAILURE,
+        false => ExitCode::SUCCESS,
+    }
 }
 
 /// `shellhook script --shell <名字> --program <路径>`：印这种 shell 的脚本。两个都得写。

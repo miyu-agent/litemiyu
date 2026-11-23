@@ -4,7 +4,6 @@
 use std::io;
 use std::process::{Child, ExitStatus};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use super::{Ending, Finished, Group, Handover, KILL_WAIT, Started, Waited, done, lock};
@@ -56,7 +55,7 @@ impl Wakes {
     /// 另起一个线程等 `child` 结束，结局送进通道。
     fn watch(&self, mut child: Child) {
         let sender = self.sender.clone();
-        thread::spawn(move || {
+        crate::threads::spawn(move || {
             let status = child.wait();
             #[expect(
                 clippy::let_underscore_must_use,
@@ -97,7 +96,7 @@ impl Wakes {
         let (exited, waited) = mpsc::channel();
         let Wakes { sender, wakes } = self;
         drop(sender);
-        thread::spawn(move || {
+        crate::threads::spawn(move || {
             for wake in wakes {
                 if let Wake::Exited(status, child) = wake {
                     #[expect(

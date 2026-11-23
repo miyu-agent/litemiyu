@@ -22,6 +22,7 @@ If this is your first time, start with the [Quick start](guide/quickstart.md).
 | [Skills and MCP](guide/skills-mcp.md) | Writing skills for the AI, connecting MCP servers, switches, the "These entries are invalid and were ignored" message |
 | [Prompt, project instructions and memory](guide/memory.md) | Writing your own prompt, `AGENTS.md`, the AI's memory |
 | [Command line](guide/cli.md) | The options of `litemiyu`, using `litemiyu ask` in scripts, exit status |
+| [Using LiteMiyu in your shell](guide/shell.md) | Shell integration: talking to the AI at the prompt of fish, bash and zsh |
 | [Rescue mode](guide/rescue.md) | Using `litemiyu --rescue` when your machine is in trouble |
 | [Configuration](guide/config.md) | Every page of the settings screen and every entry of the configuration file |
 | [Where your data lives](guide/data.md) | Where the files are, backing up, moving, cleaning up |

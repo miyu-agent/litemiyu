@@ -22,7 +22,7 @@ While background commands are running, the middle of the footer shows `Backgroun
 
 By default a background command may run for at most 30 minutes; after that it is stopped and the AI is told. Change the limit under `Longest background command` on the `General` page of `/config`; the maximum is 2 hours.
 
-> Background commands belong to the window. When you close the LiteMiyu window, any that are still running stop too.
+> Background commands belong to the window. When you close the LiteMiyu window, any that are still running stop too. With shell integration they belong to the terminal; see [Using LiteMiyu in your shell](shell.md#background-commands-loops-and-reports).
 
 ## Subagents
 

@@ -82,13 +82,46 @@ fn dir(paths: &Paths) -> PathBuf {
     paths.state.join("shellhook")
 }
 
-/// 清掉 shell 已经退出的那几份记录（文件名开头是 shell 的进程号）。读不了目录的不清。
+/// 清掉 shell 已经退出的那几份记录（文件名开头是 shell 的进程号），连同它们留下的套接字文件。读不了目录的不清。
 pub fn sweep(paths: &Paths) {
-    let Ok(entries) = fs::read_dir(dir(paths)) else {
+    if let Ok(entries) = fs::read_dir(dir(paths)) {
+        for entry in entries.flatten() {
+            if gone(&entry.path()) {
+                drop(fs::remove_file(entry.path()));
+            }
+        }
+    }
+    sweep_sockets(paths);
+}
+
+/// 清掉 shell 已经退出的那几个套接字文件：拿着会话的进程平常退出时自己删，崩了、被强行结束的来不及删，文件就一直
+/// 留在运行时目录里（2026-11-23 看到：崩过两次，留下两个）。那个目录里还有别的程序的文件：只认名字是这里起的样子、
+/// 记号开头认得出进程号、那个进程又确实不在了的。
+fn sweep_sockets(paths: &Paths) {
+    // 照一个假的记号问出套接字放在哪个目录、名字是什么样。
+    const SAMPLE: &str = "0-0";
+    let Some(sample) = socket(paths, SAMPLE, false) else {
+        return;
+    };
+    let (Some(folder), Some(name)) = (
+        sample.parent(),
+        sample.file_name().and_then(|name| name.to_str()),
+    ) else {
+        return;
+    };
+    let Some((before, after)) = name.split_once(SAMPLE) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
         return;
     };
     for entry in entries.flatten() {
-        if gone(&entry.path()) {
+        let name = entry.file_name();
+        let token = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(before))
+            .and_then(|name| name.strip_suffix(after));
+        if token.and_then(dead) == Some(true) {
             drop(fs::remove_file(entry.path()));
         }
     }
@@ -96,15 +129,19 @@ pub fn sweep(paths: &Paths) {
 
 /// 这份记录的 shell 不在了：文件名认不出进程号的也算（不是这里写的样子）。
 fn gone(path: &Path) -> bool {
-    let pid = path
-        .file_name()
+    path.file_name()
         .and_then(|name| name.to_str())
-        .and_then(|name| name.split('-').next())
+        .and_then(dead)
+        .unwrap_or(true)
+}
+
+/// 记号 `token`（开头是 shell 的进程号）的那个 shell 不在了没有；认不出进程号的是 `None`。
+fn dead(token: &str) -> Option<bool> {
+    let pid = token
+        .split('-')
+        .next()
         .and_then(|pid| pid.parse::<i32>().ok())
-        .and_then(rustix::process::Pid::from_raw);
-    match pid {
-        // 没有这个进程（`ESRCH`）才算不在；没权限发信号的（别人的进程）是在。
-        Some(pid) => rustix::process::test_kill_process(pid) == Err(rustix::io::Errno::SRCH),
-        None => true,
-    }
+        .and_then(rustix::process::Pid::from_raw)?;
+    // 没有这个进程（`ESRCH`）才算不在；没权限发信号的（别人的进程）是在。
+    Some(rustix::process::test_kill_process(pid) == Err(rustix::io::Errno::SRCH))
 }

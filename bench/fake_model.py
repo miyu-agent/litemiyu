@@ -29,6 +29,11 @@ import catalog as fake_catalog
 
 ANSWER = ["好的，", "这是本机假服务器的回答。"]
 
+# 说这句话的（排函数录「在 shell 里说一句」那一段用）：回一次工具调用，让程序把一条命令放到后台跑；别的请求（连同工具的结果、
+# 命令结束的通知）照旧回 [`ANSWER`]。
+BACKGROUND = "放到后台跑一下"
+BACKGROUND_COMMAND = "sleep 3; echo done"
+
 # 收到请求以后等几秒再回（排函数的剧本设，量尺不设）：模型真回话总要等一会儿，等着的那几帧（转圈、计时、闪的字）才画得出来；
 # 立刻回的话，模拟器里有时一帧都没画就回完了，那几个函数时录时不录，清单跟着变（占用 四）。
 DELAY = [0.0]
@@ -44,18 +49,37 @@ def served():
         return _SERVED[0]
 
 
-def _stream():
-    """一次回答的 SSE：几段字，最后报用量、`[DONE]`。"""
-    events = [
-        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": piece}, "finish_reason": None}]}
-        for piece in ANSWER
-    ]
-    events.append(
-        {
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 120, "completion_tokens": 12, "total_tokens": 132},
+def _background(request):
+    """这个请求的最后一条是不是用户说的 [`BACKGROUND`]。读不懂的请求不是。"""
+    try:
+        last = json.loads(request)["messages"][-1]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return False
+    return last.get("role") == "user" and BACKGROUND in json.dumps(last.get("content"), ensure_ascii=False)
+
+
+def _stream(request=b""):
+    """一次回答的 SSE：几段字，最后报用量、`[DONE]`。`request` 的最后一条是用户说的 [`BACKGROUND`] 时，回的是一次工具调用
+    （`shell`，放到后台跑 [`BACKGROUND_COMMAND`]）。"""
+    usage = {"prompt_tokens": 120, "completion_tokens": 12, "total_tokens": 132}
+    if _background(request):
+        arguments = {"command": BACKGROUND_COMMAND, "description": "bench", "run_in_background": True}
+        call = {
+            "index": 0,
+            "id": "call_bench",
+            "type": "function",
+            "function": {"name": "shell", "arguments": json.dumps(arguments)},
         }
-    )
+        events = [
+            {"choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [call]}, "finish_reason": None}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}], "usage": usage},
+        ]
+    else:
+        events = [
+            {"choices": [{"index": 0, "delta": {"role": "assistant", "content": piece}, "finish_reason": None}]}
+            for piece in ANSWER
+        ]
+        events.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage})
     body = "".join(f"data: {json.dumps(event, ensure_ascii=False)}\n\n" for event in events)
     return (body + "data: [DONE]\n\n").encode()
 
@@ -67,9 +91,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         with _SERVED_LOCK:
             _SERVED[0] += 1
         length = int(self.headers.get("Content-Length") or 0)
-        self.rfile.read(length)
+        request = self.rfile.read(length)
         time.sleep(DELAY[0])
-        body = _stream()
+        body = _stream(request)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(body)))

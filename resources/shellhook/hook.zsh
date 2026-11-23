@@ -95,8 +95,9 @@ __litemiyu_hand_to_ai() {
     # 留在屏幕上的那一行照普通的字色，不照报错色：语法高亮插件标的颜色也盖掉。
     region_highlight=("0 ${#BUFFER} fg=default")
     zle -R
+    # `zle -I` 以后光标已经在命令行下面新的一行上了，这里不再换行：程序自己在最前面空一行，再换一行就空了两行
+    # （2026-11-23 在真终端里看到，bash、fish 是一行）。
     zle -I
-    print
     local leftover
     leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
     __litemiyu_busy=1

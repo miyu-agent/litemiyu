@@ -14,7 +14,6 @@ use std::io::{self, Read};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::thread;
 use std::time::Duration;
 
 use super::lifeline::{self, Watcher};
@@ -152,7 +151,7 @@ pub(super) fn start(
     let output = Arc::new(Mutex::new(Sink::default()));
     let (done, read) = mpsc::channel();
     let theirs = Arc::clone(&output);
-    thread::spawn(move || {
+    crate::threads::spawn(move || {
         pump(pipe, &theirs, &progress);
         #[expect(
             clippy::let_underscore_must_use,

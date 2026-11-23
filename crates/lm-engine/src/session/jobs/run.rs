@@ -8,7 +8,6 @@ use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::store::jobs::{create_output, output_path};
@@ -111,7 +110,7 @@ impl JobPort for Port {
             false => self.limits.output,
         };
         let capping = halt.clone();
-        thread::spawn(move || {
+        crate::threads::spawn(move || {
             let mut over = false;
             for text in output {
                 writer.write(&text);
@@ -135,7 +134,7 @@ impl JobPort for Port {
             started,
             _finished: finished,
         };
-        thread::spawn(move || {
+        crate::threads::spawn(move || {
             watch.run(&*process, &sink, &read);
         });
         let running = self.limits.running;
@@ -143,14 +142,14 @@ impl JobPort for Port {
         if let Some(lines) = lines {
             let (shared, key) = (Arc::clone(shared), (shared.owner, job.clone()));
             let (by, cause) = (self.by.clone(), self.cause.clone());
-            thread::spawn(move || {
+            crate::threads::spawn(move || {
                 let cut = shared.cut.clone();
                 batch::run(lines, &cut, |batch| {
                     shared.lines(&key, &by, cause.as_ref(), batch);
                 });
             });
         }
-        thread::spawn(move || {
+        crate::threads::spawn(move || {
             if let Err(RecvTimeoutError::Timeout) = done.recv_timeout(running) {
                 halt.halt(Why::TimedOut);
             }
@@ -260,5 +259,5 @@ impl Watch {
 /// 收不下的命令：整组杀掉，另起一个线程等它，免得留下没人收的僵尸进程。
 fn discard(process: Arc<dyn Process>) {
     process.kill();
-    thread::spawn(move || drop(process.wait()));
+    crate::threads::spawn(move || drop(process.wait()));
 }

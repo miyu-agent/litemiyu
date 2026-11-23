@@ -46,6 +46,10 @@ const SHELL_CHECK: Duration = Duration::from_secs(5);
 /// 新接上的前台交完它那几样最多等多久。
 const HELLO: Duration = Duration::from_secs(5);
 
+/// 等前台、等信号、读前台指令的几条线程的栈：它们只读几个字节、往通道里送，用不着默认的 2 MB。默认的那一块映射比 2 MB 大一点，
+/// 系统开着透明大页时会整个换成一个 2 MB 的大页，留着的进程一直多占 2 MB（2026-11-23 量到）。
+const STACK: usize = 128 * 1024;
+
 /// 主循环等的东西。
 enum In {
     /// 终端的事件、引擎的消息（同全屏的主循环）。
@@ -270,6 +274,7 @@ fn listen(socket: &Path, events: mpsc::Sender<In>) -> bool {
     };
     let spawned = std::thread::Builder::new()
         .name("fronts".into())
+        .stack_size(STACK)
         .spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut control) = stream else {
@@ -317,6 +322,7 @@ fn signals(events: &mpsc::Sender<In>) {
         let events = events.clone();
         let spawned = std::thread::Builder::new()
             .name("signals".into())
+            .stack_size(STACK)
             .spawn(move || {
                 use std::io::Read;
                 let mut byte = [0u8; 1];
@@ -346,6 +352,7 @@ fn orders(events: mpsc::Sender<In>, control: &UnixStream, front: u64) {
     };
     let spawned = std::thread::Builder::new()
         .name("orders".into())
+        .stack_size(STACK)
         .spawn(move || {
             while let Ok(Some(_)) = ToWorker::read(&mut control) {}
             let _told = events.send(In::Gone(front));

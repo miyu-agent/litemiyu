@@ -4,13 +4,14 @@
 
 这一页是 `litemiyu` 这个程序在命令行上的全部用法：怎么启动全屏界面，以及怎么用 `ask` 在脚本和管道里调用它。
 
-LiteMiyu 的命令行很小，只有四样：
+LiteMiyu 的命令行很小，只有五样：
 
 | 命令 | 作用 |
 |---|---|
 | `litemiyu` | 打开全屏界面 |
 | `litemiyu ask` | 发送一句话并打印回答，不进入全屏界面 |
 | `litemiyu config` | 打开配置界面 |
+| `litemiyu shellhook` | shell 集成：在 shell 的提示符后面直接说话 |
 | `litemiyu help [<命令>]` | 显示帮助 |
 
 供应商、模型、技能、MCP、会话的管理都在全屏界面里做，命令行上没有对应的子命令，也没有 shell 补全。
@@ -248,12 +249,26 @@ litemiyu ask -s 0199a2b3-0000-7000-8000-000000000001 "测试跑完了，结果�
 
 直接打开配置界面，退出配置界面时程序也跟着退出。和全屏界面里的 `/config` 是同一个界面，见[配置](config.md)。
 
+## litemiyu shellhook
+
+安装、移除、检查 shell 集成。安装以后可以在 fish、bash、zsh 的提示符后面直接和 AI 说话，见[在 shell 里使用](shell.md)。
+
+| 命令 | 作用 |
+|---|---|
+| `litemiyu shellhook install [--shell <名字>]` | 安装到 shell。不写 `--shell` 时安装到当前使用的这一种 |
+| `litemiyu shellhook uninstall [--shell <名字>]` | 从 shell 中移除 |
+| `litemiyu shellhook status` | 查看每种 shell 是否已安装 |
+| `litemiyu shellhook doctor [--shell <名字>]` | 逐项检查 shell 集成能不能正常使用，发现问题时退出码为 1 |
+
+`--shell` 后面可以写 `fish`、`bash`、`zsh`。
+
 ## litemiyu help
 
 ```bash
 litemiyu help           # 和 litemiyu --help 一样
 litemiyu help ask       # ask 的说明，和 litemiyu ask --help 一样
 litemiyu help config
+litemiyu help shellhook
 ```
 
 ## 环境变量

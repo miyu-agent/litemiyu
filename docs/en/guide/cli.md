@@ -4,13 +4,14 @@
 
 This page covers everything the `litemiyu` program does on the command line: starting the full-screen interface, and calling it from scripts and pipes with `ask`.
 
-LiteMiyu's command line is small. There are four things:
+LiteMiyu's command line is small. There are five things:
 
 | Command | What it does |
 |---|---|
 | `litemiyu` | Opens the full-screen interface |
 | `litemiyu ask` | Sends a message and prints the reply without going full-screen |
 | `litemiyu config` | Opens the settings screen |
+| `litemiyu shellhook` | Shell integration: talk to the AI at your shell prompt |
 | `litemiyu help [<command>]` | Prints help |
 
 Providers, models, skills, MCP and sessions are all managed inside the full-screen interface. There are no subcommands for them, and no shell completion.
@@ -248,6 +249,19 @@ Subagent sessions cannot be used this way: while the session that started a suba
 ## litemiyu config
 
 Opens the settings screen directly; leaving the settings screen also exits the program. It is the same screen as `/config` in the full-screen interface; see [Configuration](config.md).
+
+## litemiyu shellhook
+
+Installs, removes and checks shell integration. Once installed, you can talk to the AI at the prompt of fish, bash and zsh; see [Using LiteMiyu in your shell](shell.md).
+
+| Command | What it does |
+|---|---|
+| `litemiyu shellhook install [--shell <name>]` | Installs into a shell. Without `--shell`, into the one you are using |
+| `litemiyu shellhook uninstall [--shell <name>]` | Removes it from a shell |
+| `litemiyu shellhook status` | Shows which shells have it installed |
+| `litemiyu shellhook doctor [--shell <name>]` | Checks that shell integration can work; exits with 1 when it finds a problem |
+
+`--shell` takes `fish`, `bash` or `zsh`.
 
 ## litemiyu help
 

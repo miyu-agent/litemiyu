@@ -128,6 +128,10 @@ fn run(send: &impl Fn(Got) -> bool, door: &UnixStream, orders: &mpsc::Receiver<C
     loop {
         // 不用等就读得到的。
         loop {
+            // 终端挂断了（窗口关了）：不交给 crossterm（见 [`hung`]），照读不了报。
+            if hung() {
+                return fail(send, &pass, &mut catch, hung_up());
+            }
             match event::poll(Duration::ZERO) {
                 Ok(true) => {}
                 Ok(false) => break,
@@ -210,10 +214,36 @@ fn wait(door: &UnixStream, limit: Option<Duration>) -> io::Result<Woke> {
             Err(error) => return Err(error.into()),
         }
     }
+    if fds[0].revents().intersects(GONE) {
+        return Err(hung_up());
+    }
     if fds[1].revents().contains(PollFlags::IN) {
         return Ok(Woke::Door);
     }
     Ok(Woke::Terminal)
+}
+
+/// 终端不在了的几种说法：挂断、出错、描述符没开着。
+const GONE: PollFlags = PollFlags::HUP.union(PollFlags::ERR).union(PollFlags::NVAL);
+
+/// 终端（标准输入）是不是挂断了：不等，只看一眼。
+///
+/// 要先看这一眼再交给 crossterm：终端窗口关了以后，读它每次都当场读到 0 个字节，crossterm 读终端的那个循环遇到 0 个字节
+/// 不停、也不报错，这条线程就一直转下去占满一个核，主线程叫它停（[`Reader::pause`]）也等不到回音（2026-11-23 实测：shell
+/// 集成里选择框开着时关掉终端，拿着会话的进程卡在收尾上不退出，读按键的线程 70 秒里用了 40 秒 CPU）。
+fn hung() -> bool {
+    let stdin = rustix::stdio::stdin();
+    let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+    let now = Timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    poll(&mut fds, Some(&now)).is_ok() && fds[0].revents().intersects(GONE)
+}
+
+/// 终端挂断了的那个错误。
+fn hung_up() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "terminal hung up")
 }
 
 /// 有人敲门：门里的字读干净，看主线程有没有话。要停的：回一声，等到「接着读」（或者主线程不在了）再回。交回还接不接着跑。

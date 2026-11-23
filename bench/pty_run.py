@@ -44,12 +44,14 @@ def environment(env=None):
     return out
 
 
-def spawn(argv, env=None, host=()):
+def spawn(argv, env=None, host=(), cwd=None, fds=None):
     """起一个进程，交回 (pid, 伪终端的主端)。子进程起不来（`exec` 失败）的当场 `_exit(127)`：不能带着父进程的状态接着跑下去，
     走到父进程的收尾（删临时目录这些）里去（审计 #070）。
 
     `XDG_RUNTIME_DIR` 是这一次新建的目录（[`runtime_dir`]），`env` 里写了的照 `env`。`host` 是要宿主环境的启动器（例如
-    `["systemd-run", "--user", "--scope", …]`），放在程序前面：它拿宿主的 [`HOST`] 那几样，程序拿量尺的运行时目录。"""
+    `["systemd-run", "--user", "--scope", …]`），放在程序前面：它拿宿主的 [`HOST`] 那几样，程序拿量尺的运行时目录。
+    `cwd` 是子进程的工作目录（不给的同这个进程）；`fds` 是 {子进程里的文件描述符: 这个进程里的}，子进程起来以前照它换掉
+    （排函数录「在 shell 里说一句」时，标准输入换成那句话的管道、标准错误换成控制线）。"""
     runtime = runtime_dir()
     environ = environment({"XDG_RUNTIME_DIR": runtime, **(env or {})})
     if host:
@@ -59,12 +61,21 @@ def spawn(argv, env=None, host=()):
     pid, fd = pty.fork()
     if pid == 0:
         try:
+            if cwd:
+                os.chdir(cwd)
+            for target, source in (fds or {}).items():
+                os.dup2(source, target)
             os.execvpe(argv[0], argv, environ)
         finally:
             os._exit(127)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
     _RUNTIMES[pid] = runtime
     return pid, fd
+
+
+def runtime_of(pid):
+    """[`spawn`] 给进程 `pid` 建的运行时目录（它的 `XDG_RUNTIME_DIR`）。"""
+    return _RUNTIMES[pid]
 
 
 def pump(fd, seconds, typed=b"", type_at=1.0):

@@ -6,7 +6,6 @@
 //! 省了多少个字、尾，`Reports::join`），和内核合并时截出来的一字不差。窗口看时间，留在执行器；她忙着时合成一条在内核里。
 
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use lm_kernel::kernel::session::Reports;
@@ -36,7 +35,7 @@ pub(super) fn run(
     mut send: impl FnMut(Batch),
 ) {
     let (sending, arrived) = mpsc::channel();
-    thread::spawn(move || {
+    crate::threads::spawn(move || {
         for chunk in chunks {
             if sending.send(chunk).is_err() {
                 return;

@@ -12,7 +12,6 @@ use std::io::{self, Read};
 use std::process::{Child, Command, ExitStatus};
 use std::sync::mpsc;
 use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::thread;
 
 use crate::tool::{Background, Exit, Process};
 
@@ -58,7 +57,7 @@ fn apart(stdout: io::PipeReader, stderr: io::PipeReader) -> (Lines, Option<Lines
     let (merged, output) = mpsc::channel();
     let (copied, lines) = mpsc::channel();
     let errors = merged.clone();
-    thread::spawn(move || {
+    crate::threads::spawn(move || {
         for text in Output::of(stdout) {
             // 写文件、攒批的那一头不要了（任务表丢了这条命令），照样读到底：管道读不走，命令会卡在写上。
             #[expect(clippy::let_underscore_must_use, reason = "收的那一头没了也照样读完")]
@@ -67,7 +66,7 @@ fn apart(stdout: io::PipeReader, stderr: io::PipeReader) -> (Lines, Option<Lines
             let _ = merged.send(text);
         }
     });
-    thread::spawn(move || {
+    crate::threads::spawn(move || {
         for text in Output::of(stderr) {
             #[expect(clippy::let_underscore_must_use, reason = "收的那一头没了也照样读完")]
             let _ = errors.send(text);

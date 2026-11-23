@@ -24,11 +24,15 @@
    `HERDR_BIN_PATH` 指向临时目录里一个假的 herdr（`/bin/sh` 脚本，只把参数记进文件），起来、等它报完第一次状态、闲一会儿。
    在 herdr 里一起来就要起一条上报的线程、起一次子进程，这些函数前面几段一个都录不到，散在程序各处，每碰一处带进 64 kB 的
    邻居页（2026-11-20 量的：在 herdr 里空闲多 896 kB 代码页，分成 11 片）；排在最后、挨在一起，不影响前面几段的先后。
+   herdr 那一段以后再录两段在 shell 里说一句的（施工线 shellhook 的 SH-6，`run_in_shell`）：`litemiyu shellhook say` 的前台
+   进程一段、后台进程一段。后台的进程说一句放后台命令的话、留下来、命令结束时印回报、自己退出，一整圈都录。这两个进程走的
+   不是全屏界面的路（不画界面、另有画法和控制线、放后台的工具、回报），前面几段一个都录不到，散在程序各处：留着的进程
+   2026-11-23 量到程序文件页 6.5 MB，全屏界面发过消息才 3.7 MB 上下。排在最后，不影响前面几段的先后。
    `--no-catalog` 照 LM-9补 以前录（几段都没有目录，也没有单录的那一段）。
    用模拟器而不用覆盖率：标准库是预先编好的，覆盖率记不到它，启动时跑的又大半是它；
 3. 地址照程序的符号表换成函数名，照第一次跑到的先后写成清单：启动那一段跑到的自然排在最前，发话那一段新跑到的排在其后，
    日常那一段新跑到的再其后，HTTPS 那一段新跑到的再其后，没有目录那一段新跑到的再其后，herdr 那一段
-   新跑到的最后（前面几段的先后不受后面的影响）；
+   新跑到的再其后，在 shell 里说一句的两段新跑到的最后（前面几段的先后不受后面的影响）；
 4. 量读到哪些只读数据（`rodata.py`：在 gdb 里起第 1 步那一份，记下读到的输入段），写成链接脚本 `hot.ld`：这些输入段挨在
    一起排在只读数据的最前面。启动时读到的在最前（LM-42：起来、闲下来），说一句话读到的接在后面（LM-43：连本机的 HTTPS
    假服务器说一句、等回完、闲下来，第一次起、第二次起各一遍）。要装 gdb；
@@ -48,7 +52,7 @@ x86_64-unknown-linux-gnu 默认用的就是它），不另装 lld。`--no-pie` �
 记的是执行过的地址，换成函数名照的是程序自己的符号表。
 
 用法：order.py <crate 目录> <程序名> [--target <三元组>] [--no-pie] [--typed <敲的字>] [--settle <秒>] [--said <说的话，空的不说>]
-      [--daily new,continue] [--no-https] [--no-herdr] [--no-catalog]
+      [--daily new,continue] [--no-https] [--no-herdr] [--no-shell] [--no-catalog]
 产物：<crate 目录>/target-ordered/<三元组>/release/<程序名>，清单在 <crate 目录>/target-ordered/order.txt，只读数据的排法在
 旁边的 hot.ld，链接地图在 link.map；
 设了 LITEMIYU_ORDER_TARGET 就编在它指的目录里。
@@ -58,6 +62,9 @@ import argparse
 import bisect
 import os
 import re
+import signal
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -197,7 +204,7 @@ def scratch(root, url, trusted=None, catalog=None):
     return env
 
 
-def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=True):
+def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=True, shell=True):
     """在模拟器里照剧本跑，交回 [(跑过的地址, 装载的起点)]，照先后。`said` 是说的那句话，空的不说（也就没有日常、HTTPS 那几段）。
 
     第一段（一个进程）：新的数据目录第一次起来、敲几个字；清掉、说一句、等回完、闲一会儿。
@@ -208,7 +215,8 @@ def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=T
     `catalog`（LM-9补）：上面几段的数据目录缓存里放 `catalog.py` 造的目录，供应商是目录里认得的那一家（假服务器听
     `fake_model.REMOTE`）；HTTPS 那一段以后另录一段没有目录的（新的数据目录，供应商在本机，起来、说一句）。
     herdr 那一段（`herdr`，一个进程，LM-21）：又一个新的数据目录，在假的 herdr 的窗格里起来、等它报完第一次状态、闲一会儿
-    （[`run_in_herdr`]）；不说话。"""
+    （[`run_in_herdr`]）；不说话。
+    在 shell 里说一句的两段（`shell`，SH-6）：又一个新的数据目录，前台的进程一段、后台的进程一段（[`run_in_shell`]）。"""
     runs = []
     # 假服务器等两秒再回：等着的那几帧每次都画得出来，那几个函数每次都录得到（`fake_model.DELAY`）。
     fake_model.DELAY[0] = ANSWER_DELAY
@@ -234,6 +242,10 @@ def trace(binary, qemu, typed, settle, said, daily, https, catalog=True, herdr=T
             pane = os.path.join(root, "herdr")
             inside = scratch(pane, fake_model.start())
             runs.append(run_in_herdr(binary, qemu, pipe, inside, pane, settle))
+        if shell and said:
+            prompt = os.path.join(root, "shell")
+            inside = scratch(prompt, fake_model.start())
+            runs.extend(run_in_shell(binary, qemu, pipe, inside, prompt, settle, said))
     return runs
 
 
@@ -405,6 +417,125 @@ def run_in_herdr(binary, qemu, pipe, env, root, settle):
     return reader.done(), base
 
 
+def run_in_shell(binary, qemu, pipe, env, root, settle, said):
+    """录在 shell 里说一句的两个进程（`litemiyu shellhook say`，施工线 shellhook），交回两段 [(跑过的地址, 装载的起点)]。
+
+    前台的进程：在模拟器里起 `shellhook say`，那句话从标准输入给，等它退出。它起的后台进程不在模拟器里（模拟器照系统的
+    `execve` 换成程序本身），照常回完这一句就退出。
+    后台的进程：这边当前台，在模拟器里起 `shellhook worker`（标准输入、标准输出是伪终端，标准错误的位置上是控制线，格式照
+    `wire.rs`），交一句 `fake_model.BACKGROUND`：假服务器回一次放后台的工具调用，它办完让前台走、自己留下来等那条命令；命令
+    结束时它照 `--reports` 给「shell」（就是这个进程）发 `SIGUSR1`，这边再连它的套接字当新的前台让它印回报，印完它没有要等
+    的了，自己退出。工作目录在 `root` 下面：放后台的那条命令不在仓库里跑。"""
+    work = os.path.join(root, "work")
+    os.makedirs(work, exist_ok=True)
+    me = str(os.getpid())
+    flags = ["--shell-pid", me, "--reports"]
+
+    # 前台的进程。
+    reader = Reader(pipe)
+    theirs, ours = os.pipe()
+    os.write(ours, said.encode())
+    os.close(ours)
+    answered = fake_model.served()
+    argv = [qemu, "-d", "exec,nochain", "-D", pipe, binary, "shellhook", "say", "--shell", "bash", "--terminal", me + "-1"]
+    pid, fd = pty_run.spawn(argv + flags, env, cwd=work, fds={0: theirs})
+    os.close(theirs)
+    try:
+        base = loaded(pid, binary)
+        if not wait_for(fd, fake_model.ANSWER[-1].encode(), WAIT, lambda: fake_model.served() > answered):
+            raise SystemExit("模拟器里没等到假服务器的回答（在 shell 里说一句的前台那一段）")
+        if not exited(pid, fd, WAIT):
+            raise SystemExit("回完以后前台的进程没退出（在 shell 里说一句的前台那一段）")
+    finally:
+        pty_run.kill(pid, fd)
+    front = (reader.done(), base)
+
+    # 后台的进程。
+    reader = Reader(pipe)
+    told = threading.Event()
+    before = signal.signal(signal.SIGUSR1, lambda *_: told.set())
+    near, far = socket.socketpair()
+    token = me + "-2"
+    argv = [qemu, "-d", "exec,nochain", "-D", pipe, binary, "shellhook", "worker", "--terminal", token]
+    pid, fd = pty_run.spawn(argv + flags, env, cwd=work, fds={2: far.fileno()})
+    far.close()
+    try:
+        base = loaded(pid, binary)
+        text = fake_model.BACKGROUND.encode()
+        near.sendall(b"M" + struct.pack("<I", len(text)) + text)
+        if dismissed(near, fd, WAIT) != 0:
+            raise SystemExit("后台的进程没把那一句办完（在 shell 里说一句的后台那一段）")
+        near.close()
+        end = time.monotonic() + WAIT
+        while not told.is_set():
+            if time.monotonic() >= end:
+                raise SystemExit("没等到后台的进程说有回报（在 shell 里说一句的后台那一段）")
+            pty_run.pump(fd, 0.2)
+        pty_run.pump(fd, settle)
+        # 新的前台：先交几样（印回报、不是改过的、前台的进程组、没有提前敲的字），等它说收下了。它自己就是那个伪终端的
+        # 前台进程组，进程组写它自己的。
+        again = socket.socket(socket.AF_UNIX)
+        again.connect(os.path.join(pty_run.runtime_of(pid), f"litemiyu-shellhook-{token}.sock"))
+        hello = f"1\x000\x00{pid}\x00".encode()
+        again.sendall(b"H" + struct.pack("<I", len(hello)) + hello)
+        again.settimeout(WAIT)
+        if again.recv(1) != b"A":
+            raise SystemExit("留着的进程没收下新的前台（在 shell 里说一句的后台那一段）")
+        if dismissed(again, fd, WAIT) != 0:
+            raise SystemExit("留着的进程没把回报印完（在 shell 里说一句的后台那一段）")
+        again.close()
+        if not exited(pid, fd, WAIT):
+            raise SystemExit("印完回报以后留着的进程没退出（在 shell 里说一句的后台那一段）")
+    finally:
+        pty_run.kill(pid, fd)
+        signal.signal(signal.SIGUSR1, before)
+    return [front, (reader.done(), base)]
+
+
+def loaded(pid, binary):
+    """等模拟器把程序装好，交回装载的起点（[`load_base`]）。刚起来的那一小会儿映射表里还没有程序。"""
+    end = time.monotonic() + WAIT
+    while True:
+        try:
+            return load_base(pid, binary)
+        except (SystemExit, OSError):
+            if time.monotonic() >= end:
+                raise
+            time.sleep(0.05)
+
+
+def dismissed(control, fd, seconds):
+    """当前台等后台的进程办完一件：一边读伪终端（不读的话它写满了会卡住），一边读控制线 `control`，等到退出码（`X` 加一个
+    字节，`wire.rs`）交回它；控制线关了、等不到的交回 `None`。"""
+    control.setblocking(False)
+    got = b""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        pty_run.pump(fd, 0.1)
+        try:
+            chunk = control.recv(4096)
+        except BlockingIOError:
+            continue
+        if not chunk:
+            return None
+        got += chunk
+        at = got.find(b"X")
+        if at >= 0 and len(got) > at + 1:
+            return got[at + 1]
+    return None
+
+
+def exited(pid, fd, seconds):
+    """等进程 `pid` 自己退出（不收尸，留给 [`pty_run.kill`]），一边读它的伪终端；等到了交回 `True`。"""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        pty_run.pump(fd, 0.1)
+        with open(f"/proc/{pid}/stat") as stat:
+            if stat.read().rsplit(")", 1)[1].split()[0] == "Z":
+                return True
+    return False
+
+
 def wait_for(fd, text, seconds, after=None):
     """读输出，等到出现 `text`（一串字，或者几串字的表：都出现了才算）；等到了交回 `True`。给了 `after` 的，它成真以前读到的
     不算。"""
@@ -455,7 +586,8 @@ def main():
         help="第一段以后接着录的日常那几段，逗号隔开：new（平常起来开新会话）、continue（`-c` 接着上一个会话）；空的不录",
     )
     parser.add_argument("--no-https", action="store_true", help="不录 HTTPS 那一段")
-    parser.add_argument("--no-herdr", action="store_true", help="不录最后那一段在 herdr 的窗格里起来的")
+    parser.add_argument("--no-herdr", action="store_true", help="不录在 herdr 的窗格里起来的那一段")
+    parser.add_argument("--no-shell", action="store_true", help="不录最后两段在 shell 里说一句的")
     parser.add_argument(
         "--no-catalog", action="store_true", help="录的沙箱缓存里不放模型目录（LM-9补 以前的录法），也不单录没有目录的那一段"
     )
@@ -496,7 +628,7 @@ def main():
     daily = [DAILY_ARGS[name] for name in args.daily.split(",") if name]
     runs = trace(
         final, qemu, args.typed.encode(), args.settle, args.said, daily, not args.no_https,
-        catalog=not args.no_catalog, herdr=not args.no_herdr,
+        catalog=not args.no_catalog, herdr=not args.no_herdr, shell=not args.no_shell,
     )
     order, blocks = first_touch(runs, table)
     with open(order_file, "w") as out:

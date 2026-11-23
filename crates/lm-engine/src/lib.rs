@@ -31,5 +31,6 @@ pub mod session;
 pub mod settings;
 pub mod skills;
 pub mod store;
+mod threads;
 pub mod tool;
 pub mod zone;

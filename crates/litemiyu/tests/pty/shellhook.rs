@@ -1293,3 +1293,157 @@ fn a_terminal_that_reports_no_size_still_gets_the_answer() {
         said.shown
     );
 }
+
+#[test]
+fn doctor_checks_each_thing_and_fails_when_something_is_wrong() {
+    let runtime = Runtime::new("doctor");
+    let doctor = |home: &Home| {
+        let mut command = home.command(&["shellhook", "doctor", "--shell", "zsh"]);
+        command.env("XDG_RUNTIME_DIR", &runtime.0);
+        crate::cli::run(&mut command, Input::Null)
+    };
+
+    // 没装、没配模型：各说一句怎么办，退出码 1；查得了的照样一条条列。
+    let home = Home::new(None);
+    let out = doctor(&home);
+    assert_eq!(out.code, Some(1), "{out:?}");
+    for listed in [
+        "fish：未安装",
+        "bash：未安装",
+        "zsh：未安装",
+        "后台命令和循环的回报：可用",
+        "终端的颜色：还没有记录",
+    ] {
+        assert!(out.stdout.contains(listed), "{listed}：{out:?}");
+    }
+    assert!(!out.stdout.contains("模型：已配置"), "{out:?}");
+    for told in [
+        "当前使用的 zsh 没有安装 shell 集成",
+        "litemiyu shellhook install --shell zsh",
+        "没有可用的模型",
+    ] {
+        assert!(out.stderr.contains(told), "{told}：{out:?}");
+    }
+
+    // 配了模型、装了：都对，退出码 0，没有报错的字。
+    let server = serve(vec![]);
+    let home = Home::new(Some(&server.base_url));
+    let installed = home.run(&["shellhook", "install", "--shell", "zsh"], Input::Null);
+    assert_eq!(installed.code, Some(0), "{installed:?}");
+    let out = doctor(&home);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(out.stdout.contains("zsh：已安装"), "{out:?}");
+    assert!(out.stdout.contains("模型：已配置"), "{out:?}");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    assert!(server.talks().is_empty(), "检查不发请求");
+
+    // 不写 `--shell`、认不出是哪种 shell（测试进程的上一层不是 shell）：不查「当前这一种」，别的照查。
+    let out = {
+        let mut command = home.command(&["shellhook", "doctor"]);
+        command.env("XDG_RUNTIME_DIR", &runtime.0);
+        crate::cli::run(&mut command, Input::Null)
+    };
+    assert_eq!(out.code, Some(0), "{out:?}");
+}
+
+#[test]
+fn closing_the_terminal_while_a_picker_is_open_ends_the_session_process() {
+    // 选择框开着（在等按键）的时候终端窗口关了：拿着会话的进程收场退出。2026-11-23 实测到它卡住不退：终端挂断以后读它
+    // 每次都当场读到 0 个字节，读按键的线程在 crossterm 的循环里一直转、占满一个核，主线程收尾时叫它停，等不到回音。
+    let server = serve(vec![]);
+    let home = Home::new(None);
+    home.write_config(&two_models(&server.base_url));
+    let runtime = Runtime::new("hangup");
+    let token = terminal("hangup");
+    let pty = native_pty_system()
+        .openpty(PtySize {
+            rows: 30,
+            cols: 100,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("开得了伪终端");
+    let script = format!(
+        "printf '%s' /model | \"$PROGRAM\" shellhook say --shell bash --shell-pid $$ --terminal {token}"
+    );
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.args(["-c", &script]);
+    command.env_clear();
+    command.cwd(&home.work);
+    for (key, value) in [
+        ("SHELL", "/bin/sh"),
+        ("PATH", "/usr/bin:/bin"),
+        ("LANG", "zh_CN.UTF-8"),
+        ("TERM", "xterm-256color"),
+        ("LITEMIYU_TEST_KEY", "sk-test"),
+        ("LITEMIYU_CATALOG_UPDATE", "false"),
+        ("PROGRAM", env!("CARGO_BIN_EXE_litemiyu")),
+    ] {
+        command.env(key, value);
+    }
+    command.env("LITEMIYU_HOME", &home.data);
+    command.env("HOME", &home.home);
+    command.env("XDG_RUNTIME_DIR", &runtime.0);
+    let child = pty.slave.spawn_command(command).expect("起得来");
+    drop(pty.slave);
+    // 不读它印的（选择框那几行远装不满伪终端的缓冲）：这样关掉主端就是整个终端关了，没有别的线程还拿着它。
+    let worker = format!("shellhook worker --shell-pid {} --terminal {token}", {
+        child.process_id().expect("有进程号")
+    });
+    until("拿着会话的进程起来了", || {
+        !processes_with(&worker).is_empty()
+    });
+    // 等它画出选择框、睡在等按键上。
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(!processes_with(&worker).is_empty(), "选择框开着，它在等");
+    drop(pty.master);
+    until("终端关了，拿着会话的进程退出", || {
+        processes_with(&worker).is_empty()
+    });
+    wait_child_in_pty(child);
+}
+
+#[test]
+fn what_dead_shells_left_behind_is_swept_and_what_live_ones_have_is_kept() {
+    // shell 退出了的终端留下的记录、套接字文件（拿着会话的进程崩了、被强行结束时来不及删），下一次说话时顺手清掉；
+    // 还开着的 shell 的不碰，运行时目录里别的程序的文件也不碰。
+    let server = serve(vec![stream(says(&["答了"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("sweep");
+    // 一个已经退出的进程的号、一个还在的（测试进程自己）。
+    let mut finished = std::process::Command::new("true").spawn().expect("起得来");
+    let dead = finished.id();
+    finished.wait().expect("等得到");
+    let live = std::process::id();
+    let records = lm_engine::store::paths::Paths::under(&home.data)
+        .state
+        .join("shellhook");
+    std::fs::create_dir_all(&records).expect("建得了目录");
+    let record = |pid: u32| records.join(format!("{pid}-777"));
+    let socket = |pid: u32| runtime.0.join(format!("litemiyu-shellhook-{pid}-777.sock"));
+    let other = runtime.0.join("someone-else.sock");
+    for path in [
+        record(dead),
+        record(live),
+        socket(dead),
+        socket(live),
+        other.clone(),
+    ] {
+        std::fs::write(path, "").expect("写得进");
+    }
+    let runtime_dir = runtime.0.to_string_lossy().into_owned();
+    let said = say_with(
+        &home,
+        &home.work,
+        (30, 100),
+        ("说一句", &terminal("sweep"), None),
+        (&[], &[("XDG_RUNTIME_DIR", &runtime_dir)]),
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(!record(dead).exists(), "退出了的 shell 的记录清掉了");
+    assert!(!socket(dead).exists(), "退出了的 shell 的套接字文件清掉了");
+    assert!(record(live).exists(), "还在的 shell 的记录不碰");
+    assert!(socket(live).exists(), "还在的 shell 的套接字文件不碰");
+    assert!(other.exists(), "别的程序的文件不碰");
+}
