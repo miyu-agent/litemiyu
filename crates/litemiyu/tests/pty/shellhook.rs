@@ -10,7 +10,7 @@ use std::time::Duration;
 use lm_engine::http::testkit::{Piece, Reply};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use crate::cli::{Home, Input, serve, stream, until, wait_child_in_pty};
+use crate::cli::{Home, Input, processes_with, serve, stream, until, wait_child_in_pty};
 use crate::replies::{calls, says};
 
 /// 这个测试进程里的一个终端记号：进程号是测试进程的（活着，不会被当成退出了的 shell 清掉）。
@@ -61,9 +61,21 @@ fn say(
 fn say_sized(
     home: &Home,
     cwd: &Path,
+    size: (u16, u16),
+    what: (&str, &str, Option<&str>),
+    extra: &[&str],
+    during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
+) -> Said {
+    say_with(home, cwd, size, what, (extra, &[]), during)
+}
+
+/// 同 [`say_sized`]，另外带几个环境变量（`more`）。
+fn say_with(
+    home: &Home,
+    cwd: &Path,
     (rows, cols): (u16, u16),
     (message, token, hook): (&str, &str, Option<&str>),
-    extra: &[&str],
+    (extra, more): (&[&str], &[(&str, &str)]),
     during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
 ) -> Said {
     let pty = native_pty_system()
@@ -98,6 +110,9 @@ fn say_sized(
     }
     command.env("LITEMIYU_HOME", &home.data);
     command.env("HOME", &home.home);
+    for (key, value) in more {
+        command.env(key, value);
+    }
     let child = pty.slave.spawn_command(command).expect("起得来");
     drop(pty.slave);
     let mut reader = pty.master.try_clone_reader().expect("读得了");
@@ -877,6 +892,404 @@ fn slash_tui_and_config_open_the_full_screen_interface_and_come_back() {
         said.code,
         Some(5),
         "没有模型的退出码同 ask：{:?}",
+        said.shown
+    );
+}
+
+/// 拿着会话的进程留得下来要的那个放套接字的目录：短（本机套接字的地址最长一百来个字节，测试的目录太深放不下）、只有
+/// 自己进得去。放下时删。
+struct Runtime(std::path::PathBuf);
+
+impl Runtime {
+    fn new(name: &str) -> Runtime {
+        use std::os::unix::fs::DirBuilderExt;
+        let dir = std::env::temp_dir().join(format!("lmsh-{}-{name}", std::process::id()));
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .expect("建得了目录");
+        Runtime(dir)
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        drop(std::fs::remove_dir_all(&self.0));
+    }
+}
+
+/// 一条后台命令（`marker` 是它本身，例如 `sleep 3021`）。
+fn background(marker: &str) -> String {
+    serde_json::json!({
+        "command": format!("{marker}; true"),
+        "description": "Wait",
+        "run_in_background": true,
+    })
+    .to_string()
+}
+
+/// 结束进程 `pids`（测试自己起的后台命令）。
+fn kill(pids: &[u32]) {
+    for pid in pids {
+        let killed = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status()
+            .expect("kill 跑得了");
+        assert!(killed.success());
+    }
+}
+
+/// 一个一直开着的终端：伪终端里起一个 `sh`，一句一句地照脚本那样说话（拿着会话的进程留下来要的：终端和 shell 都还
+/// 在。每说一句开一个新终端的话，终端一关它就跟着走了）。
+struct Shell {
+    writer: Box<dyn Write + Send>,
+    seen: Arc<Mutex<Vec<u8>>>,
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
+    master: Option<Box<dyn portable_pty::MasterPty + Send>>,
+    reader: Option<std::thread::JoinHandle<()>>,
+    token: String,
+    said: usize,
+}
+
+impl Shell {
+    /// 在 `home` 的工作目录里起；放套接字的目录是 `runtime`。
+    fn start(home: &Home, runtime: &Runtime, token: &str) -> Shell {
+        let pty = native_pty_system()
+            .openpty(PtySize {
+                rows: 40,
+                cols: 120,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("开得了伪终端");
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.env_clear();
+        command.cwd(&home.work);
+        for (key, value) in [
+            ("SHELL", "/bin/sh"),
+            ("PATH", "/usr/bin:/bin"),
+            ("LANG", "zh_CN.UTF-8"),
+            ("TERM", "xterm-256color"),
+            ("PS1", ""),
+            ("LITEMIYU_TEST_KEY", "sk-test"),
+            ("LITEMIYU_CATALOG_UPDATE", "false"),
+            ("PROGRAM", env!("CARGO_BIN_EXE_litemiyu")),
+        ] {
+            command.env(key, value);
+        }
+        command.env("LITEMIYU_HOME", &home.data);
+        command.env("HOME", &home.home);
+        command.env("XDG_RUNTIME_DIR", &runtime.0);
+        let child = pty.slave.spawn_command(command).expect("起得来");
+        drop(pty.slave);
+        let mut reader = pty.master.try_clone_reader().expect("读得了");
+        let writer = pty.master.take_writer().expect("写得了");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&seen);
+        let reading = std::thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            while let Ok(count) = reader.read(&mut buffer) {
+                if count == 0 {
+                    break;
+                }
+                into.lock()
+                    .expect("锁得上")
+                    .extend_from_slice(&buffer[..count]);
+            }
+        });
+        Shell {
+            writer,
+            seen,
+            child: Some(child),
+            master: Some(pty.master),
+            reader: Some(reading),
+            token: token.to_string(),
+            said: 0,
+        }
+    }
+
+    /// 终端上到现在印出来的。
+    fn shown(&self) -> String {
+        String::from_utf8_lossy(&self.seen.lock().expect("锁得上")).into_owned()
+    }
+
+    /// 说一句，等它回到「提示符」（这一句的 `say` 退出了）；交回它的退出码和这一句印出来的。
+    fn say(&mut self, message: &str) -> (i32, String) {
+        self.say_with(message, "")
+    }
+
+    /// 同 [`Shell::say`]，`say` 后面另加几个参数（`extra`）。
+    fn say_with(&mut self, message: &str, extra: &str) -> (i32, String) {
+        // 那句话放进变量再交（不经 shell 的引号）。
+        let command = format!(
+            "M='{message}'; printf '%s' \"$M\" | \"$PROGRAM\" shellhook say --shell bash --shell-pid $$ --terminal {} {extra}",
+            self.token
+        );
+        self.run(&command)
+    }
+
+    /// `shellhook report` 加几个参数（`extra`）：脚本收到信号以后调的那一条。
+    fn report(&mut self, extra: &str) -> (i32, String) {
+        let command = format!(
+            "\"$PROGRAM\" shellhook report --shell bash --shell-pid $$ --terminal {} {extra}",
+            self.token
+        );
+        self.run(&command)
+    }
+
+    /// 跑一条命令，等它回到「提示符」；交回它的退出码和它印出来的。
+    fn run(&mut self, command: &str) -> (i32, String) {
+        self.said += 1;
+        let from = self.seen.lock().expect("锁得上").len();
+        // 跑完印一行带退出码的记号。记号里的序号拼出来，命令行的回显里没有连着的这一串。
+        let line = format!("{command}; echo \"ran-{}\"\"-$?-\"\n", self.said);
+        self.writer.write_all(line.as_bytes()).expect("敲得进");
+        self.writer.flush().expect("敲得进");
+        let mark = format!("ran-{}-", self.said);
+        // 记号后面的退出码（记号还没印出来、数字还没印全的是 `None`）。
+        let code_of = |shown: &str| -> Option<i32> {
+            let rest = &shown[shown.rfind(&mark)? + mark.len()..];
+            let (code, _) = rest.split_once('-')?;
+            code.parse().ok()
+        };
+        until(&format!("第 {} 条回到提示符", self.said), || {
+            code_of(&self.shown()).is_some()
+        });
+        let code = code_of(&self.shown());
+        let all = self.seen.lock().expect("锁得上").clone();
+        (
+            code.unwrap_or(-1),
+            String::from_utf8_lossy(&all[from..]).into_owned(),
+        )
+    }
+
+    /// 关掉这个终端：`sh` 退出，伪终端跟着关。
+    fn close(&mut self) {
+        drop(self.writer.write_all(b"exit\n"));
+        drop(self.writer.flush());
+        if let Some(child) = self.child.take() {
+            wait_child_in_pty(child);
+        }
+        drop(self.master.take());
+        if let Some(reader) = self.reader.take() {
+            drop(reader.join());
+        }
+    }
+}
+
+impl Drop for Shell {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+#[test]
+fn a_background_command_keeps_the_session_process_and_the_next_sentence_joins_it() {
+    // 第三节「后台、循环和到点继续」：一轮结束时还有后台命令在跑，拿着会话的进程留下来，提示符马上回来；同一个终端
+    // 再说一句是接上它，不另起一个去抢会话（那样后台命令会被结束掉）；后台命令结束了它照常叫醒 AI，没有要等的了才退出。
+    let server = serve(vec![
+        stream(calls("shell", &background("sleep 3021"))),
+        stream(says(&["放到后台了"])),
+        stream(says(&["第二句的回答"])),
+        stream(says(&["看到它结束了"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("stay");
+    let token = terminal("stay");
+    let mut shell = Shell::start(&home, &runtime, &token);
+    let (code, shown) = shell.say("后台跑一下");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(shown.contains("放到后台了"), "{shown:?}");
+    assert!(
+        !processes_with("sleep 3021").is_empty(),
+        "提示符回来了，后台命令还在跑"
+    );
+    let worker = format!("--terminal {token}");
+    assert_eq!(processes_with(&worker).len(), 1, "拿着会话的进程留着");
+    // 再说一句：接上留着的那个进程。
+    let (code, shown) = shell.say("第二句话");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(shown.contains("第二句的回答"), "{shown:?}");
+    assert!(
+        !shown.contains("放到后台了"),
+        "上一句的回答印过了，不再印：{shown:?}"
+    );
+    assert!(
+        !processes_with("sleep 3021").is_empty(),
+        "后台命令没有被结束掉"
+    );
+    assert_eq!(processes_with(&worker).len(), 1, "还是那一个进程");
+    assert_eq!(home.sessions().len(), 1);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 3);
+    assert!(talks[2].contains("后台跑一下") && talks[2].contains("第二句话"));
+    // 后台命令结束：留着的进程照常叫醒 AI（没有前台接着），之后没有要等的了，它退出。
+    kill(&processes_with("sleep 3021"));
+    until("后台命令结束以后 AI 被叫醒了一轮", || {
+        server.talks().len() == 4
+    });
+    until("没有要等的了，拿着会话的进程退出", || {
+        processes_with(&worker).is_empty()
+    });
+    shell.close();
+}
+
+#[test]
+fn the_session_process_leaves_when_the_terminal_is_closed() {
+    // 留着的时候终端关了（shell 退出、挂断信号来了）：拿着会话的进程停下会话退出，后台命令跟着结束（同关掉全屏界面
+    // 的窗口），不留下没人管的进程。
+    let server = serve(vec![
+        stream(calls("shell", &background("sleep 3022"))),
+        stream(says(&["放到后台了"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("gone");
+    let token = terminal("gone");
+    let mut shell = Shell::start(&home, &runtime, &token);
+    let (code, shown) = shell.say("后台跑一下");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(!processes_with("sleep 3022").is_empty(), "后台命令在跑");
+    shell.close();
+    until("终端关了，拿着会话的进程退出", || {
+        processes_with(&format!("--terminal {token}")).is_empty()
+    });
+    until("后台命令跟着结束", || {
+        processes_with("sleep 3022").is_empty()
+    });
+}
+
+#[test]
+fn a_background_report_is_announced_to_the_shell_and_report_prints_it() {
+    // 第三节「后台、循环和到点继续」第 4 条：留着的进程有了新的东西（后台命令结束了、AI 被叫醒开了一轮），放上
+    // 「有要印的」标记、给 shell 发 `SIGUSR1`；脚本收到跑 `shellhook report`，印出来。只有脚本说了它接这个信号
+    // （`--reports`）的才发：没接的 shell 收到会被系统直接结束。
+    let server = serve(vec![
+        stream(calls("shell", &background("sleep 3023"))),
+        stream(says(&["放到后台了"])),
+        stream(says(&["看到它结束了"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("report");
+    let token = terminal("report");
+    let mut shell = Shell::start(&home, &runtime, &token);
+    // 这个「shell」接住信号、记一笔（真的脚本在这里调 `report`）。
+    shell.run("trap 'echo \"signal\"\"-came\"' USR1");
+    let (code, shown) = shell.say_with("后台跑一下", "--reports");
+    assert_eq!(code, 0, "{shown:?}");
+    let (code, shown) = shell.report("--pending");
+    assert_eq!(code, 1, "还没有要印的：{shown:?}");
+    kill(&processes_with("sleep 3023"));
+    until("AI 被叫醒了一轮", || server.talks().len() == 3);
+    // 有要印的了：标记放上了，`--pending` 说有（不印）。
+    let mark = lm_engine::store::paths::Paths::under(&home.data)
+        .state
+        .join("shellhook")
+        .join(format!("{token}.pending"));
+    until("放上了「有要印的」标记", || mark.exists());
+    let (code, shown) = shell.report("--pending");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(
+        shell.shown().contains("signal-came"),
+        "shell 收到了信号：{:?}",
+        shell.shown()
+    );
+    let worker = format!("--terminal {token}");
+    assert_eq!(
+        processes_with(&worker).len(),
+        1,
+        "有没印过的，拿着会话的进程等着"
+    );
+    // 印出来：后台命令结束的那一行、被叫醒的那一轮；上一句的回答不重印。
+    let (code, shown) = shell.report("");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(shown.contains("看到它结束了"), "{shown:?}");
+    assert!(
+        shown.contains("sleep 3023"),
+        "后台命令结束的那一行：{shown:?}"
+    );
+    assert!(!shown.contains("放到后台了"), "{shown:?}");
+    // 印过了、没有要等的了：标记没了，那个进程退出。
+    until("拿着会话的进程退出", || {
+        processes_with(&worker).is_empty()
+    });
+    assert!(!mark.exists(), "标记没了");
+    let (code, shown) = shell.report("--pending");
+    assert_eq!(code, 1, "{shown:?}");
+    let (code, shown) = shell.report("");
+    assert_eq!(code, 1, "没有要印的什么都不动：{shown:?}");
+    shell.close();
+}
+
+#[test]
+fn a_shell_whose_script_does_not_take_the_signal_is_never_signalled() {
+    // 没带 `--reports` 的（旧脚本、手敲的）：留着的进程不发信号。这里的 `sh` 没有接 `SIGUSR1`，收到就会被结束。
+    let server = serve(vec![
+        stream(calls("shell", &background("sleep 3024"))),
+        stream(says(&["放到后台了"])),
+        stream(says(&["看到它结束了"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("quiet");
+    let token = terminal("quiet");
+    let mut shell = Shell::start(&home, &runtime, &token);
+    let (code, shown) = shell.say("后台跑一下");
+    assert_eq!(code, 0, "{shown:?}");
+    kill(&processes_with("sleep 3024"));
+    until("AI 被叫醒了一轮", || server.talks().len() == 3);
+    until("没有要等的了，拿着会话的进程退出", || {
+        processes_with(&format!("--terminal {token}")).is_empty()
+    });
+    // shell 还活着：再跑一条命令照常回来。
+    let (code, shown) = shell.run("echo still-here");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(shown.contains("still-here"), "{shown:?}");
+    shell.close();
+}
+
+#[test]
+fn a_loop_started_from_the_shell_keeps_the_session_process_until_it_is_stopped() {
+    // `/loop` 在 shell 里可用了：拿着会话的进程留着等下一次到点；`/loop off` 停掉以后没有要等的，它退出。
+    let server = serve(vec![stream(says(&["循环的第一轮"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let runtime = Runtime::new("loop");
+    let token = terminal("loop");
+    let mut shell = Shell::start(&home, &runtime, &token);
+    let (code, shown) = shell.say("/loop 30m 看看日期");
+    assert_eq!(code, 0, "{shown:?}");
+    assert!(shown.contains("循环的第一轮"), "{shown:?}");
+    let worker = format!("--terminal {token}");
+    assert_eq!(processes_with(&worker).len(), 1, "循环开着，进程留着");
+    assert!(server.talks()[0].contains("看看日期"));
+    let (code, shown) = shell.say("/loop off");
+    assert_eq!(code, 0, "{shown:?}");
+    until("循环停了，拿着会话的进程退出", || {
+        processes_with(&worker).is_empty()
+    });
+    assert_eq!(server.talks().len(), 1, "没有再开一轮");
+    shell.close();
+}
+
+#[test]
+fn a_terminal_that_reports_no_size_still_gets_the_answer() {
+    // 有的伪终端、串口不报大小（0 列 0 行）：照 80 列 24 行排，不许崩（2026-11-23 出过：一行都排不出来，程序在分
+    // 「定下来的」和「还会变的」那一步崩了）。
+    let server = serve(vec![stream(says(&["没有大小也答了"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let said = say_sized(
+        &home,
+        &home.work,
+        (0, 0),
+        ("说一句", &terminal("nosize"), None),
+        &[],
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.lines(80)
+            .iter()
+            .any(|line| line.contains("没有大小也答了")),
+        "{:?}",
         said.shown
     );
 }

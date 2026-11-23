@@ -72,6 +72,7 @@ pub use open::{
     load_placed,
 };
 pub use path_text::path_text;
+pub use peers::private_spot;
 pub use port::{Cancel, ForSession, ModelPort, Models, Reports, Sight};
 pub use route::{
     CatalogReader, Holding, IDLE, ModelData, ModelDirs, Observed, RECALL_CAP, RECALL_FILE, Routes,

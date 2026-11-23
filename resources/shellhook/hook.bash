@@ -19,7 +19,7 @@ command_not_found_handle() {
             ;;
     esac
     # $$ 是这个 bash（这里在子 shell 里也不变）：一个终端一个会话。这条路上提前敲的字放不回 readline，不收。
-    printf '%s' "$*" | __litemiyu_shellhook say --shell bash --shell-pid $$ --terminal $__litemiyu_terminal
+    printf '%s' "$*" | __litemiyu_shellhook say --shell bash --shell-pid $$ --terminal $__litemiyu_terminal --reports
     # 程序收工时不亮光标（亮早了停在最后一行末尾闪一下），这里亮。
     printf '\e[?25h'
     # 收尾行和下一个提示符之间空一行（fish 的提示符自带，bash 的不一定）。
@@ -32,6 +32,8 @@ command_not_found_handle() {
 # 交给程序判。别的照 bash 原样执行。bash 跑之前擦掉了输入的那一行（只擦提示符最后一行）：照普通的字色重画，答完把提示符
 # 前面几行补上（bash 只重画最后一行），提前敲的字放回命令行。
 __litemiyu_editing=
+__litemiyu_busy=
+__litemiyu_report_pending=
 
 # 首词：跳过前面的 `变量=值`。
 __litemiyu_head() {
@@ -97,8 +99,16 @@ __litemiyu_accept_line() {
     printf '\e[0m\n'
     local leftover
     leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
-    printf '%s' "$buffer" | __litemiyu_shellhook say --shell bash --shell-pid $$ --terminal $__litemiyu_terminal --leftover "$leftover" $redo
+    __litemiyu_busy=1
+    printf '%s' "$buffer" | __litemiyu_shellhook say --shell bash --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover" $redo
     printf '\e[?25h\n'
+    # AI 答话的时候来的后台回报：答完印。
+    if [[ -n $__litemiyu_report_pending ]]; then
+        __litemiyu_report_pending=
+        __litemiyu_shellhook report --shell bash --shell-pid $$ --terminal $__litemiyu_terminal && printf '\n'
+        printf '\e[?25h'
+    fi
+    __litemiyu_busy=
     # bash 只重画提示符最后一行：前面几行补上。
     [[ $prompt == *$'\n'* ]] && printf '%s\n' "${prompt%$'\n'*}"
     READLINE_LINE=
@@ -134,3 +144,18 @@ for __litemiyu_map in emacs vi-insert; do
     bind -m "$__litemiyu_map" -x '"\C-j": __litemiyu_newline'
 done
 unset __litemiyu_map
+
+# 后台回报：一句话说完以后还有后台任务、循环的，拿着会话的进程留着；它有了新的东西（后台任务结束了、被叫醒开了一轮、
+# 在等确认）就给这个 bash 发 SIGUSR1。bash 停在提示符上等你敲的时候不办信号，等你回车、这一行读完、命令还没跑的时候
+# 才办；前台在跑命令（vim、AI 正在答）的，等它结束才办（Miyu 实测 bash 5.3）。那时都不在画提示符：直接印。所以停在
+# 提示符上来的回报，要等你下一次回车，印在那条命令前面。
+__litemiyu_report() {
+    # AI 正在答（回车那一下里）：答完再印。
+    if [[ -n $__litemiyu_busy ]]; then
+        __litemiyu_report_pending=1
+        return
+    fi
+    __litemiyu_shellhook report --shell bash --shell-pid $$ --terminal $__litemiyu_terminal && printf '\n'
+    printf '\e[?25h'
+}
+trap '__litemiyu_report' USR1

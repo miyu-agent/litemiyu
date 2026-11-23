@@ -17,6 +17,7 @@ mod outbox;
 mod waiters;
 mod watches;
 
+pub use bell::private_spot;
 pub(crate) use bell::{Placed, forget};
 #[cfg(feature = "testkit")]
 pub(crate) use bell::{euid, ring, spots};

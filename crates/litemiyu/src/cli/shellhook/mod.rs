@@ -84,6 +84,8 @@ const TERMINAL: Opt = Opt::value("terminal", None, "v.id", "o.shellhook.terminal
 const LEFTOVER: Opt = Opt::value("leftover", None, "v.file", "o.shellhook.leftover");
 /// 这一句是 `/edit` 改过的。
 const REDO: Opt = Opt::flag("redo", None, "o.shellhook.redo");
+/// 这个 shell 接后台回报的信号。
+const REPORTS: Opt = Opt::flag("reports", None, "o.shellhook.reports");
 
 /// 脚本调的那几条：帮助页不列。
 const INTERNAL: &[Cmd] = &[
@@ -93,7 +95,7 @@ const INTERNAL: &[Cmd] = &[
         summary: "s.shellhook.say",
         about: "",
         extra: "",
-        opts: &[SHELL, SHELL_PID, TERMINAL, LEFTOVER, REDO],
+        opts: &[SHELL, SHELL_PID, TERMINAL, LEFTOVER, REDO, REPORTS],
         subs: &[],
         run: None,
     },
@@ -103,7 +105,24 @@ const INTERNAL: &[Cmd] = &[
         summary: "s.shellhook.worker",
         about: "",
         extra: "",
-        opts: &[SHELL_PID, TERMINAL, LEFTOVER, REDO],
+        opts: &[SHELL_PID, TERMINAL, LEFTOVER, REDO, REPORTS],
+        subs: &[],
+        run: None,
+    },
+    Cmd {
+        name: "report",
+        usage: "u.options",
+        summary: "s.shellhook.report",
+        about: "",
+        extra: "",
+        opts: &[
+            SHELL,
+            SHELL_PID,
+            TERMINAL,
+            LEFTOVER,
+            Opt::flag("pending", None, "o.shellhook.pending"),
+            Opt::value("above", None, "v.n", "o.shellhook.above"),
+        ],
         subs: &[],
         run: None,
     },
@@ -182,6 +201,7 @@ fn run(args: &[String], stale: bool) -> ExitCode {
         "status" => status(&Words::current()),
         "script" => print_script(&parsed, &path),
         "say" => say::run(&parsed, stale),
+        "report" => say::report(&parsed),
         "worker" => worker::run(&parsed),
         _ => classify_stdin(&parsed),
     }

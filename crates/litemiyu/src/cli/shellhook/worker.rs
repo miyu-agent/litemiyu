@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use lm_engine::store::paths::{Env, Paths};
 
+use super::inline::{Ask, Linger, Session};
 use super::terminal::{self, Terminal};
 use super::wire::{ToFront, ToWorker};
 use crate::cli::ask::model_ready;
@@ -29,77 +30,83 @@ pub fn run(parsed: &Parsed) -> ExitCode {
         return ExitCode::from(misuse::USAGE);
     };
     let words = Words::current();
-    let code = said(parsed, text, &words, &control);
-    // 写不进的（前台不在了）没处可报。
-    drop(std::io::stdout().flush());
-    drop(ToFront::Exit(code).write(&mut control));
-    ExitCode::from(code)
+    let first = Ask {
+        text,
+        report: false,
+        redo: parsed.has("redo"),
+        leftover: parsed.value("leftover").map(str::to_string),
+        control,
+        group: None,
+    };
+    said(parsed, first, &words);
+    ExitCode::SUCCESS
 }
 
-/// 说那一句，跟到了结，交回退出码。
-fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u8 {
+/// 让前台走：说办完了、交退出码（开这一份状态以前就办不下去的那几样用；办下去了的由 `inline.rs` 交）。
+fn dismiss(control: &mut UnixStream, code: u8) {
+    drop(std::io::stdout().flush());
+    drop(ToFront::Done.write(control));
+    drop(ToFront::Exit(code).write(control));
+}
+
+/// 办那一件，办完（连同留下来以后接着办的几件）才回来。
+fn said(parsed: &Parsed, mut first: Ask, words: &Words) {
     let paths = match Paths::locate(&Env::current()) {
         Ok(paths) => paths,
         Err(error) => {
             words.error(&words.why(&error.to_string()), None);
-            return 1;
+            return dismiss(&mut first.control, 1);
         }
     };
     terminal::sweep(&paths);
-    let terminal = parsed
-        .value("terminal")
-        .and_then(|token| Terminal::of(&paths, token));
+    let token = parsed.value("terminal");
+    let terminal = token.and_then(|token| Terminal::of(&paths, token));
     let session = terminal
         .as_ref()
         .and_then(|terminal| terminal.session(&paths));
     // `/config`、`/tui`：请前台在这个进程退出以后起全屏界面（这个进程不开会话，全屏界面打开它时不会撞上）。
-    if let Some(args) = super::inline::fullscreen(&text, session.as_deref()) {
-        let mut control = control;
-        drop(ToFront::Fullscreen(args).write(&mut control));
-        drop(ToFront::Done.write(&mut control));
-        return 0;
+    if let Some(args) = super::inline::fullscreen(&first.text, session.as_deref()) {
+        drop(ToFront::Fullscreen(args).write(&mut first.control));
+        return dismiss(&mut first.control, 0);
     }
     // 说话要先有能用的模型；斜杠命令不用（`/help`、`/status` 没配模型也看得了）。
-    if !text.trim_start().starts_with('/')
+    if !first.text.trim_start().starts_with('/')
         && let Err(code) = model_ready(words)
     {
-        return code;
+        return dismiss(&mut first.control, code);
     }
-    let outcome = match super::inline::run((&text, parsed.has("redo")), session, control, words) {
-        Ok(outcome) => outcome,
-        Err(why) => {
-            let reason = words.why(&why);
-            words.error(
-                &words.say("config_unreadable", &[("reason", &reason)]),
+    // 有终端的记号、放得下套接字的才留得下来（等同一个终端的下一句话）。
+    let linger = token
+        .and_then(|token| terminal::socket(&paths, token, true))
+        .map(|socket| Linger {
+            socket,
+            shell: parsed.value("shell-pid").and_then(|pid| pid.parse().ok()),
+            // 脚本带了 `--reports` 才给 shell 发信号（它接了 `SIGUSR1`）。
+            notify: terminal
+                .as_ref()
+                .filter(|_| parsed.has("reports"))
+                .map(Terminal::pending),
+        });
+    let mut kept = |session: &Session| {
+        let saved = match (&terminal, session) {
+            (Some(terminal), Session::Is(id)) => terminal.remember(id),
+            (Some(terminal), Session::None) => terminal.forget(),
+            _ => Ok(()),
+        };
+        if let Err(error) = saved {
+            let reason = words.why(&error.to_string());
+            words.warn(
+                &words.say("shellhook.not_remembered", &[("reason", &reason)]),
                 None,
             );
-            return 1;
         }
     };
-    let kept = match (&terminal, &outcome.session) {
-        (Some(terminal), super::inline::Session::Is(id)) => terminal.remember(id),
-        (Some(terminal), super::inline::Session::None) => terminal.forget(),
-        _ => Ok(()),
-    };
-    if let Err(error) = kept {
-        let reason = words.why(&error.to_string());
-        words.warn(
-            &words.say("shellhook.not_remembered", &[("reason", &reason)]),
+    // 配置读不懂的：这一件办不了。控制线已经交给了 `inline::run`，它没交退出码就回来，前台照后台的进程没了办。
+    if let Err(why) = super::inline::run(first, session, linger, words, &mut kept) {
+        let reason = words.why(&why);
+        words.error(
+            &words.say("config_unreadable", &[("reason", &reason)]),
             None,
         );
     }
-    // 办完了（读按键的线程已经停下）：没交出去的字写给脚本放回命令行（坑 S13）。
-    let mut control = control;
-    // 写不进的（前台不在了）没处可报。
-    drop(ToFront::Done.write(&mut control));
-    if let Some(path) = parsed.value("leftover")
-        && !outcome.typed.is_empty()
-    {
-        drop(std::fs::write(path, &outcome.typed));
-        // `/edit` 放回来的上一句：旁边放一个标记，脚本记下「在编辑」，下一次回车带 `--redo`（坑 C4）。
-        if outcome.editing {
-            drop(std::fs::write(format!("{path}.redo"), ""));
-        }
-    }
-    outcome.code
 }

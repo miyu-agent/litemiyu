@@ -64,6 +64,8 @@ end
 
 function __litemiyu_on_prompt --on-event fish_prompt
     set -l litemiyu_status 0
+    # 这一整段都算「在忙」：AI 答完时来的信号 fish 在 say 退出后的第一个空当办，那时还没画提示符（Miyu 实测）。
+    set -g __litemiyu_busy 1
     if set -q __litemiyu_pending_buffer
         set -l buffer $__litemiyu_pending_buffer
         set -e __litemiyu_pending_buffer
@@ -78,7 +80,7 @@ function __litemiyu_on_prompt --on-event fish_prompt
         set -l redo
         set -q __litemiyu_pending_redo; and set redo --redo
         set -e __litemiyu_pending_redo
-        printf '%s' "$buffer" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --leftover $leftover $redo
+        printf '%s' "$buffer" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --reports --leftover $leftover $redo
         set litemiyu_status $status
         # /edit 放回命令行的：旁边有一份 .redo 标记，记着「在编辑」。
         if test -e "$leftover.redo"
@@ -98,7 +100,65 @@ function __litemiyu_on_prompt --on-event fish_prompt
         end
         rm -f -- $leftover
     end
+    # 前台跑着命令的时候来的后台回报：回到提示符再印（提示符还没画，不用擦）。
+    while set -q __litemiyu_report_pending
+        __litemiyu_report
+    end
+    set -e __litemiyu_busy
+    # 刚才那一下空当里来的。
+    while set -q __litemiyu_report_pending
+        __litemiyu_report
+    end
     return $litemiyu_status
+end
+
+# 后台回报：一句话说完以后还有后台任务、循环的，拿着会话的进程留着；它有了新的东西（后台任务结束了、被叫醒开了一轮、
+# 在等确认）就给这个 fish 发 SIGUSR1。停在提示符上的当场印；前台在跑命令的（vim、一行里的几条命令）、AI 正在答的先
+# 记着，回到提示符再印。AI 答话时来的信号 fish 等答完才办，那时 current-command 已经是 fish，只看它会当成停在提示符上、
+# 往上擦掉刚印的收尾行（Miyu 2026-10-20 验收）：答话期间记着 __litemiyu_busy。
+function __litemiyu_report_signal --on-signal SIGUSR1
+    if not set -q __litemiyu_busy; and test (status current-command) = fish
+        # 提示符已经画着：有要印的，程序回到提示符的第一行、往下清掉，在那里印。fish 重画时从光标所在往上回「提示符行数 - 1」
+        # 行：印完补上这么多个换行，它才画在印的下面，不盖掉（Miyu 实测）。没有要印的什么都不动。敲到一半的字照旧在。
+        # 提示符在屏幕上占几行：每一行照显示的宽度算它折成几行（路径长过终端宽的会折行）。
+        set -l rows -1
+        for line in (fish_prompt)
+            set -l width (string length --visible -- $line)
+            set rows (math "$rows + 1 + floor(max($width - 1, 0) / $COLUMNS)")
+        end
+        test $rows -lt 0; and set rows 0
+        __litemiyu_report $rows; or return
+        # 印的时候又来的：接着印。
+        while set -q __litemiyu_report_pending
+            __litemiyu_report
+        end
+        test $rows -gt 0; and printf '%.0s\n' (seq $rows)
+        commandline -f repaint
+    else
+        set -g __litemiyu_report_pending 1
+    end
+end
+
+# 印留着的进程要给人看的。给了行数的是停在提示符上（提示符在光标那一行上面还有几行）：程序有要印的才擦掉提示符；没有
+# 要印的交回 1。
+function __litemiyu_report
+    set -e __litemiyu_report_pending
+    set -l above
+    test (count $argv) -gt 0; and set above --above $argv[1]
+    # 印的时候敲的字：接在命令行后面（原来敲到一半的 fish 自己留着）。
+    set -l leftover (mktemp -t litemiyu-shellhook.XXXXXX)
+    set -l was_busy (set -q __litemiyu_busy; and echo 1)
+    set -g __litemiyu_busy 1
+    __litemiyu_shellhook report --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --leftover $leftover $above
+    set -l printed $status
+    # 程序收工时不亮光标（亮早了停在最后一行末尾闪一下），这里亮。
+    __litemiyu_restore_cursor
+    test -n "$was_busy"; or set -e __litemiyu_busy
+    if test -s "$leftover"
+        commandline -i -- (string collect < $leftover)
+    end
+    rm -f -- $leftover "$leftover.redo"
+    return $printed
 end
 
 function __litemiyu_execute_or_continue
@@ -224,7 +284,7 @@ function fish_command_not_found
     if test -n "$current_line"; and not string match -qr '[\n\r]' -- "$current_line"
         set -l top_command (__litemiyu_first_command "$current_line")
         if test -z "$top_command"; or not type -q -- "$top_command"
-            printf '%s' "$current_line" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal
+            printf '%s' "$current_line" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --reports
             return 127
         end
     end
@@ -233,6 +293,6 @@ function fish_command_not_found
     test (count $command) -eq 0; and return 127
     set -l text (string join ' ' -- $command)
     string match -qr '[\n\r]' -- $text; and return 127
-    printf '%s' "$text" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal
+    printf '%s' "$text" | __litemiyu_shellhook say --shell fish --shell-pid $fish_pid --terminal $__litemiyu_terminal --reports
     return 127
 end

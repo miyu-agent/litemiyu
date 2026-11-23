@@ -47,6 +47,15 @@ impl Terminal {
         fs::write(&self.path, format!("{id}\n"))
     }
 
+    /// 「有要印的」那个标记在哪：留着的进程在没有前台接着的时候有了新的东西（后台任务结束了、被叫醒开了一轮、在等
+    /// 确认）就放上它、给 shell 发信号；脚本跑 `shellhook report` 时先看它在不在。名字开头也是 shell 的进程号，shell 退出
+    /// 了的一样被清掉。
+    pub fn pending(&self) -> PathBuf {
+        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
+        name.push(".pending");
+        self.path.with_file_name(name)
+    }
+
     /// 这个终端没有会话了（`/new`）：下一句新开。本来就没记的不算错。
     ///
     /// # Errors
@@ -58,6 +67,14 @@ impl Terminal {
             _ => Ok(()),
         }
     }
+}
+
+/// 这个终端留下来的进程的套接字放在哪（`wire.rs`：同一个终端再说一句、印回报时先连它）。放在只有自己进得去的目录里
+/// （同窗口之间的门铃那两处，`lm_engine::session::private_spot`）；`create` 的没有那个目录就建。记号不合规矩、两处都不
+/// 合用、地址太长的是 `None`：那样的终端不留下来。
+pub fn socket(paths: &Paths, token: &str, create: bool) -> Option<PathBuf> {
+    Terminal::of(paths, token)?;
+    lm_engine::session::private_spot(&paths.bell, &format!("shellhook-{token}"), create)
 }
 
 /// 记录都在哪。

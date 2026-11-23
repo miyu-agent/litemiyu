@@ -94,14 +94,21 @@ impl App {
 
     /// 了结了：没有一轮在跑、没有在等开轮的、没有还在转的步，派出去的后台命令、子代理都报了；没有开着的抽屉、没有排着
     /// 还没被听到的话、没有在撤掉「还没开口就打断」的那一轮。
-    pub fn settled_inline(&self) -> bool {
+    ///
+    /// `jobs` 是等不等后台任务：拿着会话的进程能留下来的不等（它们报的时候另外通知），留不下来的等它们都报了。
+    pub fn settled_inline(&self, jobs: bool) -> bool {
         let transcript = &self.talk.transcript;
         !self.answering_inline()
             && !transcript.busy()
-            && self.talk.jobs.pending() == 0
+            && (!jobs || self.talk.jobs.pending() == 0)
             && !self.talk.drawers.open()
             && self.talk.takeback.is_none()
             && !transcript.entries.iter().any(|entry| entry.queued)
+    }
+
+    /// 还有要等的：没结束的后台命令、子代理，开着的循环、挂着的到点继续。有的话拿着会话的进程留下来。
+    pub fn lingering_inline(&self) -> bool {
+        self.talk.jobs.pending() > 0 || self.talk.looping.is_some()
     }
 
     /// 在回答：一轮在跑，或者话发出去了还在等开轮。
@@ -200,6 +207,12 @@ impl App {
             Run::New => Some(Slash::New),
             _ => None,
         }
+    }
+
+    /// 输入框清空（没发出去的字已经交还给 shell 的命令行；这个进程留下来的话，下一句来的时候输入框是空的）。
+    pub fn clear_typed_inline(&mut self) {
+        drop(self.typing.input.editor.take_draft());
+        drop(self.typing.input.take_edit());
     }
 
     /// 有抽屉开着。

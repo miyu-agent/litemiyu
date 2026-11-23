@@ -189,6 +189,10 @@
     "shellhook.slash.new": "已开始新会话，这个终端的下一句话开始新的对话",
     "shellhook.slash.restored": "已恢复刚才撤回的回合",
     "shellhook.slash.model": "模型已换成 {name}",
-    "shellhook.slash.session": "已切换到会话「{title}」，这个终端接着说的话在它里面"
+    "shellhook.slash.session": "已切换到会话「{title}」，这个终端接着说的话在它里面",
+    "s.shellhook.report": "印出后台任务的回报（由脚本在收到信号以后调用）",
+    "o.shellhook.reports": "这个 shell 的脚本接收后台回报的信号",
+    "o.shellhook.pending": "只检查有没有要印的回报（有，退出码 0）",
+    "o.shellhook.above": "提示符在光标上方占的行数，有回报时先擦掉"
   }
 }

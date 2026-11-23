@@ -189,6 +189,10 @@
     "shellhook.slash.new": "Started a new session; the next sentence in this terminal begins a new conversation",
     "shellhook.slash.restored": "Restored the turns that were just undone",
     "shellhook.slash.model": "Model switched to {name}",
-    "shellhook.slash.session": "Switched to session “{title}”; what you say next in this terminal goes there"
+    "shellhook.slash.session": "Switched to session “{title}”; what you say next in this terminal goes there",
+    "s.shellhook.report": "Print background reports (called by the script after it gets the signal)",
+    "o.shellhook.reports": "The script handles background-report signals",
+    "o.shellhook.pending": "Only check for a waiting report (exit 0 if any)",
+    "o.shellhook.above": "Prompt rows above the cursor, erased first"
   }
 }

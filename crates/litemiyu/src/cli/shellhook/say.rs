@@ -28,7 +28,7 @@ use rustix::termios::{
     tcsetattr,
 };
 
-use super::wire::{ToFront, ToWorker};
+use super::wire::{Hello, ToFront, ToWorker};
 use crate::cli::ask::{NoMessage, message};
 use crate::cli::misuse;
 use crate::cli::parse::Parsed;
@@ -78,41 +78,23 @@ fn told(code: u8, key: &str) -> ExitCode {
     ExitCode::from(code)
 }
 
-/// 起后台的进程，等到它办完，交回退出码。
+/// 同一个终端留着的进程在的话接上它，不在的起后台的进程；等到它说这一句办完了，交回退出码。
 fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
     // 终端：那句话是从管道交来的，标准输入不是它（坑 P1）。没有终端的（被别的程序调）照样办：后台的进程没有按键可读，
     // 印在这个进程的标准输出上。
     let tty = terminal();
-    // 先进原始模式再起后台的进程：中间没有「`Ctrl+C` 还是信号、后台的进程还没装好处理」的空当。
+    // 先进原始模式再把这一句交出去：中间没有「`Ctrl+C` 还是信号、后台的进程还没装好处理」的空当。
     let raw = tty.as_ref().and_then(|tty| Raw::enter(tty).ok());
-    let (mut control, control_far) = UnixStream::pair()?;
-    let mut child = {
-        // 后台进程的标准输入、标准输出是终端，标准错误先是控制线（它起来以后另存一份、再把标准错误接到标准输出上）。
-        // 这个 `Command` 拿着控制线对面那一头，起完就放掉：不放的话后台进程退出了这里也等不到控制线关上。
-        let mut command = Command::new(std::env::current_exe()?);
-        command.args(["shellhook", "worker"]);
-        for long in PASSED {
-            if let Some(value) = parsed.value(long) {
-                command.arg(format!("--{long}")).arg(value);
-            }
+    let (mut control, mut child) = match attach(parsed, Some(text)) {
+        Some(control) => (control, None),
+        None => {
+            let (mut control, child) = spawn(parsed, tty.as_ref())?;
+            ToWorker::Message(text.to_string()).write(&mut control)?;
+            (control, Some(child))
         }
-        if parsed.has("redo") {
-            command.arg("--redo");
-        }
-        match &tty {
-            Some(tty) => command
-                .stdin(Stdio::from(tty.try_clone()?))
-                .stdout(Stdio::from(tty.try_clone()?)),
-            None => command.stdin(Stdio::null()).stdout(Stdio::inherit()),
-        };
-        command
-            .stderr(Stdio::from(OwnedFd::from(control_far)))
-            .spawn()?
     };
-    ToWorker::Message(text.to_string()).write(&mut control)?;
     let said = wait(&mut control);
     drop(raw);
-    let status = child.wait()?;
     let (said, fullscreen) = said?;
     // 后台的进程没说退出码就没了：它可能把光标藏着。没有脚本在后面亮光标的时候（直接敲这条命令）也亮回来。
     if said.is_none()
@@ -121,7 +103,7 @@ fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
         use std::io::Write;
         drop(tty.write_all(b"\x1b[?25h"));
     }
-    // 后台的进程请这一头起全屏界面（`/config`、`/tui`）：它已经退出、放掉了会话，终端也还原了。全屏界面直接用终端。
+    // 后台的进程请这一头起全屏界面（`/config`、`/tui`）：它没有开会话，终端也还原了。全屏界面直接用终端。
     if let (Some(args), Some(tty)) = (fullscreen, &tty) {
         let status = Command::new(std::env::current_exe()?)
             .args(args)
@@ -134,22 +116,133 @@ fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
             .and_then(|code| u8::try_from(code).ok())
             .unwrap_or(1));
     }
-    Ok(match said {
-        Some(code) => code,
-        // 后台的进程没说退出码就没了（崩了、被杀了）：照它自己的退出码，没有的算出错。
-        None => status
+    Ok(match (said, child.as_mut()) {
+        // 说了退出码的：不等后台的进程退出（它可能留下来等后台任务、循环）。
+        (Some(code), _) => code,
+        // 没说退出码就关了控制线：自己起的那个是崩了、被杀了，照它的退出码，没有的算出错。
+        (None, Some(child)) => child
+            .wait()?
             .code()
             .and_then(|code| u8::try_from(code).ok())
             .filter(|code| *code != 0)
             .unwrap_or(1),
+        (None, None) => 1,
     })
+}
+
+/// 办 `shellhook report`：脚本收到留着的进程发的信号以后调的。同一个终端留着的进程有要印的（后台任务结束了、被叫醒
+/// 开了一轮、在等确认）就接上它，印出来、跟到了结。没有要印的、没有留着的进程，什么都不动，退出码 1。
+///
+/// `--pending` 只问有没有要印的（zsh 停在提示符上：有的才让出提示符）；`--above <行数>` 是提示符在光标那一行上面占了
+/// 几行（zsh 先 `zle -I` 换到了下一行，是提示符的行数；fish 的光标还在提示符最后一行，是行数减一），有要印的才往上回
+/// 这么多行、从那里往下清掉，在那里印。
+pub fn report(parsed: &Parsed) -> ExitCode {
+    use lm_engine::store::paths::{Env, Paths};
+    let waiting = || {
+        let paths = Paths::locate(&Env::current()).ok()?;
+        let mark = super::terminal::Terminal::of(&paths, parsed.value("terminal")?)?.pending();
+        mark.exists().then_some(mark)
+    };
+    let Some(mark) = waiting() else {
+        return ExitCode::FAILURE;
+    };
+    if parsed.has("pending") {
+        return ExitCode::SUCCESS;
+    }
+    let tty = terminal();
+    let raw = tty.as_ref().and_then(|tty| Raw::enter(tty).ok());
+    let Some(mut control) = attach(parsed, None) else {
+        // 标记在、留着的进程却不在了（它被结束了）：标记是旧的，清掉。
+        drop(std::fs::remove_file(mark));
+        return ExitCode::FAILURE;
+    };
+    // 停在提示符上：往上擦掉提示符那几行，回报印在那里，脚本印完再把提示符画回来。
+    if let (Some(mut tty), Some(rows)) = (
+        tty.as_ref(),
+        parsed
+            .value("above")
+            .and_then(|rows| rows.parse::<u16>().ok()),
+    ) {
+        use std::io::Write;
+        let up = match rows {
+            0 => String::new(),
+            up => format!("\x1b[{up}A"),
+        };
+        drop(tty.write_all(format!("\r{up}\x1b[J").as_bytes()));
+    }
+    let said = wait(&mut control);
+    drop(raw);
+    match said {
+        Ok((Some(code), _)) => ExitCode::from(code),
+        _ => ExitCode::FAILURE,
+    }
+}
+
+/// 留着的进程收下新接上的前台最多等多久：没回音的（它正在退出）照没有留着的办，自己起后台的进程。
+const ACK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 同一个终端有留着的进程（上一句以后还在等后台任务、循环）：连上它的套接字，交这一句，等它说收下了，交回这条连接
+/// （之后就是控制线）。没有终端的记号、没有留着的、它没回音的是 `None`。
+///
+/// `text` 是那句话；`None` 是印回报（不说话）。
+fn attach(parsed: &Parsed, text: Option<&str>) -> Option<UnixStream> {
+    use lm_engine::store::paths::{Env, Paths};
+    let token = parsed.value("terminal")?;
+    let paths = Paths::locate(&Env::current()).ok()?;
+    let socket = super::terminal::socket(&paths, token, false)?;
+    let mut control = UnixStream::connect(socket).ok()?;
+    let hello = Hello {
+        report: text.is_none(),
+        redo: parsed.has("redo"),
+        group: rustix::process::getpgrp().as_raw_nonzero().get(),
+        leftover: parsed.value("leftover").unwrap_or_default().to_string(),
+    };
+    ToWorker::Hello(hello).write(&mut control).ok()?;
+    if let Some(text) = text {
+        ToWorker::Message(text.to_string())
+            .write(&mut control)
+            .ok()?;
+    }
+    control.set_read_timeout(Some(ACK)).ok()?;
+    let acked = matches!(ToFront::read(&mut control), Ok(Some(ToFront::Ack)));
+    control.set_read_timeout(None).ok()?;
+    acked.then_some(control)
+}
+
+/// 起后台的进程：交回和它连着的控制线、它自己。
+fn spawn(parsed: &Parsed, tty: Option<&File>) -> io::Result<(UnixStream, std::process::Child)> {
+    let (control, control_far) = UnixStream::pair()?;
+    // 后台进程的标准输入、标准输出是终端，标准错误先是控制线（它起来以后另存一份、再把标准错误接到标准输出上）。
+    // 这个 `Command` 拿着控制线对面那一头，起完就放掉：不放的话后台进程退出了这里也等不到控制线关上。
+    let mut command = Command::new(std::env::current_exe()?);
+    command.args(["shellhook", "worker"]);
+    for long in PASSED {
+        if let Some(value) = parsed.value(long) {
+            command.arg(format!("--{long}")).arg(value);
+        }
+    }
+    for flag in ["redo", "reports"] {
+        if parsed.has(flag) {
+            command.arg(format!("--{flag}"));
+        }
+    }
+    match tty {
+        Some(tty) => command
+            .stdin(Stdio::from(tty.try_clone()?))
+            .stdout(Stdio::from(tty.try_clone()?)),
+        None => command.stdin(Stdio::null()).stdout(Stdio::inherit()),
+    };
+    let child = command
+        .stderr(Stdio::from(OwnedFd::from(control_far)))
+        .spawn()?;
+    Ok((control, child))
 }
 
 /// 等后台的进程说退出码（没说就关了控制线的是 `None`），和它要不要这一头接着起全屏界面。这期间被要求结束的（`SIGTERM`、`SIGHUP`：终端关了）当场回来：
 /// 调的一方还原终端就走，后台的进程看到控制线关了自己收场。
 fn wait(control: &mut UnixStream) -> io::Result<(Option<u8>, Option<Vec<String>>)> {
     let signals = Signals::listen();
-    let mut code = None;
+    let code = None;
     let mut fullscreen = None;
     loop {
         let (told, ended) = {
@@ -171,10 +264,11 @@ fn wait(control: &mut UnixStream) -> io::Result<(Option<u8>, Option<Vec<String>>
         }
         if told {
             match ToFront::read(control) {
-                Ok(Some(ToFront::Exit(exit))) => code = Some(exit),
+                // 说了退出码就走：不等它关控制线（它可能留下来）。
+                Ok(Some(ToFront::Exit(exit))) => return Ok((Some(exit), fullscreen)),
                 Ok(Some(ToFront::Fullscreen(args))) => fullscreen = Some(args),
                 // 办完了：下一格就是退出码。
-                Ok(Some(ToFront::Done)) => {}
+                Ok(Some(ToFront::Done | ToFront::Ack)) => {}
                 Ok(None) | Err(_) => return Ok((code, fullscreen)),
             }
         }

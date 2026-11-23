@@ -18,7 +18,7 @@ command_not_found_handler() {
     # AI 答话的时候提前敲的字：程序写进这个文件，答完放到下一个提示符的命令行上。$$ 告诉它是哪个 shell：一个终端一个会话。
     local leftover
     leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
-    printf '%s' "$*" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --leftover "$leftover"
+    printf '%s' "$*" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover"
     # 程序收工时不亮光标（亮早了停在最后一行末尾闪一下），这里亮。
     printf '\e[?25h'
     # 收尾行和下一个提示符之间空一行（fish 的提示符自带，zsh、bash 的不一定）。
@@ -31,7 +31,7 @@ command_not_found_handler() {
 # 回车：首词是普通词、又不是任何命令（外部命令、函数、别名、内建、保留字）的是一句话，当场在这个小部件里交给 AI（同 fzf
 # 的小部件：先 `zle -I`，程序自己用终端）；多行的交给程序判。别的照 zsh 原样执行。交出去的那一行留在屏幕上、照普通的字色，
 # 进历史；答完，提前敲的字放回命令行。
-typeset -g __litemiyu_editing=
+typeset -g __litemiyu_editing= __litemiyu_busy= __litemiyu_report_pending=
 
 # 首词：跳过前面的 `变量=值`。
 __litemiyu_head() {
@@ -99,9 +99,17 @@ __litemiyu_hand_to_ai() {
     print
     local leftover
     leftover=$(mktemp -t litemiyu-shellhook.XXXXXX)
-    printf '%s' "$buffer" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --leftover "$leftover" $redo
+    __litemiyu_busy=1
+    printf '%s' "$buffer" | __litemiyu_shellhook say --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --reports --leftover "$leftover" $redo
     printf '\e[?25h'
     print
+    # AI 答话的时候来的后台回报：答完印。
+    if [[ -n $__litemiyu_report_pending ]]; then
+        __litemiyu_report_pending=
+        __litemiyu_shellhook report --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal && print
+        printf '\e[?25h'
+    fi
+    __litemiyu_busy=
     region_highlight=()
     BUFFER=
     [[ -s $leftover ]] && BUFFER=$(<"$leftover")
@@ -129,3 +137,40 @@ __litemiyu_newline() {
 zle -N __litemiyu_newline
 bindkey '^J' __litemiyu_newline
 bindkey -M viins '^J' __litemiyu_newline
+
+# 后台回报：一句话说完以后还有后台任务、循环的，拿着会话的进程留着；它有了新的东西（后台任务结束了、被叫醒开了一轮、
+# 在等确认）就给这个 zsh 发 SIGUSR1。停在提示符上的（zle 开着）当场印：有要印的才 `zle -I`（提示符画到印的下面），程序
+# 往上擦掉旧的提示符在那里印；前台在跑命令、AI 正在答的，zsh 等它结束才办这个信号，那时 zle 没开，记着，回到提示符
+# （画提示符以前）再印（Miyu 实测 zsh 5.9）。
+TRAPUSR1() {
+    if zle && [[ -z $__litemiyu_busy ]]; then
+        __litemiyu_shellhook report --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --pending || return 0
+        zle -I
+        # 提示符在屏幕上占几行：先照换行拆成数组（只有一行时 `${#${(f)…}}` 数的是字数，往上擦多了），每一行去掉颜色的
+        # 控制序列以后照显示的宽度算它折成几行（提示符里的路径长过终端宽的会折行：只数换行的话上面折出来的那一行擦
+        # 不掉，2026-11-23 在真终端里看到）。
+        setopt localoptions extendedglob
+        local -a lines=("${(@f)${(%%)PS1}}")
+        local rows=0 line
+        for line in "${lines[@]}"; do
+            line=${line//$'\e'\[[0-9;:?]#[a-zA-Z]/}
+            (( rows += (${(m)#line} > 0 ? (${(m)#line} - 1) / COLUMNS : 0) + 1 ))
+        done
+        __litemiyu_shellhook report --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal --above $rows && print
+        printf '\e[?25h'
+    else
+        __litemiyu_report_pending=1
+    fi
+    return 0
+}
+
+__litemiyu_precmd() {
+    if [[ -n $__litemiyu_report_pending ]]; then
+        __litemiyu_report_pending=
+        __litemiyu_shellhook report --shell zsh --shell-pid $$ --terminal $__litemiyu_terminal && print
+        printf '\e[?25h'
+    fi
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd __litemiyu_precmd

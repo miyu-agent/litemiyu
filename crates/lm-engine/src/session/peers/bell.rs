@@ -195,6 +195,17 @@ pub(crate) fn spots(bell: &Bell, dir: &Path, uid: u32) -> Vec<PathBuf> {
     .collect()
 }
 
+/// 别的本机套接字放在哪（shell 集成里留下来的进程等同一个终端的下一句话）：照门铃那两处的规矩，第一处合用的——
+/// `$XDG_RUNTIME_DIR/litemiyu-<name>.sock`（那个目录属主是自己、别人进不去），不合用的是 `<tmp>/litemiyu-<uid>/<name>.sock`
+/// （`create` 的没有那个目录就照 0700 建，建了的、本来有的都核对）；两处都不合用、地址太长的是 `None`。能连这个套接字的
+/// 只有进得了那个目录的人，也就是自己。
+///
+/// `name` 由调的一方给，不许是 16 位十六进制（那是门铃的名字，清旧门铃的会把没人听的删掉）。
+pub fn private_spot(bell: &Bell, name: &str, create: bool) -> Option<PathBuf> {
+    let uid = euid();
+    runtime_spot(bell, name, uid).or_else(|| own_spot(bell, name, uid, create))
+}
+
 /// 第一处：`$XDG_RUNTIME_DIR` 是属主为 `uid`、别人进不去的目录（照它指的查），地址不太长。
 fn runtime_spot(bell: &Bell, name: &str, uid: u32) -> Option<PathBuf> {
     let runtime = bell.runtime.as_deref()?;
