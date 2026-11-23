@@ -162,7 +162,11 @@ impl App {
         self.apply_saved();
         match outcome {
             Outcome::Stay => {}
-            Outcome::Back => self.close_settings(),
+            Outcome::Back => {
+                self.close_settings();
+                // 只走配置引导的：引导走完了，退出（没写完的收尾时接着写完，`main.rs`）。
+                self.quit |= self.setup_only;
+            }
             Outcome::Quit => self.quit = true,
         }
         // 「提示词」那一行：让出终端开编辑器（`compose.rs`），退出以后状态行说一句。

@@ -12,10 +12,8 @@ const FAKE: &str = "sk-FAKE-pty-opening-0000-not-real";
 const DOWN: &[u8] = b"\x1b[B";
 const ESC: &[u8] = b"\x1b";
 
-/// 开头第一屏（语言）的标题、接模型那一步的标题、Miyu 那一行。
+/// 开头第一屏（语言）的标题。
 const FIRST: &str = "界面语言";
-const MODEL: &str = "选择模型供应商";
-const IMPORT: &str = "从 Miyu 导入…";
 
 /// 语言、操作方式、图标三步都回车（跟随系统、Vim、图标），到接模型那一步。`shots` 的存样张。
 fn to_model(session: &Session, shots: bool) {
@@ -75,39 +73,23 @@ fn a_first_run_imports_from_miyu_and_goes_straight_to_talking() {
         ..Options::default()
     };
     let session = Session::launch_with(None, &[], &[], &options);
+    // 机器上有 Miyu、LiteMiyu 一家都没配：不问，一起来就导进来（项目主人 2026-11-23 定），人还停在语言那一步。
+    session.wait_for(FIRST, "语言那一步");
+    session.wait_for_raw(
+        "已从 Miyu 导入 1 个供应商：relay".as_bytes(),
+        "一起来就自动导了，状态行说导了哪一家",
+    );
     to_model(&session, true);
-    let screen = session.wait_for(IMPORT, "机器上有 Miyu：导入那一行");
-    assert!(screen.contains(MODEL), "{screen}");
-    session.shot("opening-model");
-    let import_row = screen.lines().position(|l| l.contains(IMPORT));
-    let custom_row = screen.lines().position(|l| l.contains("自定义…"));
-    assert!(
-        import_row > custom_row,
-        "导入排在最后（同加一家的目录窗）：\n{screen}"
-    );
-    assert!(
-        screen
-            .lines()
-            .any(|l| l.contains("❯ ") && !l.contains(IMPORT)),
-        "光标照 Miyu 停在第一家上：\n{screen}"
-    );
-    // 往下走到底（到底不绕回）就是导入那一行。
-    for _ in 0..40 {
-        session.press(DOWN);
-    }
-    session.wait_until("光标到导入那一行", |s| {
-        s.screen()
-            .lines()
-            .any(|l| l.contains("❯ ") && l.contains(IMPORT))
-    });
-    session.press_enter();
-    session.wait_for("勾选要导入的供应商", "勾选窗");
-    session.press_enter();
+    // 到接模型那一步：已经是导进来的那一家，不用再选「从 Miyu 导入」、不用勾。
     session.wait_for(
         "已配置：relay/m-opening",
         "导好了、带着主对话模型：「已配置」那一屏",
     );
-    session.wait_for("中转 连接成功，已获取 1 个模型", "导完在后台列出模型");
+    // 导完在后台列模型：状态行说过一声（一起来就导的，这时人可能还在前面几步，到这里状态行已经换过别的字了）。
+    session.wait_for_raw(
+        "中转 连接成功，已获取 1 个模型".as_bytes(),
+        "导完在后台列出模型",
+    );
     assert!(
         crate::support::contains(
             &session.raw(),
@@ -253,7 +235,7 @@ fn gateway(count: usize) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>
     (format!("http://127.0.0.1:{port}/v1"), heard)
 }
 
-/// 毛病一：空数据目录起来，开头里从（造出来的）Miyu 导入一家聚合网关（配置里只写了一个模型），不按「测试连接」，到「主对话的
+/// 毛病一：空数据目录起来，开头里从（造出来的）Miyu 自动导进来一家聚合网关（配置里只写了一个模型），不按「测试连接」，到「主对话的
 /// 模型」挑选窗时这一家列出来的模型都在（搜得到列表里最后一个）；列表存下来了，再起来 `/model` 也列得出，不再去拉。
 #[test]
 fn an_import_lists_all_the_models_of_the_provider_without_a_test() {
@@ -267,28 +249,15 @@ fn an_import_lists_all_the_models_of_the_provider_without_a_test() {
         ..Options::default()
     };
     let session = Session::launch_with(None, &[], &[], &options);
+    // 一起来就自动导进来（不用选、不用勾），到接模型那一步已经是它。
     to_model(&session, false);
-    session.wait_for(IMPORT, "机器上有 Miyu：导入那一行");
-    for _ in 0..40 {
-        session.press(DOWN);
-    }
-    session.wait_until("光标到导入那一行", |s| {
-        s.screen()
-            .lines()
-            .any(|l| l.contains("❯ ") && l.contains(IMPORT))
-    });
-    session.press_enter();
-    session.wait_for("勾选要导入的供应商", "勾选窗");
-    session.press_enter();
     session.wait_for("已配置：relay/vendor/model-00", "导好了到「已配置」那一屏");
-    session.wait_for(
-        "中转 连接成功，已获取 61 个模型",
-        "后台列完模型，状态行说一声",
-    );
-    assert!(
-        crate::support::contains(&session.raw(), "正在获取 中转 的模型列表".as_bytes()),
-        "列的时候状态行说在获取"
-    );
+    // 导完在后台列模型、存下来。一起来就导的：状态行说「已获取 61 个模型」的时候人可能还在前面几步，到这里已经换过别的
+    // 字了，所以照存下的那一份等。
+    let listed = session.data().join("cache/models/providers/relay.json");
+    session.wait_until("后台列完模型，存下了", |_| {
+        std::fs::read_to_string(&listed).is_ok_and(|text| text.contains("vendor/model-60"))
+    });
     let posts = heard
         .lock()
         .expect("锁得上")

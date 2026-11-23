@@ -4,7 +4,7 @@
 
 Shell integration lets you talk to the AI at your shell prompt without opening the full-screen interface: type a sentence and press `Enter`, the sentence goes to the AI, and the answer appears in the shell. When what you typed is a command, it runs as usual. fish, bash and zsh are supported.
 
-> This feature is available in versions after 2026.11.0.
+> This feature is available since version 2026.11.1.
 
 ```text
 ~/project ❯ how many files are in this directory
@@ -21,13 +21,27 @@ notes.txt  todo.txt
 
 ## Installing
 
-First [install LiteMiyu](install.md) and finish the first-run setup (add a provider, choose a model), then run:
+First [install LiteMiyu](install.md), then run:
 
 ```sh
 litemiyu shellhook install
 ```
 
 This writes one line into the startup file of the shell you are using. It takes effect in shells you open afterwards.
+
+You can install before any provider is configured. The first time you say something:
+
+- If this machine has a Miyu configuration, LiteMiyu imports its providers and default model on its own, prints `imported 2 providers from Miyu: …`, and then answers as usual; see [Models and providers](models.md#importing-from-miyu).
+- If there is nothing to import, LiteMiyu asks whether you want to configure one now:
+
+    ```text
+    Command not found
+    An AI assistant is integrated into your terminal, but no usable provider is configured yet. Once one is configured you can talk to the AI by typing in the terminal. Configure one now?
+    Press Enter to start the setup guide, or any other key to cancel.
+    To remove the terminal integration, run: litemiyu shellhook uninstall
+    ```
+
+    Press `Enter` to open the full-screen setup guide; when it is finished you are back in the shell and the sentence you typed is answered as usual. Any other key returns you to the prompt. A mistyped command is also treated as a sentence, which is why LiteMiyu asks first instead of opening the guide directly.
 
 | Shell | Where it is written |
 |---|---|
@@ -158,5 +172,5 @@ Keep only one of them per shell.
 | `Cannot tell which shell this is` | Name it with `--shell`, for example `litemiyu shellhook install --shell bash` |
 | A file `was not written by litemiyu` | The fish file already exists with content LiteMiyu did not write. Move it away and install again |
 | `status` says the program it calls no longer exists | `litemiyu` was moved or deleted after installation. Run `litemiyu shellhook install` again |
-| `no usable model: none is set up` | No provider and model have been added yet. Run `litemiyu` to go through the first-run setup, or type `/config` in the shell |
+| `no usable model: none is set up` | There is a provider but no default model has been chosen (for example, the default model imported from Miyu was a model pool). Type `/model` in the shell to choose one |
 | A sentence was run as a command | Its first word happens to be the name of a command. Phrase it differently, or put a word that is not a command in front |

@@ -6,7 +6,8 @@
 //! - 前台 → 后台：`M` 加四字节长度（小端）加那句话；`H` 加四字节长度加几样（中间用 0 字节隔开），接上留下来的进程时
 //!   先交的：是说一句还是印回报、是不是 `/edit` 改过的、前台的进程组、提前敲的字写在哪。
 //! - 后台 → 前台：`A`，留下来的进程收下了新接上的前台；`D`，这一句办完了、它不再读终端；`X` 加一字节，退出码；`F` 加四字节长度加几个参数（中间用 0 字节
-//!   隔开），请前台在它退出以后用这几个参数起全屏界面（`/config`、`/tui`：后台的进程不拿终端当全屏用，也要先放掉会话）。
+//!   隔开），请前台在它退出以后用这几个参数起全屏界面（`/config`、`/tui`：后台的进程不拿终端当全屏用，也要先放掉会话）；`S`，
+//!   请前台在它退出以后起配置引导、走完了把这句话再交一次（还没配供应商，人按了 `Enter`）。
 
 use std::io::{self, Read, Write};
 
@@ -43,6 +44,8 @@ pub enum ToFront {
     Exit(u8),
     /// 它退出以后请前台用这几个参数起全屏界面。
     Fullscreen(Vec<String>),
+    /// 它退出以后请前台起配置引导（还没配供应商，人按了 `Enter`）；引导走完了，前台把这句话再交一次。
+    Setup,
 }
 
 /// 一句话最长多少字节（同 `ask` 从标准输入读的上限的量级）：长度是对面写的，不照它无限地要内存。
@@ -143,6 +146,7 @@ impl ToFront {
             ToFront::Ack => to.write_all(b"A"),
             ToFront::Done => to.write_all(b"D"),
             ToFront::Exit(code) => to.write_all(&[b'X', *code]),
+            ToFront::Setup => to.write_all(b"S"),
             ToFront::Fullscreen(args) => {
                 let joined = args.join("\0");
                 let length = u32::try_from(joined.len())
@@ -168,6 +172,7 @@ impl ToFront {
         match kind {
             b'A' => Ok(Some(ToFront::Ack)),
             b'D' => Ok(Some(ToFront::Done)),
+            b'S' => Ok(Some(ToFront::Setup)),
             b'X' => {
                 let mut code = [0u8; 1];
                 from.read_exact(&mut code)?;

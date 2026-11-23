@@ -879,7 +879,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "litemiyu"
-version = "2026.11.0"
+version = "2026.11.1"
 dependencies = [
  "base64 0.22.1",
  "crossterm",
@@ -911,7 +911,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "lm-engine"
-version = "2026.11.0"
+version = "2026.11.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "lm-heap"
-version = "2026.11.0"
+version = "2026.11.1"
 dependencies = [
  "libc",
  "lm-heap-mem",
@@ -949,11 +949,11 @@ dependencies = [
 
 [[package]]
 name = "lm-heap-mem"
-version = "2026.11.0"
+version = "2026.11.1"
 
 [[package]]
 name = "lm-kernel"
-version = "2026.11.0"
+version = "2026.11.1"
 dependencies = [
  "base64 0.22.1",
  "lm-kernel",
@@ -2307,7 +2307,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "2026.11.0"
+version = "2026.11.1"
 dependencies = [
  "serde_json",
 ]

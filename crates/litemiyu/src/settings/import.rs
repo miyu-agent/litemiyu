@@ -11,6 +11,38 @@ use super::texts::fill;
 use super::{Settings, Tone};
 
 impl Settings {
+    /// 开头一起来（第一次运行）：LiteMiyu 一家供应商都没配、电脑上有 Miyu 的配置的，不问，认得出的全导进来（项目主人
+    /// 2026-11-23 定；该不该导、导哪几家照引擎的 `import::auto_plan`，只导一次）。写排给写线程，写完状态行说导了哪几家。
+    /// 交回排了没有。
+    pub(super) fn import_all_from_miyu(&mut self) -> bool {
+        let Some(root) = self.miyu.clone() else {
+            return false;
+        };
+        let Ok(Some((written, found, plan))) = import::auto_plan(&self.service, &root) else {
+            return false;
+        };
+        let said = fill(
+            &self.texts.import.done,
+            &[
+                ("n", &plan.import.len().to_string()),
+                ("names", &plan.import.join(&self.texts.separator)),
+            ],
+        );
+        let ids = match self.auto_lists {
+            true => plan.import.clone(),
+            false => Vec::new(),
+        };
+        self.save_job(
+            Box::new(move |service| {
+                let changed = import::apply(service, &written, &found, &plan)?;
+                import::auto_done(service);
+                Ok(changed)
+            }),
+            super::writer::After::Lists(said, ids),
+        );
+        true
+    }
+
     /// 「从 Miyu 导入」那一行按了 `Enter`：读 Miyu 的配置，列出认得出的几家勾选。
     pub(super) fn import_from_miyu(&mut self) {
         if self.warn_broken() {

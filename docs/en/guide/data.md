@@ -92,4 +92,4 @@ If you only want to take the configuration and not the sessions, copying `~/.con
 
 ## Relation to Miyu
 
-LiteMiyu's data is completely separate from [Miyu](https://github.com/miyu-agent/miyu)'s: it does not read Miyu's sessions or memory and writes nothing into Miyu's data directory. The one connection is `Import from Miyu…` in the settings screen, which only reads Miyu's configuration file and copies the providers over; see [Models and providers](models.md#importing-from-miyu).
+LiteMiyu's data is completely separate from [Miyu](https://github.com/miyu-agent/miyu)'s: it does not read Miyu's sessions or memory and writes nothing into Miyu's data directory. The one connection is importing providers from Miyu (once automatically on first use, and later by hand with `Import from Miyu…` in the settings screen), which only reads Miyu's configuration file and copies the providers over; see [Models and providers](models.md#importing-from-miyu).

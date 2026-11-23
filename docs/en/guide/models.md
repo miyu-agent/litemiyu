@@ -63,7 +63,20 @@ If you only use model services on your own machine, LiteMiyu does not download t
 
 ## Importing from Miyu
 
-If this machine has a Miyu data directory (`~/.miyu` by default, or wherever the `MIYU_HOME` environment variable points), the add-provider list ends with an extra entry, `Import from Miyu…`. Selecting it lists the providers set up in Miyu:
+### Automatic import
+
+If this machine has a Miyu data directory (`~/.miyu` by default, or wherever the `MIYU_HOME` environment variable points) and LiteMiyu has no provider configured yet, LiteMiyu imports Miyu's providers, their keys and the default model on its own, without asking:
+
+- When the full-screen interface starts for the first time, the import happens as the first-run guide opens, and the status line says `Imported 2 providers from Miyu: deepseek, local`. By the time you reach the `Model` step it is already configured.
+- The first time you say something through shell integration or `litemiyu ask`, the import happens as well; the same line is printed and the answer follows as usual.
+
+The automatic import happens only once. Even if you later delete all the imported providers, LiteMiyu does not import again on its own.
+
+> If Miyu's default model is a model pool, the providers are imported but you have to choose the default model once yourself, because LiteMiyu has no pools (the first-run guide asks you; in the shell, type `/model`). The data directory of old versions of Miyu is not recognised and is not imported.
+
+### Manual import
+
+To import from Miyu again later (for example after adding providers in Miyu), use the last entry of the add-provider list, `Import from Miyu…`. Selecting it lists the providers set up in Miyu:
 
 ```text
 Import from Miyu: tick the providers to import

@@ -194,6 +194,10 @@ fn run() -> io::Result<ExitCode> {
     } else if start.config {
         // `litemiyu config`：直接进配置界面，主菜单按 Esc 退出程序（设计第五节第 13 条）。
         app.open_settings(settings::Outcome::Quit);
+    } else if start.setup {
+        // shell 集成请来的配置引导（`cli/shellhook/say.rs`）：只走引导，走完了、中途退出了都退出程序（回到 shell）。
+        app.open_opening();
+        app.setup_only = true;
     } else if startup.opening {
         // 第一次运行（没有配置，或者上次的开头没走完）：先接一家供应商、选按键模式和明暗，走完直接进对话
         // （`settings/opening.rs`）。

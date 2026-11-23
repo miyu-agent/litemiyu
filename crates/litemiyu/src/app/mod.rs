@@ -122,6 +122,8 @@ pub struct App {
     pub cwd: String,
     /// 该退出了。
     pub quit: bool,
+    /// 只走配置引导（`litemiyu shellhook setup`）：引导关了就退出，不进对话。
+    pub setup_only: bool,
     /// 开着的配置界面（`app/settings.rs`）：开着时终端的事件都归它，画的也是它。
     pub settings: Option<Box<crate::settings::Settings>>,
     /// 关了配置界面时还没写完的（`settings/writer.rs`）、写完要不要叫引擎换上新配置：写完了才叫（引擎照盘上的读）。

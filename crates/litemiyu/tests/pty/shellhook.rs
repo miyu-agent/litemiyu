@@ -905,12 +905,20 @@ fn slash_tui_and_config_open_the_full_screen_interface_and_come_back() {
         "{:?}",
         said.shown
     );
+    // 说话要模型：一家供应商都没有的问一句要不要配（`with_no_provider_the_shell_asks_and_any_other_key_cancels`），不配的
+    // 退出码同 `ask` 没有模型的那一个。
     let said = say(
         &fresh,
         &fresh.work,
         ("说一句", &terminal("nomodel"), None),
         &[],
-        nothing,
+        |keys, shown| {
+            until("问了要不要配", || {
+                shown().contains("litemiyu shellhook uninstall")
+            });
+            keys.write_all(b"n").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
     );
     assert_eq!(
         said.code,
@@ -1631,4 +1639,161 @@ fn resizing_the_terminal_in_the_middle_of_an_answer_keeps_it_going() {
     assert!(said.shown.contains("后半截到了"), "{:?}", said.shown);
     assert!(said.shown.contains('▣'), "收尾那一行印了：{:?}", said.shown);
     assert_eq!(server.talks().len(), 1);
+}
+
+/// 在 `home` 的家目录里造一个假的 Miyu 数据根（`.miyu`，布局 3）：一家供应商 `relay` 指向 `base_url`，主对话的模型是它的
+/// `m1`；密钥是一眼看得出是假的。
+fn miyu_in(home: &Home, base_url: &str) {
+    let root = home.home.join(".miyu");
+    std::fs::create_dir_all(root.join("etc/private")).expect("建得了目录");
+    std::fs::write(root.join(".miyu-layout"), "layout 3\n").expect("写得进");
+    std::fs::write(
+        root.join("etc/config.toml"),
+        format!(
+            "[providers.relay]\ndriver = \"openai-chat\"\nbase_url = \"{base_url}\"\nkey = {{ secret = \"relay\" }}\n\n\
+             [providers.relay.models.\"m1\"]\n\n[models]\nchat = \"relay/m1\"\n"
+        ),
+    )
+    .expect("写得进");
+    std::fs::write(
+        root.join("etc/private/secrets.toml"),
+        "relay = \"fake-key-not-real\"\n",
+    )
+    .expect("写得进");
+}
+
+#[test]
+fn with_nothing_configured_miyus_providers_are_imported_without_asking() {
+    // 项目主人 2026-11-23 定：LiteMiyu 一家都没配、电脑上有 Miyu 的配置时不问，直接导进来；只导一次。
+    let server = serve(vec![
+        stream(says(&["第一句的回答"])),
+        stream(says(&["第二句的回答"])),
+        stream(says(&["ask 的回答"])),
+    ]);
+    let home = Home::new(None);
+    miyu_in(&home, &server.base_url);
+    let token = terminal("auto");
+    let said = say(&home, &home.work, ("说一句", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.shown.contains("已从 Miyu 导入 1 个供应商：relay"),
+        "说了导了哪一家：{:?}",
+        said.shown
+    );
+    assert!(said.shown.contains("第一句的回答"), "{:?}", said.shown);
+    assert!(!said.shown.contains("fake-key"), "屏幕上没有 key");
+    assert_eq!(model_of(&server.talks(), 0), "m1", "照 Miyu 的主对话模型");
+    // 第二句：已经配好了，不再说导入。
+    let said = say(&home, &home.work, ("再说一句", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(!said.shown.contains("已从 Miyu 导入"), "{:?}", said.shown);
+    // `ask` 走的是同一处：另一个空的数据目录、同一个家目录。
+    let other = Home::new(None);
+    miyu_in(&other, &server.base_url);
+    let out = other.run(&["ask", "问一句"], Input::Null);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(
+        out.stderr.contains("已从 Miyu 导入 1 个供应商：relay"),
+        "{out:?}"
+    );
+    assert!(out.stdout.contains("ask 的回答"), "{out:?}");
+    // 只检查的不导（`shellhook doctor`）。
+    let third = Home::new(None);
+    miyu_in(&third, &server.base_url);
+    let out = third.run(&["shellhook", "doctor", "--shell", "zsh"], Input::Null);
+    assert!(out.stderr.contains("没有可用的模型"), "{out:?}");
+    assert!(!out.stderr.contains("已从 Miyu 导入"), "{out:?}");
+}
+
+/// 没配供应商时问的那四行（项目主人 2026-11-23 写的原话，最后一行后面接移除的命令）。
+const ASKED: [&str; 4] = [
+    "命令输入错误",
+    "您的终端集成了 AI 助手，但是尚未配置可用的供应商，配置好后可以在终端直接打字和 AI 对话，是否要配置？",
+    "Enter 键进入配置引导，任意键取消。",
+    "如果要移除终端集成，可运行命令：litemiyu shellhook uninstall",
+];
+
+#[test]
+fn with_no_provider_the_shell_asks_and_any_other_key_cancels() {
+    // 一家供应商都没有、也没有 Miyu 的配置：不直接进配置引导（脚本分不出一句话和打错的命令），问一句；按别的键回提示符。
+    let server = serve(vec![]);
+    let home = Home::new(None);
+    let said = say(
+        &home,
+        &home.work,
+        ("gti status", &terminal("unset"), None),
+        &[],
+        |keys, shown| {
+            until("问了", || shown().contains(ASKED[3]));
+            keys.write_all(b"x").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(5), "没有模型的退出码：{:?}", said.shown);
+    let lines = said.lines(120);
+    let at = lines
+        .iter()
+        .position(|line| line == ASKED[0])
+        .unwrap_or_else(|| panic!("四行照原话、照先后：{lines:#?}"));
+    assert_eq!(lines[at..at + 4], ASKED, "{lines:#?}");
+    assert!(!said.shown.contains("界面语言"), "没有进配置引导");
+    assert!(server.talks().is_empty());
+    assert!(home.sessions().is_empty(), "没有开会话");
+}
+
+#[test]
+fn enter_at_the_question_opens_the_setup_guide_and_the_sentence_is_answered_after_it() {
+    // 按 `Enter`：前台起配置引导（全屏）；引导关了，这句话再交一次，配好了的照常回答。这里不在引导里一步步配：引导
+    // 开着的时候把配置写好（等于在里面配好了），第一屏按 `Esc` 退出引导。
+    let server = serve(vec![stream(says(&["配好以后答的"]))]);
+    let home = Home::new(None);
+    let base_url = server.base_url.clone();
+    let configured = home.data.clone();
+    let said = say(
+        &home,
+        &home.work,
+        ("帮我看看", &terminal("setup"), None),
+        &[],
+        move |keys, shown| {
+            until("问了", || shown().contains(ASKED[3]));
+            keys.write_all(b"\r").expect("敲得进");
+            keys.flush().expect("敲得进");
+            until("配置引导开了", || shown().contains("界面语言"));
+            let paths = lm_engine::store::paths::Paths::under(&configured);
+            std::fs::create_dir_all(&paths.config).expect("建得了配置那一处");
+            std::fs::write(paths.config_file(), crate::cli::config(&base_url)).expect("写得进");
+            keys.write_all(b"\x1b").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(said.shown.contains("配好以后答的"), "{:?}", said.shown);
+    assert_eq!(said.shown.matches(ASKED[0]).count(), 1, "只问一次");
+    assert_eq!(server.talks().len(), 1);
+    assert!(server.talks()[0].contains("帮我看看"), "交的还是那句话");
+}
+
+#[test]
+fn leaving_the_setup_guide_without_a_provider_comes_back_quietly() {
+    // 按了 `Enter` 进引导、没配就退出来：回提示符，不再问、也不再说一遍没有模型。
+    let server = serve(vec![]);
+    let home = Home::new(None);
+    let said = say(
+        &home,
+        &home.work,
+        ("帮我看看", &terminal("left"), None),
+        &[],
+        |keys, shown| {
+            until("问了", || shown().contains(ASKED[3]));
+            keys.write_all(b"\r").expect("敲得进");
+            keys.flush().expect("敲得进");
+            until("配置引导开了", || shown().contains("界面语言"));
+            keys.write_all(b"\x1b").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(5), "{:?}", said.shown);
+    assert_eq!(said.shown.matches(ASKED[0]).count(), 1, "只问一次");
+    assert!(!said.shown.contains("没有可用的模型"), "{:?}", said.shown);
+    assert!(server.talks().is_empty());
 }

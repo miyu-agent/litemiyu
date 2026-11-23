@@ -4,7 +4,7 @@
 use lm_kernel::config::Value;
 use lm_kernel::config::secret::{Reference, Secret};
 
-use super::import::{Clash, apply, clashes, plan};
+use super::import::{Clash, apply, auto, clashes, plan};
 use super::miyu::{self, Key};
 use super::{configured, forget_secret, secret_used};
 use crate::settings::{Edit, Settings};
@@ -170,4 +170,77 @@ fn overwriting_with_the_same_value_keeps_the_key() {
     settings
         .set(&[Edit::Unset("providers.ds.base_url".to_string())])
         .expect("删得了");
+}
+
+#[test]
+fn the_automatic_import_brings_everything_over_once_and_only_when_nothing_is_configured() {
+    // 项目主人 2026-11-23 定：一家都没配、电脑上有 Miyu 的配置时不问，直接导；只导一次。
+    let scratch = Scratch::new();
+    let root = miyu_root(
+        &scratch,
+        "[providers.ds]\nbase_url = \"http://ds\"\nkey = { secret = \"ds\" }\n\
+         [providers.kimi]\nbase_url = \"http://kimi\"\nkey = { env = \"KIMI_KEY\" }\n\
+         [models]\nchat = \"ds/deep\"\n",
+        "ds = \"sk-from-miyu\"\n",
+    );
+    let home = root.to_string_lossy().into_owned();
+    let var = move |name: &str| (name == "MIYU_HOME").then(|| home.clone());
+
+    // 已经配了一家的：不动。
+    let busy = settings(&scratch, "[providers.mine]\nbase_url = \"http://mine\"\n");
+    assert_eq!(auto(&busy, &var).expect("读得了"), None);
+    assert_eq!(
+        configured(&busy.read().expect("读得了").written),
+        ["mine"],
+        "已经配了的不自动导"
+    );
+
+    // 一家都没配的：认得出的全导进来，连 key 和主对话的模型。
+    let empty = Scratch::new();
+    let fresh = settings(&empty, "");
+    let plan = auto(&fresh, &var).expect("写得进").expect("导了");
+    assert_eq!(plan.import, ["ds", "kimi"]);
+    assert_eq!(plan.chat.as_deref(), Some("ds/deep"));
+    let read = fresh.read().expect("读得了");
+    assert_eq!(configured(&read.written), ["ds", "kimi"]);
+    assert!(
+        read.secrets.contains("ds"),
+        "key 存进了密钥文件：{:?}",
+        read.secrets
+    );
+    assert_eq!(
+        read.written.get("models.chat"),
+        Some(&Value::Text("ds/deep".to_string().into()))
+    );
+
+    // 只导一次：人把导进来的都删了，下一次不再导回来。
+    let gone: Vec<Edit> = read
+        .written
+        .keys()
+        .filter(|key| key.starts_with("providers.") || key.as_str() == "models.chat")
+        .map(|key| Edit::Unset(key.clone()))
+        .collect();
+    fresh.set(&gone).expect("删得了");
+    assert!(configured(&fresh.read().expect("读得了").written).is_empty());
+    assert_eq!(
+        auto(&fresh, &var).expect("读得了"),
+        None,
+        "导过一次的不再导"
+    );
+
+    // 没有 Miyu 的数据根、Miyu 的配置里一家都没有：什么都不动，也不留记号。
+    let none = Scratch::new();
+    let alone = settings(&none, "");
+    let nowhere = none.path().join("no-miyu").to_string_lossy().into_owned();
+    let missing = move |name: &str| (name == "MIYU_HOME").then(|| nowhere.clone());
+    assert_eq!(auto(&alone, &missing).expect("读得了"), None);
+    assert!(
+        !alone.read().expect("读得了").exists
+            || configured(&alone.read().expect("读得了").written).is_empty()
+    );
+    let later = auto(&alone, &var).expect("写得进");
+    assert!(
+        later.is_some(),
+        "以后装了 Miyu，照样导得了（上一次没导成不留记号）"
+    );
 }

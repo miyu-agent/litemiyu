@@ -11,7 +11,7 @@ use lm_engine::store::paths::{Env, Paths};
 use super::inline::{Ask, Linger, Session};
 use super::terminal::{self, Terminal};
 use super::wire::{ToFront, ToWorker};
-use crate::cli::ask::model_ready;
+use crate::cli::ask::{Lacking, model_for_shell};
 use crate::cli::misuse;
 use crate::cli::parse::Parsed;
 use crate::cli::words::Words;
@@ -49,6 +49,59 @@ fn dismiss(control: &mut UnixStream, code: u8) {
     drop(ToFront::Exit(code).write(control));
 }
 
+/// 移除 shell 集成的那条命令（写进没配供应商时问的那几行里）。
+const UNINSTALL: &str = "litemiyu shellhook uninstall";
+
+/// 没有模型的退出码（同 `ask`）。
+const NO_MODEL: u8 = 5;
+
+/// 一家供应商都没有（从 Miyu 也没有导到）：问一句要不要现在配（项目主人 2026-11-23 定，那几行字是他写的）。脚本分不出
+/// 「一句话」和「打错的命令」，所以不直接进配置引导：按了 `Enter` 才请前台去起（[`ToFront::Setup`]），前台等引导走完再
+/// 把这句话交一次；按别的键就回提示符。
+///
+/// 引导走过一趟还是没有的（前台带着 `--asked` 再交来的）不再问、也不再说，人是自己退出引导的。没有终端可问的（标准
+/// 输入不是终端）照老样子说一句没有模型。
+fn unconfigured(parsed: &Parsed, control: &mut UnixStream, words: &Words) {
+    use rustix::termios::{QueueSelector, isatty, tcflush};
+    if parsed.has("asked") {
+        return dismiss(control, NO_MODEL);
+    }
+    let stdin = rustix::stdio::stdin();
+    if !isatty(stdin) {
+        words.error(words.get("no_model"), Some(words.get("no_model.hint")));
+        return dismiss(control, NO_MODEL);
+    }
+    {
+        let mut out = std::io::stdout().lock();
+        let remove = words.say("shellhook.setup.remove", &[("command", UNINSTALL)]);
+        for line in [
+            words.get("shellhook.setup.wrong"),
+            words.get("shellhook.setup.ask"),
+            words.get("shellhook.setup.keys"),
+            &remove,
+        ] {
+            drop(writeln!(out, "{line}"));
+        }
+        drop(out.flush());
+    }
+    // 问以前敲的字不算：不然提前按下的回车会当场进引导。
+    let _flushed = tcflush(stdin, QueueSelector::IFlush);
+    let mut pressed = [0u8; 64];
+    let read = loop {
+        match rustix::io::read(stdin, &mut pressed) {
+            Err(rustix::io::Errno::INTR) => {}
+            read => break read,
+        }
+    };
+    // 前台把终端切成了原始模式：回车是 `\r`。带着别的字节的（方向键这类一串的）不算回车。
+    let enter = matches!(read, Ok(1)) && matches!(pressed[0], b'\r' | b'\n');
+    if enter {
+        drop(ToFront::Setup.write(control));
+        return dismiss(control, 0);
+    }
+    dismiss(control, NO_MODEL)
+}
+
 /// 办那一件，办完（连同留下来以后接着办的几件）才回来。
 fn said(parsed: &Parsed, mut first: Ask, words: &Words) {
     let paths = match Paths::locate(&Env::current()) {
@@ -69,11 +122,15 @@ fn said(parsed: &Parsed, mut first: Ask, words: &Words) {
         drop(ToFront::Fullscreen(args).write(&mut first.control));
         return dismiss(&mut first.control, 0);
     }
-    // 说话要先有能用的模型；斜杠命令不用（`/help`、`/status` 没配模型也看得了）。
+    // 说话要先有能用的模型；斜杠命令不用（`/help`、`/status` 没配模型也看得了）。没有的先试从 Miyu 自动导入（在
+    // `model_for_shell` 里）；一家供应商都没有的问一句要不要现在配。
     if !first.text.trim_start().starts_with('/')
-        && let Err(code) = model_ready(words)
+        && let Err((code, lacking)) = model_for_shell(words, words.get("shellhook.no_chat.hint"))
     {
-        return dismiss(&mut first.control, code);
+        return match lacking {
+            Some(Lacking::Providers) => unconfigured(parsed, &mut first.control, words),
+            _ => dismiss(&mut first.control, code),
+        };
     }
     // 有终端的记号、放得下套接字的才留得下来（等同一个终端的下一句话）。
     let linger = token

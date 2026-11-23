@@ -92,4 +92,4 @@ tar -xzf litemiyu-backup.tar.gz -C ~
 
 ## 和 Miyu 的关系
 
-LiteMiyu 的数据和 [Miyu](https://github.com/miyu-agent/miyu) 完全分开：它不读取 Miyu 的会话和记忆，也不向 Miyu 的数据目录写任何东西。唯一的联系是配置界面里的 `从 Miyu 导入…`，它只读取 Miyu 的配置文件，把供应商抄一份过来，见[模型和供应商](models.md#从-miyu-导入)。
+LiteMiyu 的数据和 [Miyu](https://github.com/miyu-agent/miyu) 完全分开：它不读取 Miyu 的会话和记忆，也不向 Miyu 的数据目录写任何东西。唯一的联系是从 Miyu 导入供应商（第一次使用时自动导入一次，之后可以在配置界面里用 `从 Miyu 导入…` 手动导入），它只读取 Miyu 的配置文件，把供应商抄一份过来，见[模型和供应商](models.md#从-miyu-导入)。

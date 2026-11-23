@@ -156,6 +156,8 @@ pub struct Opening {
     pub picks: Vec<(String, Value)>,
     /// 配色方案那一步「下一步」排给写线程了、还没写完（Miyu `ThemeStep::busy`）：写完才往下走。
     pub theme_saving: bool,
+    /// 开头一起来时排了一次从 Miyu 的自动导入、导进来的几家还没照进接模型那一步（`import.rs`）。
+    pub importing: bool,
 }
 
 texts! {
@@ -445,9 +447,15 @@ impl Settings {
             theme: ThemeSlot::Mode,
             picks: Vec::new(),
             theme_saving: false,
+            importing: false,
         };
         self.opening = Some(opening);
         self.status = None;
+        // 一家都没配、电脑上有 Miyu 的配置：不问，直接导进来（`import.rs`）；写完了接模型那一步照导进来的走。
+        let importing = self.import_all_from_miyu();
+        if let Some(opening) = &mut self.opening {
+            opening.importing = importing;
+        }
         // 已经配好一家的（重走开头）：照 Miyu 引导模型那一步，在后台把列表拉一遍（配置 五）。
         self.refresh_lists();
     }
@@ -723,10 +731,12 @@ impl Settings {
             return;
         };
         let closed = self.popup.is_none() && self.models.as_ref().is_none_or(|m| m.popup.is_none());
-        if opening.step == Step::Model && closed {
+        // 开头一起来自动导的那一次：人还停在前面几步时就写完了，这时就照导进来的把接模型那一步备好。
+        if (opening.step == Step::Model || opening.importing) && closed {
             let saving = matches!(opening.model.phase, Phase::Saving(_));
             if matches!(opening.model.phase, Phase::List | Phase::Ready(_)) {
                 self.model_imported(&mut opening);
+                opening.importing &= self.providers().is_empty();
             } else if saving && self.model_saved(&mut opening) {
                 opening.step = Step::Theme;
             }

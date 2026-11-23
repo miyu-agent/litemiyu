@@ -90,6 +90,9 @@ pub struct Fullscreen {
     pub config: bool,
     /// 直接打开这个旧会话（`-s`、`-c`，开之前查过在、没被别的窗口开着）。
     pub open: Option<String>,
+    /// 只走配置引导（`litemiyu shellhook setup`，shell 集成在还没配供应商、人按了 `Enter` 时起的）：走完了、中途退出了都
+    /// 退出程序，不进对话。
+    pub setup: bool,
 }
 
 /// 读完启动参数以后怎么办。
@@ -115,6 +118,11 @@ pub fn start() -> Start {
     match args.first().map(String::as_str) {
         Some("config") => config(&args[1..]),
         Some("help") => Start::Done(help_command(&args[1..])),
+        // shell 集成请来的配置引导（`shellhook/say.rs`）：要进全屏，不在 `shellhook::main` 里办。不是给人敲的，帮助页不列。
+        Some("shellhook") if args[1..] == ["setup"] => Start::Fullscreen(Fullscreen {
+            setup: true,
+            ..Fullscreen::default()
+        }),
         // shell 集成自己读后面的（脚本调的头上带 `--hook`，子命令各有各的选项，`shellhook/mod.rs`）。
         Some("shellhook") => Start::Done(shellhook::main(&args[1..])),
         Some(first) if !first.starts_with('-') => {
@@ -253,6 +261,7 @@ fn fullscreen(args: &[String]) -> Start {
         preset,
         config: false,
         open,
+        setup: false,
     })
 }
 

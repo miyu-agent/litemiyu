@@ -243,30 +243,97 @@ fn rescued(parsed: &Parsed, words: &Words) -> Result<crate::rescue::Prepared, Ea
 /// 有没有能用的模型（Miyu `ask` 说话之前先看 `models.chat`）：配置读不了的退出码 1，没配模型的 5；写了 `--model` 的照配置查
 /// （`lm_kernel::models::reference::record`），查不过的退出码 1，交回记下的写法。
 fn ready(words: &Words, model: Option<&str>) -> Result<Option<String>, Early> {
+    match checked(words, model, true) {
+        Ok(recorded) => Ok(recorded),
+        Err(Unready::Early(early)) => Err(early),
+        Err(Unready::Lacking(_)) => Err(no_model(words, None)),
+    }
+}
+
+/// 没有能用的模型时缺的是什么。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Lacking {
+    /// 一家供应商都没有（自动导入也没有导到）。
+    Providers,
+    /// 有供应商，没有选主对话的模型（从 Miyu 导进来的主对话模型指到池的就是这样）。
+    Chat,
+}
+
+/// [`checked`] 没过：已经说过了的（照它的退出码走），或者缺模型、还没说（怎么说由调的一方定）。
+enum Unready {
+    Early(Early),
+    Lacking(Lacking),
+}
+
+/// 说一句「没有可用的模型」，交回退出码 5 的那个了结。`hint` 是另写的建议（没有的照 `litemiyu config`）。
+fn no_model(words: &Words, hint: Option<&str>) -> Early {
+    let hint = hint.unwrap_or_else(|| words.get("no_model.hint"));
+    words.error(words.get("no_model"), Some(hint));
+    Early::Ended(Ending::early(5, "no_model"))
+}
+
+/// 读配置看有没有能用的模型（[`ready`] 的底子）。`import` 是没有主对话的模型时要不要先试一次从 Miyu 自动导入（项目
+/// 主人 2026-11-23 定：一家都没配、电脑上有 Miyu 的配置时不问，直接导，`lm_engine::providers::import::auto`）：导了的在
+/// 标准错误上说一声导了哪几家，再照导完的配置看。只检查的（`shellhook doctor`）不导。
+fn checked(words: &Words, model: Option<&str>, import: bool) -> Result<Option<String>, Unready> {
     use lm_engine::store::paths::{Env, Paths};
-    let paths = Paths::locate(&Env::current())
-        .map_err(|error| early(words, 1, "failed", &words.why(&error.to_string())))?;
-    let loaded =
-        lm_engine::configured::load(&paths, |name| std::env::var(name).ok()).map_err(|error| {
-            let reason = words.why(&error.to_string());
-            let message = words.say("config_unreadable", &[("reason", &reason)]);
-            early(words, 1, "failed", &message)
-        })?;
-    let values = loaded.resolved.values();
+    let var = |name: &str| std::env::var(name).ok();
+    let paths = Paths::locate(&Env::current()).map_err(|error| {
+        Unready::Early(early(words, 1, "failed", &words.why(&error.to_string())))
+    })?;
+    let load = || {
+        lm_engine::configured::load(&paths, var)
+            .map(|loaded| loaded.resolved.values())
+            .map_err(|error| {
+                let reason = words.why(&error.to_string());
+                let message = words.say("config_unreadable", &[("reason", &reason)]);
+                Unready::Early(early(words, 1, "failed", &message))
+            })
+    };
+    let values = load()?;
     if let Some(model) = model {
         return lm_kernel::models::reference::record(&values, model)
             .map(Some)
             .map_err(|why| {
                 let message = words.say("unknown_model", &[("model", model), ("reason", &why.0)]);
-                early(words, 1, "unknown_model", &message)
+                Unready::Early(early(words, 1, "unknown_model", &message))
             });
     }
-    if lm_kernel::models::provider::chat(&values).is_none() {
-        let hint = words.get("no_model.hint");
-        words.error(words.get("no_model"), Some(hint));
-        return Err(Early::Ended(Ending::early(5, "no_model")));
+    if lm_kernel::models::provider::chat(&values).is_some() {
+        return Ok(None);
     }
-    Ok(None)
+    let service = lm_engine::settings::Settings::new(paths.clone(), var);
+    if import {
+        match lm_engine::providers::import::auto(&service, &var) {
+            Ok(Some(plan)) => {
+                let names = plan.import.join(words.get("comma"));
+                let count = plan.import.len().to_string();
+                let said = words.say("miyu_imported", &[("n", &count), ("names", &names)]);
+                words.error(&said, None);
+                if lm_kernel::models::provider::chat(&load()?).is_some() {
+                    return Ok(None);
+                }
+                return Err(Unready::Lacking(Lacking::Chat));
+            }
+            Ok(None) => {}
+            // 导不了（LiteMiyu 自己的配置、密钥写不进）：说一声，照没有模型往下走。
+            Err(error) => {
+                let reason = words.why(&error.to_string());
+                words.warn(
+                    &words.say("miyu_import_failed", &[("reason", &reason)]),
+                    None,
+                );
+            }
+        }
+    }
+    let none = service
+        .read()
+        .map(|read| lm_engine::providers::configured(&read.written).is_empty())
+        .unwrap_or(true);
+    Err(Unready::Lacking(match none {
+        true => Lacking::Providers,
+        false => Lacking::Chat,
+    }))
 }
 
 pub use follow::Turn;
@@ -274,12 +341,34 @@ pub use follow::Turn;
 // shell 集成的 `say` 借用的几样（`cli/shellhook/`）：读那句话、看有没有能用的模型。
 pub(super) use input::{NoMessage, message};
 
-/// 有没有能用的模型（同 `ask` 说话以前看的）：没有的话已经说过了，交回退出码。
+/// 有没有能用的模型（同 `ask` 说话以前看的，只看、不自动导入：`shellhook doctor` 用）：没有的话已经说过了，交回退出码。
 pub(super) fn model_ready(words: &Words) -> Result<(), u8> {
-    match ready(words, None) {
+    match checked(words, None, false) {
         Ok(_) => Ok(()),
-        Err(Early::Ended(ending)) => Err(ending.exit),
-        Err(Early::Misuse(_)) => Err(misuse::USAGE),
+        Err(Unready::Lacking(_)) => Err(exit_of(&no_model(words, None))),
+        Err(Unready::Early(early)) => Err(exit_of(&early)),
+    }
+}
+
+/// shell 集成说话以前看的：没有主对话的模型时先试自动导入（同 [`ready`]）。一家供应商都没有的不在这里说（交回
+/// [`Lacking::Providers`]，`shellhook worker` 另有问法）；有供应商、没选模型的说了，建议写 `hint`；别的也说过了。
+/// 交回的另一样是退出码。
+pub(super) fn model_for_shell(words: &Words, hint: &str) -> Result<(), (u8, Option<Lacking>)> {
+    match checked(words, None, true) {
+        Ok(_) => Ok(()),
+        Err(Unready::Lacking(Lacking::Providers)) => Err((5, Some(Lacking::Providers))),
+        Err(Unready::Lacking(Lacking::Chat)) => {
+            Err((exit_of(&no_model(words, Some(hint))), Some(Lacking::Chat)))
+        }
+        Err(Unready::Early(early)) => Err((exit_of(&early), None)),
+    }
+}
+
+/// 说过了的那个了结的退出码。
+fn exit_of(early: &Early) -> u8 {
+    match early {
+        Early::Ended(ending) => ending.exit,
+        Early::Misuse(_) => misuse::USAGE,
     }
 }
 

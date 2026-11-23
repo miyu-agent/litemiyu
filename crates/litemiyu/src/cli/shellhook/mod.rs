@@ -96,6 +96,7 @@ const LEFTOVER: Opt = Opt::value("leftover", None, "v.file", "o.shellhook.leftov
 const REDO: Opt = Opt::flag("redo", None, "o.shellhook.redo");
 /// 这个 shell 接后台回报的信号。
 const REPORTS: Opt = Opt::flag("reports", None, "o.shellhook.reports");
+const ASKED: Opt = Opt::flag("asked", None, "o.shellhook.asked");
 
 /// 脚本调的那几条：帮助页不列。
 const INTERNAL: &[Cmd] = &[
@@ -115,7 +116,7 @@ const INTERNAL: &[Cmd] = &[
         summary: "s.shellhook.worker",
         about: "",
         extra: "",
-        opts: &[SHELL_PID, TERMINAL, LEFTOVER, REDO, REPORTS],
+        opts: &[SHELL_PID, TERMINAL, LEFTOVER, REDO, REPORTS, ASKED],
         subs: &[],
         run: None,
     },

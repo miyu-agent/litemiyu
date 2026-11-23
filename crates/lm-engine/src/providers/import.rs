@@ -8,12 +8,14 @@
 //! 只经 [`Settings::store_secret`] 进密钥文件。
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use lm_kernel::config::Value;
 use lm_kernel::config::secret::Reference;
 
-use super::miyu::{Found, Key};
+use super::miyu::{self, Found, Key};
 use super::{forget_secret, secret_used, written_under};
+use crate::settings::catalog::Catalog;
 use crate::settings::{Edit, SetError, Settings};
 
 /// 主对话的模型那一项。
@@ -147,4 +149,81 @@ pub fn apply(
         }
     }
     Ok(changed)
+}
+
+/// 自动导入做过一次的记号：状态目录里的这个文件。
+const AUTO_MARK: &str = "miyu-imported";
+
+/// 自动导入（项目主人 2026-11-23 定：不问，直接导）：LiteMiyu 一家供应商都没配、以前也没有自动导入过、`var` 说的那处
+/// Miyu 的数据根里认得出几家时，把认得出的全导进来（连它们的 key、主对话的模型，同 [`plan`]、[`apply`]），交回导了什么。
+/// 不符合上面几条的、Miyu 的配置读不出一家的，什么都不动，交回 `None`。
+///
+/// 只导一次：导成了在状态目录里留一个记号（[`auto_done`]）。不然人后来把导进来的几家都删了，下一次起来又被导回来。
+///
+/// # Errors
+///
+/// LiteMiyu 自己的配置、密钥读不了、写不进（见 [`SetError`]）。
+pub fn auto(
+    settings: &Settings,
+    var: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<Plan>, SetError> {
+    let Ok(root) = miyu::locate(var) else {
+        return Ok(None);
+    };
+    let Some((written, found, plan)) = auto_plan(settings, &root)? else {
+        return Ok(None);
+    };
+    apply(settings, &written, &found, &plan)?;
+    auto_done(settings);
+    Ok(Some(plan))
+}
+
+/// [`auto_plan`] 算好的：算的时候读的那一份 LiteMiyu 的配置、从 Miyu 读到的、会导哪几家。
+pub type Planned = (BTreeMap<String, Value>, Found, Plan);
+
+/// [`auto`] 的前一半，只算不写：该不该自动导入、导哪几家。该导的交回算的时候读的那一份配置、从 `root`（Miyu 的数据根）
+/// 读到的、算好的；调的一方照它 [`apply`]，写成了再 [`auto_done`]（配置界面把写排给写线程，所以分开）。
+///
+/// # Errors
+///
+/// LiteMiyu 自己的配置读不了（见 [`SetError`]）。
+pub fn auto_plan(settings: &Settings, root: &Path) -> Result<Option<Planned>, SetError> {
+    if settings.paths().state.join(AUTO_MARK).exists() {
+        return Ok(None);
+    }
+    let written = settings.read()?.written;
+    if !super::configured(&written).is_empty() {
+        return Ok(None);
+    }
+    // 没写地址的照目录认（要时才读目录，读一次）；目录还没取到的，出厂档案里写了地址的那几家照样认（同配置界面的导入）。
+    let mut catalog: Option<Option<Catalog>> = None;
+    let paths = settings.paths().clone();
+    let mut known = |id: &str, written: Option<&str>| {
+        catalog
+            .get_or_insert_with(|| Catalog::load(&paths).ok())
+            .as_ref()
+            .is_some_and(|catalog| {
+                catalog.recognize(id, None, written).is_some()
+                    || catalog.profiled(written.unwrap_or(id))
+            })
+    };
+    let Ok(found) = miyu::read(root, settings.items(), &mut known) else {
+        return Ok(None);
+    };
+    let all: Vec<usize> = (0..found.providers.len()).collect();
+    let plan = plan(&written, &found, &all, Clash::Skip);
+    if plan.import.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some((written, found, plan)))
+}
+
+/// 自动导入写成了：留下「导过一次」的记号。写不进的（目录只读）不算错，下一次照「一家都没配」再看。
+pub fn auto_done(settings: &Settings) {
+    let mark = settings.paths().state.join(AUTO_MARK);
+    if let Some(dir) = mark.parent()
+        && std::fs::create_dir_all(dir).is_ok()
+    {
+        drop(std::fs::write(&mark, b""));
+    }
 }

@@ -10,7 +10,7 @@
 
 > <sub>本文档由 Anthropic 的 Claude Fable 5.2 生成。</sub>
 
-LiteMiyu 是从 [Miyu](https://github.com/miyu-agent/miyu) 提炼出来的终端 Agent Harness（智能体框架），在轻量化这方面做到了极致，并且没有牺牲使用体验。整个软件只有一个不到 8 MB 的静态程序，没有任何依赖，放进 `PATH` 就能使用；空闲时占用约 3 MB 内存，十几毫秒就能启动。子代理、跨会话通讯、Loop、定时触发、Skills、MCP、记忆等基本功能开箱即用。所有代码由世界前沿 AI 编写。
+LiteMiyu 是从 [Miyu](https://github.com/miyu-agent/miyu) 提炼出来的终端 Agent Harness（智能体框架），在轻量化这方面做到了极致，并且没有牺牲使用体验。整个软件只有一个不到 8 MB 的静态程序，没有任何依赖，放进 `PATH` 就能使用；空闲时占用约 1 MB 内存，3 毫秒就能启动。子代理、跨会话通讯、Loop、定时触发、Skills、MCP、记忆等基本功能开箱即用。所有代码由世界前沿 AI 编写。
 
 电脑出了问题、别的 Agent 都启动不了的时候，LiteMiyu 还可以用应急模式启动，帮你把电脑修好。
 

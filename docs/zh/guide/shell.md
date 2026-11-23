@@ -4,7 +4,7 @@
 
 shell 集成让你不用打开全屏界面，在 shell 的提示符后面直接和 AI 说话：输入一句话、按 `Enter`，这句话交给 AI，回答显示在 shell 里；输入的是命令时，命令照常执行。支持 fish、bash 和 zsh。
 
-> 这项功能在 2026.11.0 之后的版本里提供。
+> 这项功能从 2026.11.1 起提供。
 
 ```text
 ~/project ❯ 这个目录里有几个文件
@@ -21,13 +21,27 @@ notes.txt  todo.txt
 
 ## 安装
 
-先[安装 LiteMiyu](install.md) 并完成第一次启动的引导（添加供应商、选择模型），然后运行：
+先[安装 LiteMiyu](install.md)，然后运行：
 
 ```sh
 litemiyu shellhook install
 ```
 
 这条命令在当前这种 shell 的启动文件里写入一行，新打开的 shell 里就可以使用。
+
+还没有配置供应商也可以先安装。第一次说话时：
+
+- 这台电脑上有 Miyu 的配置，LiteMiyu 会自动导入其中的供应商和默认模型，显示 `已从 Miyu 导入 2 个供应商：…`，然后照常回答，见[模型和供应商](models.md#从-miyu-导入)。
+- 没有可以导入的配置，LiteMiyu 会问你要不要现在配置：
+
+    ```text
+    命令输入错误
+    您的终端集成了 AI 助手，但是尚未配置可用的供应商，配置好后可以在终端直接打字和 AI 对话，是否要配置？
+    Enter 键进入配置引导，任意键取消。
+    如果要移除终端集成，可运行命令：litemiyu shellhook uninstall
+    ```
+
+    按 `Enter` 进入全屏的配置引导，配置完成后回到 shell，刚才那句话会照常得到回答。按其他键回到提示符。因为打错的命令也会被当作一句话，所以 LiteMiyu 不会直接进入引导，而是先问一句。
 
 | shell | 写入的位置 |
 |---|---|
@@ -158,5 +172,5 @@ LiteMiyu 和 [Miyu](https://github.com/miyu-agent/miyu) 的 shell 集成都接�
 | 提示 `无法判断当前是哪种 shell` | 用 `--shell` 写明，例如 `litemiyu shellhook install --shell bash` |
 | 提示某个文件 `不是 litemiyu 写入的文件` | fish 的那个文件已经存在、内容不是 LiteMiyu 写入的。把它移走以后再安装 |
 | `status` 提示调用的程序已经不存在 | 安装以后 `litemiyu` 被移动或删除了。重新运行 `litemiyu shellhook install` |
-| 提示 `没有可用的模型：尚未配置模型` | 还没有添加供应商和模型。运行 `litemiyu` 完成第一次启动的引导，或者在 shell 里输入 `/config` |
+| 提示 `没有可用的模型：尚未配置模型` | 已经有供应商，但是没有选默认模型（例如从 Miyu 导入的默认模型是一个模型池）。在 shell 里输入 `/model` 选择模型 |
 | 一句英文被当成命令执行了 | 第一个词恰好是一条命令的名字。换一种说法，或者在前面加一个不是命令的词 |
