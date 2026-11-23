@@ -66,16 +66,27 @@ pub(crate) use input_box::styled_line;
 /// 上面的那个框（圆角框，标题嵌在上边框、按键提示嵌在下边框，里面上下各空一行）。没有面板、面板还没有内容的是 `None`。
 ///
 /// `keys` 是下边框写不写按键提示：整个印出来就完的（`/help`、`/status`）没有键可按，不写（坑 C6：提示只写 shell 里有的键）。
+/// `dropped` 是提示里不写的那几个键（shell 里办不了的，例如 `/preset` 框里开配置界面的 `e`、`a`）。
 pub(crate) fn panel_block(
     seen: &crate::app::Seen,
     (width, most): (u16, u16),
     keys: bool,
+    dropped: &[&str],
 ) -> Option<ratatui::buffer::Buffer> {
     let inner = width.saturating_sub(4).max(1);
     let room = most.saturating_sub(2 + panel::PAD).max(1);
     let (mut chrome, lines, _) = panels::content(seen, inner, usize::from(room));
-    if !keys {
-        chrome.hint = None;
+    match &mut chrome.hint {
+        _ if !keys => chrome.hint = None,
+        // 提示是「键 做什么」一段一段用「 · 」连起来的：`dropped` 里的那几个键的段不写。
+        Some(hint) if !dropped.is_empty() => {
+            let kept: Vec<&str> = hint
+                .split(" · ")
+                .filter(|part| !dropped.contains(&part.split(' ').next().unwrap_or_default()))
+                .collect();
+            *hint = kept.join(" · ");
+        }
+        _ => {}
     }
     if lines.is_empty() {
         return None;

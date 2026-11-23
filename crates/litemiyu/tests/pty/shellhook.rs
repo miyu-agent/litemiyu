@@ -73,10 +73,24 @@ fn say_sized(
 fn say_with(
     home: &Home,
     cwd: &Path,
+    size: (u16, u16),
+    said: (&str, &str, Option<&str>),
+    more: (&[&str], &[(&str, &str)]),
+    during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
+) -> Said {
+    say_on(home, cwd, size, said, more, |keys, shown, _resize| {
+        during(keys, shown);
+    })
+}
+
+/// 同 [`say_with`]，`during` 另拿到一个改终端大小的口子（行、列）：照人拖窗口那样，程序会收到 `SIGWINCH`。
+fn say_on(
+    home: &Home,
+    cwd: &Path,
     (rows, cols): (u16, u16),
     (message, token, hook): (&str, &str, Option<&str>),
     (extra, more): (&[&str], &[(&str, &str)]),
-    during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String),
+    during: impl FnOnce(&mut dyn Write, &dyn Fn() -> String, &dyn Fn(u16, u16)),
 ) -> Said {
     let pty = native_pty_system()
         .openpty(PtySize {
@@ -131,7 +145,17 @@ fn say_with(
         }
     });
     let shown = || String::from_utf8_lossy(&seen.lock().expect("锁得上")).into_owned();
-    during(&mut writer, &shown);
+    let resize = |rows: u16, cols: u16| {
+        pty.master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("改得了大小");
+    };
+    during(&mut writer, &shown, &resize);
     let code = wait_child_in_pty(child);
     drop(writer);
     drop(pty.master);
@@ -1552,6 +1576,14 @@ fn the_effort_and_preset_pickers_work_in_the_shell() {
     for pressed in [b"a" as &'static [u8], b"\x1b[Be"] {
         let said = pick("/preset", pressed);
         let lines = clean(&said, "/preset 里按编辑、新建");
+        // 框下边的提示只写 shell 里办得了的键（坑 C6）。
+        assert!(
+            said.shown.contains("d 删除")
+                && !said.shown.contains("e 编辑")
+                && !said.shown.contains("a 新建"),
+            "{:?}",
+            said.shown
+        );
         assert!(
             lines.iter().any(|line| line.contains("/config")),
             "说明去哪里做：{lines:#?}"
@@ -1568,4 +1600,35 @@ fn the_effort_and_preset_pickers_work_in_the_shell() {
         "{lines:#?}"
     );
     assert_eq!(server.talks().len(), 1, "这几条命令都不发请求");
+}
+
+#[test]
+fn resizing_the_terminal_in_the_middle_of_an_answer_keeps_it_going() {
+    // 回答到一半拖窗口（变窄、变矮，再变宽）：照新的宽度接着画，不崩、回答印得全。排好的行数跟着宽度变，已经印进滚动
+    // 历史的行数是照原来的宽度数的；0 列 0 行的终端崩过一次（`a_terminal_that_reports_no_size_still_gets_the_answer`），
+    // 这里看大小在中途变的时候。
+    let long =
+        "这是一段比较长的话，用来在窄的终端里折成好几行，看看改了大小以后还画不画得对。".repeat(3);
+    let first = format!("前半截。{long}\n\n第二段在这里。{long}\n\n");
+    let server = serve(vec![slow(&first, "后半截到了。")]);
+    let home = Home::new(Some(&server.base_url));
+    let said = say_on(
+        &home,
+        &home.work,
+        (30, 100),
+        ("说慢一点", &terminal("resize"), None),
+        (&[], &[]),
+        |_keys, shown, resize| {
+            until("前半截印出来了", || shown().contains("第二段在这里"));
+            resize(12, 40);
+            std::thread::sleep(Duration::from_millis(300));
+            resize(8, 20);
+            std::thread::sleep(Duration::from_millis(300));
+            resize(30, 120);
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(said.shown.contains("后半截到了"), "{:?}", said.shown);
+    assert!(said.shown.contains('▣'), "收尾那一行印了：{:?}", said.shown);
+    assert_eq!(server.talks().len(), 1);
 }

@@ -208,7 +208,12 @@ impl App {
     /// 开着的面板画成一块（`ui::panel_block`）；等人选的下边框写按键提示，整个印出来就完的不写。
     pub fn panel_block_inline(&self, width: u16, most: u16) -> Option<Buffer> {
         let keys = self.panel_inline() == Some(Shown::Picked);
-        crate::ui::panel_block(&self.seen(), (width, most), keys)
+        // `/preset` 框里的 `e`、`a` 在 shell 里不办（[`App::opens_settings_inline`]）：提示里不写这两个键（坑 C6）。
+        let dropped: &[&str] = match self.boxes.panel {
+            Some(super::Panel::Presets) => &["e", "a"],
+            _ => &[],
+        };
+        crate::ui::panel_block(&self.seen(), (width, most), keys, dropped)
     }
 
     /// 这一行在 shell 里要另外办的斜杠命令是哪一种（[`Slash`]）；不是命令的、照全屏办就行的命令是 `None`。
