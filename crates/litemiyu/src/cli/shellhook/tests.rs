@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use unicode_width::UnicodeWidthStr;
 
 use super::install::{
-    Done, Elsewhere, Found, block, elsewhere, found, install_at, on_path, uninstall_at,
+    Done, Elsewhere, Found, Retired, block, elsewhere, found, has_program, install_at, on_path,
+    retire, uninstall_at,
 };
 use super::shells::{ALL, Other, Shell};
 use super::{CMD, INTERNAL, checked, hook, script};
@@ -385,4 +386,68 @@ fn the_fish_script_hands_sentences_over_without_a_flash() {
     let clear = hand.find("commandline -b -- \"\"").unwrap();
     assert!(open < clear);
     assert!(text.contains("classify --shell fish"), "多行交给程序判");
+}
+
+#[test]
+fn another_integration_is_retired_without_losing_anything_else() {
+    // 项目主人 2026-11-23 问的：旧版 Miyu 被卸掉以后它的集成还留着。停用别家的那一份：fish 的文件改名（不删），bash、zsh
+    // 启动文件里只删带记号的那一段，别的行一个字不动。
+    let dir = Dir::new("retire");
+    let conf = dir.0.join("conf.d");
+    fs::create_dir_all(&conf).unwrap();
+    let old = conf.join("miyu.fish");
+    fs::write(&old, "bind enter __miyu_accept_line\n").unwrap();
+    let other = Elsewhere {
+        path: old.clone(),
+        line: None,
+        kind: Other::OldMiyu,
+    };
+    let moved = conf.join("miyu.fish.replaced-by-litemiyu");
+    assert_eq!(retire(&other).unwrap(), Retired::Moved(moved.clone()));
+    assert!(
+        !old.exists(),
+        "原来的名字不在了（conf.d 只读 .fish 结尾的）"
+    );
+    assert_eq!(
+        fs::read_to_string(&moved).unwrap(),
+        "bind enter __miyu_accept_line\n",
+        "东西还在"
+    );
+
+    // 启动文件里旧版 0.7 的一段、Miyu 的一段都认得，各删各的；从后往前删，前面的行号不变。
+    let rc = dir.0.join("rc");
+    let text = "export A=1\n# >>> miyu bash hook >>>\nsource '/h/.local/share/miyu/hook.bash'\n# <<< miyu bash hook <<<\nalias ll='ls -l'\n\
+                # >>> miyu shellhook >>>\neval \"$(miyu shellhook script --shell bash)\"\n# <<< miyu shellhook <<<\nexport B=2\n";
+    fs::write(&rc, text).unwrap();
+    let found = elsewhere(Shell::Bash, &rc, &no_env).unwrap();
+    assert_eq!(
+        found
+            .iter()
+            .map(|other| (other.line, other.kind))
+            .collect::<Vec<_>>(),
+        [(Some(2), Other::OldMiyu), (Some(6), Other::Miyu)]
+    );
+    for other in found.iter().rev() {
+        assert_eq!(retire(other).unwrap(), Retired::Cut);
+    }
+    assert_eq!(
+        fs::read_to_string(&rc).unwrap(),
+        "export A=1\nalias ll='ls -l'\nexport B=2\n"
+    );
+    assert_eq!(elsewhere(Shell::Bash, &rc, &no_env).unwrap(), Vec::new());
+
+    // 那一段没有结尾的记号：不照猜的删，原样留着。
+    let broken = "export A=1\n# >>> miyu shellhook >>>\neval x\n";
+    fs::write(&rc, broken).unwrap();
+    let found = elsewhere(Shell::Bash, &rc, &no_env).unwrap();
+    assert!(retire(&found[0]).is_err());
+    assert_eq!(fs::read_to_string(&rc).unwrap(), broken);
+
+    // `miyu` 还在不在：照 PATH 上有没有这个文件。
+    let bin = dir.0.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    assert!(!has_program("miyu", Some(bin.as_os_str())));
+    fs::write(bin.join("miyu"), "").unwrap();
+    assert!(has_program("miyu", Some(bin.as_os_str())));
+    assert!(!has_program("miyu", None));
 }

@@ -13,8 +13,16 @@ use super::shells::{Other, Shell};
 const MARK: &str = "# >>> litemiyu shellhook >>>";
 /// bash、zsh 那一段的结尾。
 const END: &str = "# <<< litemiyu shellhook <<<";
-/// Miyu 的 shell 集成那一段的开头（它的 `shellhook/install.rs`）。
+/// Miyu 的 shell 集成那一段的开头、结尾（它的 `shellhook/install.rs`）。
 const MIYU_MARK: &str = "# >>> miyu shellhook >>>";
+const MIYU_END: &str = "# <<< miyu shellhook <<<";
+/// 旧版 Miyu 0.7.x 在 bash、zsh 的启动文件里写的那一段的开头、结尾（它的 `shell/bash.rs`、`shell/zsh.rs`）。
+const OLD_MARKS: [(&str, &str); 2] = [
+    ("# >>> miyu bash hook >>>", "# <<< miyu bash hook <<<"),
+    ("# >>> miyu zsh hook >>>", "# <<< miyu zsh hook <<<"),
+];
+/// 停用别家 fish 的那个文件时改成的名字后面加的这一截：`conf.d` 只读 `.fish` 结尾的，改了名就不起作用，东西还在。
+const RETIRED: &str = ".replaced-by-litemiyu";
 
 /// 装好了的一份是什么样。
 #[derive(Debug, PartialEq, Eq)]
@@ -206,7 +214,10 @@ pub fn elsewhere(
         let kind = if trimmed == MIYU_MARK {
             inside_miyu = true;
             Some(Other::Miyu)
-        } else if trimmed == "# <<< miyu shellhook <<<" {
+        } else if OLD_MARKS.iter().any(|(begin, _)| trimmed == *begin) {
+            inside_miyu = true;
+            Some(Other::OldMiyu)
+        } else if trimmed == MIYU_END || OLD_MARKS.iter().any(|(_, end)| trimmed == *end) {
             inside_miyu = false;
             None
         } else if !inside_miyu && looks_like_miyu(trimmed) {
@@ -223,6 +234,63 @@ pub fn elsewhere(
         }
     }
     Ok(all)
+}
+
+/// 停用了别家的一份集成以后是哪一种。
+#[derive(Debug, PartialEq, Eq)]
+pub enum Retired {
+    /// fish 的那个文件改了名（新的名字）：不再起作用，东西还在。
+    Moved(PathBuf),
+    /// bash、zsh 启动文件里的那一段删掉了。
+    Cut,
+}
+
+/// 停用别家的一份集成（`shellhook install --replace`，或者它调的 `miyu` 已经不在了、留着只会让终端出错）。fish 的是整个
+/// 文件：改名（加 [`RETIRED`]），不删。bash、zsh 的是启动文件里带记号的一段：从开头的记号删到结尾的记号。认不准的
+/// （[`Other::Maybe`]）不归这里管。
+///
+/// 同一个启动文件里有几段的，调的一方从后往前停（前面的行号才不变）。
+///
+/// # Errors
+///
+/// 读写失败；那一段找不到结尾的记号（不照猜的删）。
+pub fn retire(other: &Elsewhere) -> io::Result<Retired> {
+    let Some(line) = other.line else {
+        let mut name = other.path.clone().into_os_string();
+        name.push(RETIRED);
+        let moved = PathBuf::from(name);
+        fs::rename(&other.path, &moved)?;
+        return Ok(Retired::Moved(moved));
+    };
+    let unmarked = || io::Error::new(io::ErrorKind::InvalidData, "no end marker");
+    let text = read(&other.path)?.ok_or_else(unmarked)?;
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let begin = line.checked_sub(1).ok_or_else(unmarked)?;
+    let ends =
+        |trimmed: &str| trimmed == MIYU_END || OLD_MARKS.iter().any(|(_, end)| trimmed == *end);
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(begin + 1)
+        .find(|(_, line)| ends(line.trim()))
+        .map(|(index, _)| index)
+        .ok_or_else(unmarked)?;
+    let kept: String = lines[..begin]
+        .iter()
+        .chain(&lines[end + 1..])
+        .copied()
+        .collect();
+    write(&other.path, &kept)?;
+    Ok(Retired::Cut)
+}
+
+/// `PATH`（`path`）上有没有叫 `name` 的程序：别家的集成调的 `miyu` 还在不在。
+pub fn has_program(name: &str, path: Option<&std::ffi::OsStr>) -> bool {
+    path.is_some_and(|path| {
+        std::env::split_paths(path)
+            .filter(|dir| dir.is_absolute())
+            .any(|dir| dir.join(name).is_file())
+    })
 }
 
 /// 这一行看起来像在装 Miyu 的集成：不是注释，去掉 `litemiyu` 以后还有 `miyu`，又提到 `shell`。

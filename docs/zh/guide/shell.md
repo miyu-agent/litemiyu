@@ -160,9 +160,19 @@ litemiyu shellhook uninstall
 
 ## 和 Miyu 的 shell 集成一起使用
 
-LiteMiyu 和 [Miyu](https://github.com/miyu-agent/miyu) 的 shell 集成都接管 `Enter`。两份装在同一种 shell 里时，一句话会被发送两遍，所以 `litemiyu shellhook install` 发现 Miyu 的集成已经装在这种 shell 里时不会安装，并提示先移除哪一份。`litemiyu shellhook status` 也会指出两份同时存在的情况。
+LiteMiyu 和 [Miyu](https://github.com/miyu-agent/miyu) 的 shell 集成都接管 `Enter`。两份装在同一种 shell 里时，一句话会被发送两遍，所以同一种 shell 里只能保留一份。`litemiyu shellhook install` 发现 Miyu 的集成（包括旧版 Miyu 0.7 的）已经装在这种 shell 里时：
 
-同一种 shell 里只保留一份即可。
+- Miyu 还装在这台电脑上（`PATH` 里找得到 `miyu`）：不安装，并提示怎么处理。要换成 LiteMiyu 的集成，加上 `--replace`：
+
+    ```sh
+    litemiyu shellhook install --replace
+    ```
+
+- Miyu 已经卸载、只是它的集成还留着：留着的那一份每次按 `Enter` 都会出错，所以 LiteMiyu 会直接停用它，再安装自己的，不需要加 `--replace`。
+
+停用的做法是：fish 的那个文件改名（在原来的名字后面加上 `.replaced-by-litemiyu`，文件还在，fish 不再读取它）；bash、zsh 的启动文件里只删除 Miyu 写入的那一段。安装时会显示改了哪个文件。
+
+`litemiyu shellhook status` 也会指出两份同时存在的情况。
 
 ## 排错
 

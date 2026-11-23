@@ -20,7 +20,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use install::{Done, Elsewhere, Found};
+use install::{Done, Elsewhere, Found, Retired};
 use shells::{ALL, Other, Shell};
 
 use super::misuse;
@@ -32,6 +32,7 @@ use super::words::Words;
 const SHELL: Opt = Opt::value("shell", None, "v.shell", "o.shellhook.shell");
 /// 脚本调哪个程序。
 const PROGRAM: Opt = Opt::value("program", None, "v.file", "o.shellhook.program");
+const REPLACE: Opt = Opt::flag("replace", None, "o.shellhook.replace");
 
 /// 表里的这一条：帮助页照它列给人用的三个。
 pub const CMD: Cmd = Cmd {
@@ -48,7 +49,7 @@ pub const CMD: Cmd = Cmd {
             summary: "s.shellhook.install",
             about: "a.shellhook.install",
             extra: "",
-            opts: &[SHELL, PROGRAM],
+            opts: &[SHELL, PROGRAM, REPLACE],
             subs: &[],
             run: None,
         },
@@ -316,16 +317,40 @@ fn install(parsed: &Parsed, words: &Words) -> ExitCode {
         }
         Err(error) => return failed(words, "shellhook.unreadable", Path::new("litemiyu"), &error),
     };
-    // 别家的集成也在（坑 A7）：认得准的不装，说清在哪、怎么移除；认不准的装完提醒。
+    // 别家的集成也在（坑 A7）：两份都接管回车，一句话会被发送两遍。认得准的：写了 `--replace` 的、它调的 `miyu` 已经不在
+    // 了的（项目主人 2026-11-23 问的：旧版 Miyu 被卸掉以后它的集成还留着，终端一按回车就出错）停用它再装；`miyu` 还在、又
+    // 没写 `--replace` 的不装，说清在哪、怎么办。认不准的装完提醒。
     let others = match install::elsewhere(shell, &path, &env) {
         Ok(others) => others,
         Err(error) => return failed(words, "shellhook.unreadable", &path, &error),
     };
+    let take_over =
+        parsed.has("replace") || !install::has_program("miyu", std::env::var_os("PATH").as_deref());
     let mut refused = false;
-    for other in others.iter().filter(|other| other.kind != Other::Maybe) {
+    // 从后往前：同一个启动文件里删掉后面的一段，前面那一段的行号不变。
+    for other in others
+        .iter()
+        .rev()
+        .filter(|other| other.kind != Other::Maybe)
+    {
+        if take_over {
+            let from = other.path.display().to_string();
+            match install::retire(other) {
+                Ok(Retired::Moved(to)) => {
+                    let to = to.display().to_string();
+                    let fields = [("from", from.as_str()), ("to", to.as_str())];
+                    println!("{}", words.say("shellhook.other.moved", &fields));
+                }
+                Ok(Retired::Cut) => {
+                    println!("{}", words.say("shellhook.other.cut", &[("path", &from)]));
+                }
+                Err(error) => return failed(words, "write_failed", &other.path, &error),
+            }
+            continue;
+        }
         let fix = match other.kind {
             Other::Miyu => words.say("shellhook.other.miyu.fix", &[("shell", shell.name())]),
-            _ => words.get("shellhook.other.old.fix").to_string(),
+            _ => words.say("shellhook.other.old.fix", &[("shell", shell.name())]),
         };
         words.error(&other_line(words, other), Some(&fix));
         refused = true;

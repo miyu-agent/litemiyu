@@ -256,7 +256,7 @@ Installs, removes and checks shell integration. Once installed, you can talk to 
 
 | Command | What it does |
 |---|---|
-| `litemiyu shellhook install [--shell <name>]` | Installs into a shell. Without `--shell`, into the one you are using |
+| `litemiyu shellhook install [--shell <name>] [--replace]` | Installs into a shell. Without `--shell`, into the one you are using; `--replace` disables an installed Miyu terminal integration and uses LiteMiyu's |
 | `litemiyu shellhook uninstall [--shell <name>]` | Removes it from a shell |
 | `litemiyu shellhook status` | Shows which shells have it installed |
 | `litemiyu shellhook doctor [--shell <name>]` | Checks that shell integration can work; exits with 1 when it finds a problem |

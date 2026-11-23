@@ -160,9 +160,19 @@ This removes what installation wrote from the startup file of the shell you are 
 
 ## Together with Miyu's shell integration
 
-The shell integrations of LiteMiyu and [Miyu](https://github.com/miyu-agent/miyu) both take over `Enter`. With both installed in the same shell, a sentence would be sent twice, so `litemiyu shellhook install` does not install when it finds Miyu's integration in that shell and tells you which one to remove first. `litemiyu shellhook status` also points out when both are present.
+The shell integrations of LiteMiyu and [Miyu](https://github.com/miyu-agent/miyu) both take over `Enter`. With both installed in the same shell, a sentence would be sent twice, so only one of them can stay per shell. When `litemiyu shellhook install` finds Miyu's integration (including the one of old Miyu 0.7) in that shell:
 
-Keep only one of them per shell.
+- If Miyu is still installed on this machine (`miyu` is found on `PATH`), nothing is installed and you are told what to do. To switch to LiteMiyu's integration, add `--replace`:
+
+    ```sh
+    litemiyu shellhook install --replace
+    ```
+
+- If Miyu has been uninstalled and only its integration is left behind, that leftover fails every time you press `Enter`, so LiteMiyu disables it and installs its own without needing `--replace`.
+
+Disabling means: the fish file is renamed (`.replaced-by-litemiyu` is appended to its name; the file is kept, and fish no longer reads it); in the startup files of bash and zsh only the block Miyu wrote is removed. The installer prints which file it changed.
+
+`litemiyu shellhook status` also points out when both are present.
 
 ## Troubleshooting
 

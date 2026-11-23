@@ -1797,3 +1797,55 @@ fn leaving_the_setup_guide_without_a_provider_comes_back_quietly() {
     assert!(!said.shown.contains("没有可用的模型"), "{:?}", said.shown);
     assert!(server.talks().is_empty());
 }
+
+#[test]
+fn install_takes_over_a_dead_or_named_miyu_integration_and_refuses_a_live_one() {
+    // 项目主人 2026-11-23 问的：旧版 Miyu 被卸掉以后，它的终端集成还留在 fish 的 conf.d 里，一按回车就出错。装的时候：
+    // `miyu` 已经不在了的，停用它留下的那一份再装；`miyu` 还在的不装（两份会各发一遍），写了 `--replace` 才换。
+    let home = Home::new(None);
+    let conf = home.home.join(".config/fish/conf.d");
+    std::fs::create_dir_all(&conf).expect("建得了目录");
+    let old = conf.join("miyu.fish");
+    let ours = conf.join("litemiyu-shellhook.fish");
+    let moved = conf.join("miyu.fish.replaced-by-litemiyu");
+    let bin = home.home.join("bin");
+    std::fs::create_dir_all(&bin).expect("建得了目录");
+    let install = |extra: &[&str]| {
+        let mut args = vec!["shellhook", "install", "--shell", "fish"];
+        args.extend_from_slice(extra);
+        let mut command = home.command(&args);
+        // `PATH` 只有这一个目录：上面有没有 `miyu` 由测试定（本机的 /usr/bin 里可能真有一个）。
+        command.env("PATH", &bin);
+        crate::cli::run(&mut command, Input::Null)
+    };
+
+    // `miyu` 还在：不装，说怎么办。
+    std::fs::write(&old, "bind enter __miyu_accept_line\n").expect("写得进");
+    std::fs::write(bin.join("miyu"), "").expect("写得进");
+    let out = install(&[]);
+    assert_eq!(out.code, Some(1), "{out:?}");
+    assert!(out.stderr.contains("旧版 Miyu 的终端集成也装在"), "{out:?}");
+    assert!(out.stderr.contains("--replace"), "说了怎么换：{out:?}");
+    assert!(old.exists() && !ours.exists(), "什么都没动");
+
+    // 写了 `--replace`：旧的改名留着，装上自己的。
+    let out = install(&["--replace"]);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(out.stdout.contains("已停用 Miyu 的终端集成"), "{out:?}");
+    assert!(!old.exists() && moved.exists() && ours.exists(), "{out:?}");
+
+    // `miyu` 已经不在了：不用写 `--replace`，停用它留下的那一份再装。
+    std::fs::remove_file(&ours).expect("删得了");
+    std::fs::remove_file(&moved).expect("删得了");
+    std::fs::remove_file(bin.join("miyu")).expect("删得了");
+    std::fs::write(&old, "bind enter __miyu_accept_line\n").expect("写得进");
+    let out = install(&[]);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(out.stdout.contains("已停用 Miyu 的终端集成"), "{out:?}");
+    assert!(!old.exists() && moved.exists() && ours.exists(), "{out:?}");
+    assert_eq!(
+        std::fs::read_to_string(&moved).expect("读得了"),
+        "bind enter __miyu_accept_line\n",
+        "旧的那一份东西还在"
+    );
+}

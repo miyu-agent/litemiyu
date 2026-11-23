@@ -255,7 +255,7 @@ litemiyu ask -s 0199a2b3-0000-7000-8000-000000000001 "测试跑完了，结果�
 
 | 命令 | 作用 |
 |---|---|
-| `litemiyu shellhook install [--shell <名字>]` | 安装到 shell。不写 `--shell` 时安装到当前使用的这一种 |
+| `litemiyu shellhook install [--shell <名字>] [--replace]` | 安装到 shell。不写 `--shell` 时安装到当前使用的这一种；`--replace` 停用已经安装的 Miyu 终端集成，换成 LiteMiyu 的 |
 | `litemiyu shellhook uninstall [--shell <名字>]` | 从 shell 中移除 |
 | `litemiyu shellhook status` | 查看每种 shell 是否已安装 |
 | `litemiyu shellhook doctor [--shell <名字>]` | 逐项检查 shell 集成能不能正常使用，发现问题时退出码为 1 |
