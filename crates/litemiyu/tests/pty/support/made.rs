@@ -73,6 +73,7 @@ async fn talk(root: &Path, turns: usize) {
         tools: Arc::new(Catalog::new([echo as Arc<dyn Tool>]).expect("合写法")),
         home: Some(&home),
         configs: configs(),
+        handed: Vec::new(),
         model: None,
         no_tools: false,
         preset: None,

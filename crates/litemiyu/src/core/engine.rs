@@ -57,7 +57,7 @@ pub fn spawn(
     deliver: Deliver,
     preset: Option<String>,
     rescue: Option<crate::rescue::Prepared>,
-    cwd: Option<String>,
+    (cwd, handed): (Option<String>, Vec<lm_kernel::config::mcp::McpServer>),
 ) -> (
     mpsc::UnboundedSender<Command>,
     std::sync::mpsc::Receiver<()>,
@@ -70,6 +70,7 @@ pub fn spawn(
         .stack_size(STACK)
         .spawn(move || {
             HERE.with(|here| *here.borrow_mut() = cwd);
+            HANDED.with(|servers| *servers.borrow_mut() = handed);
             run(inbox, deliver, preset, rescue);
             drop(finished);
         });
@@ -83,6 +84,15 @@ thread_local! {
     /// 这条引擎线程的工作目录（[`super::Core::workspace`] 定的；`litemiyu acp` 的会话各有各的引擎线程、各有各的工作目录）。
     /// 没定的（全屏、`ask`、shell 集成）照进程的当前目录。
     static HERE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// 这条引擎线程开的会话另带的 MCP 服务（[`super::Core::workspace`]：编辑器带来的）。没有的（全屏、`ask`、shell 集成）
+    /// 是空的。
+    static HANDED: std::cell::RefCell<Vec<lm_kernel::config::mcp::McpServer>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// 这条引擎线程开的会话另带的 MCP 服务。只在引擎线程上调（开会话、载入会话）。
+fn handed() -> Vec<lm_kernel::config::mcp::McpServer> {
+    HANDED.with(|servers| servers.borrow().clone())
 }
 
 /// 工作目录：这条引擎线程定了的照它，没定的照进程的当前目录。只在引擎线程上调（开会话、载入会话、读项目的配置）。

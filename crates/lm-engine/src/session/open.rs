@@ -93,6 +93,7 @@ async fn created(
         tools,
         home,
         configs,
+        handed,
         model,
         no_tools,
         preset,
@@ -102,6 +103,10 @@ async fn created(
         None => family::main_family(root, models, &tools, (home, &configs, &environment)),
     };
     let lineage = family.lineage.clone();
+    // 交进来的 MCP 服务：主会话的记给它以后派的子会话，读服务以前记。
+    if lineage.is_none() {
+        family.mcp.handed.get_or_init(|| handed);
+    }
     // 预设（LM-29）：主会话照交进来的，记给它以后派的子会话；子会话照主会话记下的那一份。
     let preset = match &lineage {
         None => {
@@ -193,7 +198,12 @@ async fn created(
                 .zip(switches.as_ref())
                 .map(|((slot, configs), switches)| {
                     Arc::clone(slot.servers.get_or_init(|| {
-                        Arc::new(crate::mcp::Servers::read(&paths, switches, configs))
+                        Arc::new(crate::mcp::Servers::read(
+                            &paths,
+                            switches,
+                            configs,
+                            slot.handed(),
+                        ))
                     }))
                 });
             let catalog = match servers.as_ref().zip(switches.as_ref()) {

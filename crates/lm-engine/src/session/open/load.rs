@@ -78,6 +78,7 @@ pub(super) async fn opened(
         tools,
         home,
         configs,
+        handed,
     } = setup;
     let dir = root.session(&id);
     // 后台命令的输出写在会话目录下的 `jobs/`（施工 7-3）。
@@ -147,6 +148,10 @@ pub(super) async fn opened(
             ),
         ),
     };
+    // 交进来的 MCP 服务：主会话的记给它以后派的子会话；第一次开回合时才读服务（`actor/mcp.rs`）。
+    if lineage.is_none() {
+        family.mcp.handed.get_or_init(|| handed);
+    }
     // 会话钉着的预设（LM-29）：主会话的记给它以后派的子会话（子会话照会话表载入的，表里已经有主会话那一份，不再填）；
     // 界面直接打开的子会话记它自己快照里的。
     family

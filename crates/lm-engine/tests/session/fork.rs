@@ -581,6 +581,7 @@ async fn a_fork_without_its_parent_log_does_not_load() {
         tools: std::sync::Arc::new(base_system()),
         home: Some(&home.home),
         configs: home.configs.clone(),
+        handed: Vec::new(),
     };
     let loaded = lm_engine::session::load(setup).await;
     let Err(error) = loaded else {
@@ -649,6 +650,7 @@ async fn try_load(
             tools: std::sync::Arc::new(base_system()),
             home: Some(&home.home),
             configs: home.configs.clone(),
+            handed: Vec::new(),
         }),
     )
     .await

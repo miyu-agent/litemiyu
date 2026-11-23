@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use lm_kernel::config::mcp::McpServer;
 use lm_kernel::policy::ToolEntry;
 use tokio::sync::watch;
 
@@ -35,10 +36,15 @@ pub struct Servers {
 impl Servers {
     /// 照 `paths` 那一处的配置文件读：开关 `switches` 关掉的不要，缓存对得上的照缓存先有一份工具，密钥照 `configs` 取。读
     /// 磁盘，在阻塞线程里调。配置读不了的照没写办；写错了的那几张表不收，名字记下（[`Servers::refused`]）。
+    ///
+    /// `handed` 是调的一方另交进来的（`litemiyu acp`：编辑器带来的）：排在配置里的后面，开关照样管着，和已经有的重名的
+    /// 不要（配置里自己写的那一个算数）。它们的目录缓存照遮过的一份认（[`cache::masked`]）：缓存里本来要记起服务的命令和
+    /// 环境变量的原文，配置里写的原文本来就在磁盘上，交进来的不是（编辑器可能在环境变量、网址里带着令牌），不替它落盘。
     pub(crate) fn read(
         paths: &Paths,
         switches: &BTreeMap<String, bool>,
         configs: Configs,
+        handed: &[McpServer],
     ) -> Servers {
         let text = match crate::store::config_file::read(&paths.config_file()) {
             Ok(text) => text.map(|read| read.text).unwrap_or_default(),
@@ -50,15 +56,27 @@ impl Servers {
             .filter_map(|problem| problem.server)
             .collect();
         let hub = Arc::new(Hub::new());
+        let mut names: BTreeSet<String> = configured
+            .iter()
+            .map(|server| server.name.clone())
+            .collect();
+        let handed: Vec<(McpServer, Option<McpServer>)> = handed
+            .iter()
+            .filter(|server| names.insert(server.name.clone()))
+            .map(|server| (server.clone(), Some(cache::masked(server))))
+            .collect();
         let servers = configured
             .into_iter()
-            .filter(|server| crate::skills::switches::on(switches, &server.feature_id()))
-            .map(|server| {
+            .map(|server| (server, None))
+            .chain(handed)
+            .filter(|(server, _)| crate::skills::switches::on(switches, &server.feature_id()))
+            .map(|(server, key)| {
                 let name = server.name.clone();
                 let cache = cache::path(&paths.cache, &name);
-                let remembered = cache::read_at(&cache, &server);
+                let remembered = cache::read_at(&cache, key.as_ref().unwrap_or(&server));
                 let places = Places {
                     cache,
+                    key,
                     dir: paths.state.join("mcp").join(&name),
                     log: paths.logs().join(format!("mcp-{name}.stderr")),
                 };

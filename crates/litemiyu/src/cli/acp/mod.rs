@@ -8,6 +8,7 @@
 
 mod forms;
 mod rpc;
+mod servers;
 mod session;
 
 use std::collections::BTreeMap;
@@ -207,7 +208,15 @@ impl Server<'_> {
             Core::new(move |update| tx.send(Event::Update(index, Box::new(update))).is_ok());
         // 会话各在各的工作目录：交给它自己的引擎线程，不动进程的当前目录（一个进程里的会话可以在不同的目录）。
         let cwd = cwd.to_string_lossy().into_owned();
-        core.workspace(cwd.clone());
+        // 编辑器带来的 MCP 服务：不合规矩的那几个不接，在标准错误上说一声（只说名字和哪里不对，不带值），别的照接。
+        let (handed, refused) = servers::read(&params["mcpServers"]);
+        for (name, why) in &refused {
+            let name = super::words::clean(name);
+            let fields = [("name", name.as_str()), ("why", why.as_str())];
+            self.words
+                .warn(&self.words.say("acp.mcp_refused", &fields), None);
+        }
+        core.workspace(cwd.clone(), handed);
         Some((core, cwd))
     }
 
@@ -825,6 +834,7 @@ fn hello() -> Value {
             "loadSession": true,
             "sessionCapabilities": {"list": {}, "resume": {}, "close": {}},
             "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true},
+            "mcpCapabilities": {"http": true, "sse": false},
         },
         "agentInfo": {
             "name": "litemiyu",

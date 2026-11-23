@@ -150,3 +150,54 @@ fn an_older_cache_without_instructions_still_reads() {
     assert_eq!(remembered.tools.len(), 1);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// 交进来的服务遮过以后：写进缓存的没有命令、参数、网址、值的原文；只换了值的照旧认得，换了命令的认不上。
+#[test]
+fn a_handed_server_is_remembered_without_its_words() {
+    let dir = scratch("masked");
+    let env = |value: &str| vec![("TOKEN".to_string(), EnvValue::Text(value.to_string()))];
+    let first = server(&["/opt/secret-tool", "--key=hunter2"], env("s3cret-value"));
+    let tool = json!({"name": "fetch", "inputSchema": {"type": "object"}});
+    let path = dir.join("web.json");
+    write(
+        &path,
+        &masked(&first),
+        &Era::Legacy("2025-11-25".to_string()),
+        (&[Tool::read(&tool).unwrap()], None),
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    for word in ["secret-tool", "hunter2", "s3cret-value"] {
+        assert!(!text.contains(word), "缓存里不该有 {word}：{text}");
+    }
+    assert!(text.contains("TOKEN"), "环境变量的名字留着：{text}");
+    let same = server(&["/opt/secret-tool", "--key=hunter2"], env("another-value"));
+    assert!(
+        read_at(&path, &masked(&same)).is_some(),
+        "只换了值的照旧认得"
+    );
+    let other = server(&["/opt/secret-tool", "--key=other"], env("s3cret-value"));
+    assert!(
+        read_at(&path, &masked(&other)).is_none(),
+        "换了参数的认不上"
+    );
+    // 没遮过的同一个服务（配置里自己写的）不认这份缓存。
+    assert!(read_at(&path, &first).is_none());
+    let web = McpServer {
+        reach: Reach::Url {
+            url: "https://example.invalid/mcp?key=hunter2".to_string(),
+            bearer: Some(EnvValue::Text("s3cret-value".to_string())),
+            headers: vec![(
+                "X-Team".to_string(),
+                EnvValue::Text("blue-team".to_string()),
+            )],
+        },
+        ..first.clone()
+    };
+    let (address, names) = key(&masked(&web));
+    let written = format!("{address:?} {names:?}");
+    for word in ["example.invalid", "hunter2", "s3cret-value", "blue-team"] {
+        assert!(!written.contains(word), "{written}");
+    }
+    assert_eq!(names, ["Authorization", "X-Team"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

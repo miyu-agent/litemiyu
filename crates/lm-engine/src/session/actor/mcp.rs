@@ -50,8 +50,11 @@ impl Actor {
             None => {
                 let switches = switches.clone();
                 let (paths, configs) = (kit.paths.clone(), kit.configs.clone());
-                let read =
-                    blocking(move || Arc::new(Servers::read(&paths, &switches, configs))).await;
+                let extras = Arc::clone(&kit.extras);
+                let read = blocking(move || {
+                    Arc::new(Servers::read(&paths, &switches, configs, extras.handed()))
+                })
+                .await;
                 let servers = Arc::clone(kit.extras.servers.get_or_init(|| read));
                 servers.warm();
                 servers

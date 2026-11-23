@@ -185,6 +185,7 @@ async fn make(root: &Path, turns: usize, window: u64) {
         tools: tools(),
         home: Some(&home),
         configs: configs(),
+        handed: Vec::new(),
         model: None,
         no_tools: false,
         preset: None,
@@ -253,6 +254,7 @@ async fn loaded(root: &Path, id: &str, models: &dyn Models, configs: Configs) ->
         tools: tools(),
         home: Some(&home),
         configs,
+        handed: Vec::new(),
     })
     .await
     .expect("载入得了会话");
@@ -433,6 +435,7 @@ async fn forked(root: &Path, turns: usize) {
         tools,
         home: Some(&home),
         configs: configs(),
+        handed: Vec::new(),
         model: None,
         no_tools: false,
         preset: None,

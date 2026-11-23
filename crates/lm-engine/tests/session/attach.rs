@@ -263,6 +263,7 @@ async fn rescue_mode_sends_the_picture_and_writes_nothing() {
         tools: Arc::new(Catalog::default()),
         home: Some(&home.home),
         configs: home.configs.clone(),
+        handed: Vec::new(),
         model: None,
         no_tools: false,
         preset: None,

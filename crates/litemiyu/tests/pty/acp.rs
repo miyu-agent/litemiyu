@@ -962,3 +962,109 @@ fn a_closed_session_is_gone_from_the_connection_and_resume_reopens_it_without_re
     );
     assert_eq!(editor.close(), Some(0));
 }
+
+/// 假的 MCP 服务：一个 `/bin/sh` 脚本，在标准输入输出上一行一条。只认旧时代的握手（`server/discover` 回「没有这个方法」），
+/// 有一件只读的工具 `whoami`，回环境变量 `FAKE_TOKEN` 和自己的第一个参数。
+const FAKE_MCP: &str = r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      version=$(printf '%s\n' "$line" | sed -n 's/.*"protocolVersion":"\([^"]*\)".*/\1/p')
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}}\n' "$id" "$version" ;;
+    *'"method":"tools/list"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"whoami","description":"Says who it is.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true}}]}}\n' "$id" ;;
+    *'"method":"tools/call"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"token=%s arg=%s"}]}}\n' "$id" "$FAKE_TOKEN" "$1" ;;
+    *'"id"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$id" ;;
+  esac
+done
+"#;
+
+#[test]
+fn mcp_servers_from_the_editor_are_connected_and_their_tools_can_be_called() {
+    use std::io::Read as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    let server = serve(vec![
+        stream(calls("mcp__fake-tools__whoami", "{}")),
+        stream(says(&["它说了。"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let script = home.home.join("fake-mcp");
+    std::fs::write(&script, FAKE_MCP).expect("写得进");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("改得了");
+    let mut editor = Editor::start(&home);
+    let id = editor.request("initialize", json!({"protocolVersion": 1}));
+    let hello = editor.answer(id);
+    assert_eq!(
+        hello["result"]["agentCapabilities"]["mcpCapabilities"],
+        json!({"http": true, "sse": false}),
+        "{hello}"
+    );
+    let id = editor.request(
+        "session/new",
+        json!({"cwd": home.work.display().to_string(), "mcpServers": [
+            {
+                "name": "Fake Tools",
+                "command": script.display().to_string(),
+                "args": ["hunter2-arg"],
+                "env": [{"name": "FAKE_TOKEN", "value": "s3cret-value"}],
+            },
+            // 不支持的接法：这一个不接，会话照开，别的照接。
+            {"type": "sse", "name": "old one", "url": "https://example.invalid/sse", "headers": []},
+        ]}),
+    );
+    let made = editor.answer(id);
+    let session = made["result"]["sessionId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("有会话编号：{made}"))
+        .to_string();
+    // 头一次见的服务在后台起一次、列工具，列完写目录缓存；工具面在回合开始时换，所以等缓存出来再说话。
+    let cache = lm_engine::store::paths::Paths::under(&home.data)
+        .cache
+        .join("mcp")
+        .join("fake-tools.json");
+    let started = std::time::Instant::now();
+    while !cache.exists() {
+        assert!(
+            started.elapsed() < WAIT,
+            "等到了目录缓存 {}",
+            cache.display()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // 缓存里没有编辑器交来的原文：命令、参数、环境变量的值。
+    let remembered = std::fs::read_to_string(&cache).expect("读得出");
+    for word in ["fake-mcp", "hunter2-arg", "s3cret-value"] {
+        assert!(
+            !remembered.contains(word),
+            "缓存里不该有 {word}：{remembered}"
+        );
+    }
+    let id = editor.request("session/prompt", prompt(&session, "问问它是谁"));
+    let done = editor.answer(id);
+    assert_eq!(done["result"]["stopReason"], "end_turn", "{done}");
+    let updates = editor.updates();
+    assert_eq!(updates[0]["sessionUpdate"], "tool_call", "{updates:?}");
+    assert_eq!(updates[0]["name"], "mcp__fake-tools__whoami");
+    let talks = server.talks();
+    assert!(
+        talks[0].contains("mcp__fake-tools__whoami"),
+        "第一句话时工具已经在工具面上：{}",
+        talks[0]
+    );
+    assert!(
+        talks[1].contains("token=s3cret-value arg=hunter2-arg"),
+        "服务起的时候带着编辑器给的参数和环境变量，结果交给了模型：{}",
+        talks[1]
+    );
+    let mut errors = editor.child.stderr.take().expect("有标准错误");
+    assert_eq!(editor.close(), Some(0));
+    let mut said = String::new();
+    errors.read_to_string(&mut said).expect("读得出");
+    assert!(
+        said.contains("old one"),
+        "没接上的那一个在标准错误上说了：{said}"
+    );
+}

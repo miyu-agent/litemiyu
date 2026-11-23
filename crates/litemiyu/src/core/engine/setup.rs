@@ -219,6 +219,7 @@ impl Ready {
             tools: Arc::clone(&self.tools),
             home: self.home.as_deref(),
             configs: self.configs.clone(),
+            handed: super::handed(),
             model,
             no_tools,
             preset: chosen.pin().cloned(),
@@ -320,6 +321,7 @@ impl Ready {
             tools: Arc::clone(&self.tools),
             home: self.home.as_deref(),
             configs: self.configs.clone(),
+            handed: super::handed(),
         };
         load(setup).await.map_err(|error| {
             if let LoadError::Taken = error {

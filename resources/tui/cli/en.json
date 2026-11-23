@@ -20,6 +20,7 @@
     "acp.compacted": "The context was compacted: {before} → {after}.",
     "acp.confirm": "An operation that needs confirmation",
     "acp.empty_prompt": "the prompt is empty",
+    "acp.mcp_refused": "the MCP server \"{name}\" from the editor was not connected: {why}",
     "acp.model": "Model",
     "acp.no_model": "{message}. {hint}",
     "acp.no_session": "no such session",

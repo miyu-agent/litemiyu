@@ -114,3 +114,97 @@ pub fn answers(questions: &[Question], content: &Value) -> Vec<Response> {
         false => unanswered(questions),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use lm_kernel::kernel::event::{Choice, Question};
+    use serde_json::json;
+
+    use super::{answers, message, schema, unanswered};
+    use crate::cli::words::Words;
+
+    fn question(text: &str, labels: &[&str], multiple: bool) -> Question {
+        Question {
+            header: None,
+            question: text.to_string(),
+            options: labels
+                .iter()
+                .map(|label| Choice {
+                    label: label.to_string(),
+                    description: None,
+                    preview: None,
+                })
+                .collect(),
+            multiple,
+        }
+    }
+
+    #[test]
+    fn each_kind_of_question_gets_its_field() {
+        let words = Words::load("en");
+        let asked = [
+            question("Which one?", &["a", "b"], false),
+            question("Which ones?", &["x", "y", "z"], true),
+            question("Why?", &[], false),
+        ];
+        let form = schema(&words, &asked);
+        let fields = &form["properties"];
+        assert_eq!(fields["q1"]["type"], "string");
+        assert_eq!(fields["q1"]["enum"], json!(["a", "b"]));
+        assert_eq!(fields["q1_other"]["type"], "string");
+        assert_eq!(fields["q2"]["type"], "array");
+        assert_eq!(fields["q2"]["items"]["enum"], json!(["x", "y", "z"]));
+        assert_eq!(fields["q2_other"]["type"], "string");
+        assert_eq!(
+            fields["q3"],
+            json!({"type": "string", "title": "Why?", "description": "Why?"})
+        );
+        // 没有选项的题本来就是自己写，不另给一格。
+        assert!(fields["q3_other"].is_null());
+        // 一道题时表单上面就是那道题；几道时是一句总的。
+        assert_eq!(message(&words, &asked[..1]), "Which one?");
+        assert_eq!(message(&words, &asked), words.get("acp.questions"));
+    }
+
+    #[test]
+    fn a_filled_form_is_read_question_by_question() {
+        let asked = [
+            question("Which one?", &["a", "b"], false),
+            question("Which ones?", &["x", "y", "z"], true),
+            question("Why?", &[], false),
+        ];
+        // 多选的：不是选项的丢掉，重复的只算一次；自己写的那一格空白的不算。
+        let read = answers(
+            &asked,
+            &json!({"q1": "b", "q1_other": "  ", "q2": ["z", "nope", "x", "z", 7], "q2_other": "and w", "q3": "because"}),
+        );
+        assert_eq!(read[0].picked, ["b"]);
+        assert_eq!(read[0].text, None);
+        assert_eq!(read[1].picked, ["z", "x"]);
+        assert_eq!(read[1].text.as_deref(), Some("and w"));
+        assert!(read[2].picked.is_empty());
+        assert_eq!(read[2].text.as_deref(), Some("because"));
+        // 没填的那几道就是没答，别的照读。
+        let read = answers(&asked, &json!({"q2": "y"}));
+        assert!(read[0].picked.is_empty() && read[0].text.is_none());
+        assert_eq!(read[1].picked, ["y"]);
+        assert!(read[2].picked.is_empty() && read[2].text.is_none());
+    }
+
+    #[test]
+    fn a_form_that_does_not_fit_counts_as_unanswered() {
+        let asked = [
+            question("Which one?", &["a", "b"], false),
+            question("Why?", &[], false),
+        ];
+        // 单选的题交来两项：整组照没答交，连答对的那一道也不留（内核只收对得上的一整组）。
+        let read = answers(&asked, &json!({"q1": ["a", "b"], "q2": "because"}));
+        assert_eq!(read, unanswered(&asked));
+        // 交来的不是对象。
+        assert_eq!(answers(&asked, &json!("yes")), unanswered(&asked));
+        // 单选的选了不是选项的：这一道没答，别的照读。
+        let read = answers(&asked, &json!({"q1": "c", "q2": "because"}));
+        assert!(read[0].picked.is_empty());
+        assert_eq!(read[1].text.as_deref(), Some("because"));
+    }
+}

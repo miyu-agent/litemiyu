@@ -83,6 +83,8 @@ pub(crate) struct Extras {
     /// 主会话钉着的预设（LM-29）：造主会话、载入时填，只填一次；它派的子会话照这一份筛工具面、技能、MCP 服务
     /// （`open.rs`），头照它写会话用的是哪个预设（`Handle::preset`）。
     pub(crate) preset: std::sync::OnceLock<crate::presets::Chosen>,
+    /// 调的一方另交进来的 MCP 服务（`Create`、`Load` 的 `handed`）：造主会话、载入主会话时填，只填一次，读服务以前填。
+    pub(crate) handed: std::sync::OnceLock<Vec<lm_kernel::config::mcp::McpServer>>,
 }
 
 impl Default for Extras {
@@ -91,11 +93,17 @@ impl Default for Extras {
             servers: std::sync::OnceLock::new(),
             ignored: tokio::sync::watch::Sender::new(None),
             preset: std::sync::OnceLock::new(),
+            handed: std::sync::OnceLock::new(),
         }
     }
 }
 
 impl Extras {
+    /// 交进来的 MCP 服务：没填的是空的。
+    pub(crate) fn handed(&self) -> &[lm_kernel::config::mcp::McpServer] {
+        self.handed.get().map_or(&[], Vec::as_slice)
+    }
+
     /// 记下被忽略的那两样（技能、MCP 服务）：已经记过的不再记。
     pub(crate) fn note(&self, found: crate::checkup::Ignored) {
         self.ignored.send_if_modified(|seen| match seen {

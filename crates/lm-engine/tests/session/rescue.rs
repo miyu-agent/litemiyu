@@ -58,6 +58,7 @@ async fn rescued_with(home: &Home, script: &Script, tools: Catalog) -> Handle {
         tools: Arc::new(tools),
         home: Some(&home.home),
         configs: home.configs.clone(),
+        handed: Vec::new(),
         model: None,
         no_tools: false,
         preset: None,

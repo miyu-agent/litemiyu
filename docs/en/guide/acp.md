@@ -4,7 +4,7 @@
 
 LiteMiyu supports the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). An editor that supports this protocol can plug LiteMiyu in as an agent: you talk in the editor's agent panel, LiteMiyu works in the background, and the answers, tool calls, diffs and permission prompts are shown in the editor.
 
-> This feature is not in a released version yet (the latest release is 2026.11.1). It will ship with the next release.
+> This feature is available since version 2026.11.2.
 
 This page covers how to set it up, what you can do in the editor, and what is not supported yet.
 
@@ -57,13 +57,25 @@ Any editor that supports ACP and lets you add a custom agent works the same way:
 | Images | You can paste images into a thread. If the current model cannot see images, LiteMiyu handles them as described in [Models and providers](models.md) |
 | Context usage | LiteMiyu reports how much of the context is used and how large the window is; how it is shown is up to the editor |
 | Slash commands | `/compact` compacts the context (you may add what the summary should keep); `/clear` clears the context |
+| MCP servers configured in the editor | The editor hands its MCP servers to LiteMiyu, which uses them together with the MCP servers in its own configuration. See "MCP servers configured in the editor" below |
 
 Providers, skills, MCP servers, presets and other settings are still managed in the full-screen interface (run `litemiyu config`); threads in the editor use them.
+
+### MCP servers configured in the editor
+
+When a thread starts, the editor can hand the MCP servers in its own configuration to LiteMiyu (in Zed, `context_servers` in the settings). LiteMiyu connects to them and the AI can call their tools. You do not need to repeat them in LiteMiyu's configuration.
+
+- Two transports are supported: starting a command (stdio) and an HTTP URL. Servers that use the SSE transport are not supported.
+- A tool is named `mcp__<server>__<tool>`. The server name is derived from the name in the editor: letters become lowercase, and every character that is not a letter or a digit becomes `-`. For example, `My Tools` becomes `my-tools`.
+- If a server from the editor has the same name as one in LiteMiyu's configuration, the one in LiteMiyu's configuration is used.
+- Presets and switches apply to these servers as well. For example, a server is not used when the session's preset does not allow it.
+- The first time a server is used, LiteMiyu has to start it and fetch its tool list. If the list has not arrived when you send your first message, the server's tools become available from the next message.
+- A server's environment variables and request headers may contain secrets. LiteMiyu keeps them in memory only and does not write them to logs, caches or session records.
+- If a server could not be connected (it uses an unsupported transport, for example), LiteMiyu explains why on standard error (editors usually keep it in their own log) and the thread starts as usual.
 
 ## Not supported yet
 
 - **Command output is not shown in the card.** In Zed, the "Run Command" card shows only the command; read the AI's answer for the output.
-- **MCP servers configured in the editor are not used.** LiteMiyu only uses the MCP servers in its own configuration.
 - **The AI cannot see unsaved changes.** LiteMiyu reads and writes files on disk, not through the editor. If a file has unsaved edits in the editor, the AI reads the saved version.
 - **No automatic titles.** The editor decides a thread's title, usually your first message.
 - Other slash commands (`/model`, `/sessions`, for example) are not available in the editor; the editor's own interface covers them.

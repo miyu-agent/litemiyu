@@ -80,6 +80,8 @@ impl Hub {
 pub(crate) struct Places {
     /// 目录缓存的文件。
     pub(crate) cache: PathBuf,
+    /// 缓存照什么认这个服务：没有的照它自己的配置；调的一方交进来的服务是遮过的一份（`cache::masked`，`servers.rs`）。
+    pub(crate) key: Option<McpServer>,
     /// 工作目录。
     pub(crate) dir: PathBuf,
     /// 标准错误的文件。
@@ -295,7 +297,7 @@ impl Server {
         let instructions = client.instructions().map(str::to_string);
         cache::write(
             &self.places.cache,
-            &self.config,
+            self.places.key.as_ref().unwrap_or(&self.config),
             client.era(),
             (&listed.tools, instructions.as_deref()),
         );

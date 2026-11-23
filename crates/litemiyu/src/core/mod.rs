@@ -210,6 +210,8 @@ pub struct Core {
     rescue: std::cell::Cell<Option<crate::rescue::Prepared>>,
     /// 这条引擎线程的工作目录（[`Core::workspace`]）：没定的照进程的当前目录。
     cwd: Option<String>,
+    /// 这个引擎开的会话另带的 MCP 服务（[`Core::workspace`]）：没有的是空的。
+    handed: Vec<lm_kernel::config::mcp::McpServer>,
 }
 
 impl Core {
@@ -221,13 +223,16 @@ impl Core {
             preset: None,
             rescue: std::cell::Cell::new(None),
             cwd: None,
+            handed: Vec::new(),
         }
     }
 
-    /// 这个引擎开的会话用工作目录 `cwd`，不照进程的当前目录（`litemiyu acp`：一个进程里几个会话各在各的目录）。同
+    /// 这个引擎开的会话用工作目录 `cwd`，不照进程的当前目录（`litemiyu acp`：一个进程里几个会话各在各的目录）；另带上
+    /// `handed` 这几个 MCP 服务（编辑器在开会话时带来的，已经照配置的规矩查过），连同配置里的一起用。同
     /// [`Core::first_preset`]，起来时就要定。
-    pub fn workspace(&mut self, cwd: String) {
+    pub fn workspace(&mut self, cwd: String, handed: Vec<lm_kernel::config::mcp::McpServer>) {
         self.cwd = Some(cwd);
+        self.handed = handed;
     }
 
     /// 测试用：不起引擎线程，发的命令都丢掉（单元测试经 `App::handle` 按键时会先 `warm`：起的是真的引擎线程，万一发出去
@@ -271,7 +276,7 @@ impl Core {
                     Arc::clone(&self.deliver),
                     self.preset.clone(),
                     self.rescue.take(),
-                    self.cwd.clone(),
+                    (self.cwd.clone(), self.handed.clone()),
                 )
             })
             .0

@@ -75,6 +75,41 @@ fn key(server: &McpServer) -> (Vec<String>, Vec<String>) {
     }
 }
 
+/// 调的一方交进来的服务（`litemiyu acp`：编辑器带来的）照什么认缓存：遮过的一份。命令、网址换成它们的哈希，环境变量、
+/// 令牌、请求头只留名字，值一个都不留，所以写进缓存文件的没有交进来的原文（规范：环境变量、请求头的值是凭据，不落盘；
+/// 命令的参数、网址里也可能带着令牌）。命令、网址、名字变了的认不上缓存，重新列；只换了值的照旧认得。
+pub(super) fn masked(server: &McpServer) -> McpServer {
+    let hidden = |parts: &[String]| {
+        let hash = lm_kernel::kernel::id::ContentHash::of(parts.join("\0").as_bytes());
+        format!("handed:{}", hash.as_str())
+    };
+    let names = |pairs: &[(String, EnvValue)]| {
+        pairs
+            .iter()
+            .map(|(name, _)| (name.clone(), EnvValue::Text(String::new())))
+            .collect()
+    };
+    let reach = match &server.reach {
+        Reach::Command { command, env } => Reach::Command {
+            command: vec![hidden(command)],
+            env: names(env),
+        },
+        Reach::Url {
+            url,
+            bearer,
+            headers,
+        } => Reach::Url {
+            url: hidden(std::slice::from_ref(url)),
+            bearer: bearer.as_ref().map(|_| EnvValue::Text(String::new())),
+            headers: names(headers),
+        },
+    };
+    McpServer {
+        reach,
+        ..server.clone()
+    }
+}
+
 /// 记下服务 `server` 这一次认出来的时代 `era`、列出来的 `tools`、给模型的说明 `instructions`（施工 X-39），写在 `path`。
 pub(super) fn write(
     path: &Path,

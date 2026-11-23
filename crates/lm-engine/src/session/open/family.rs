@@ -125,6 +125,7 @@ pub(crate) async fn create_child(table: &Arc<Table>, child: Child) -> Result<Han
         tools: Arc::clone(&kit.tools),
         home: kit.home.as_deref(),
         configs: kit.configs.clone(),
+        handed: Vec::new(),
         model: child.model,
         no_tools: false,
         // 子会话的预设照主会话记在会话表里的那一份（`open.rs`）。
@@ -182,6 +183,7 @@ pub(crate) async fn load_child(
         tools: Arc::clone(&kit.tools),
         home: kit.home.as_deref(),
         configs: kit.configs.clone(),
+        handed: Vec::new(),
     };
     let family = |lineage: Option<Lineage>| match lineage {
         Some(lineage) => table.child_family(lineage),

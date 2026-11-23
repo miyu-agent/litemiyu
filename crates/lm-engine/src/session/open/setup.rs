@@ -45,6 +45,10 @@ pub struct Create<'a> {
     /// 自定义的预设（设计第六节第 14 条，LM-29，`crate::presets`）：工具面、技能、MCP 服务照这张名单筛，记进快照。没有的是
     /// 自带的两个预设（全部功能，或者 `no_tools` 的无功能）。子会话不看这一格，照主会话的。
     pub preset: Option<lm_kernel::policy::PresetPin>,
+    /// 调的一方另交进来的 MCP 服务（`litemiyu acp`：编辑器在开会话时带来的），已经照配置的规矩查过。排在配置里的后面，
+    /// 和配置里的重名的不要；开关、预设照样管着；不读、不写目录缓存（[`crate::mcp::Servers`]）。只有主会话看这一格，
+    /// 子会话用主会话那一份。
+    pub handed: Vec<lm_kernel::config::mcp::McpServer>,
 }
 
 /// 照最后一次记下的工作目录（没有的是空的）定实际在哪干活。
@@ -80,4 +84,6 @@ pub struct Load<'a> {
     pub home: Option<&'a Path>,
     /// 从哪取配置。
     pub configs: Configs,
+    /// 调的一方另交进来的 MCP 服务（同 [`Create`] 的那一格）：这一次运行里用的，日志里不记，下次载入照下次交的。
+    pub handed: Vec<lm_kernel::config::mcp::McpServer>,
 }

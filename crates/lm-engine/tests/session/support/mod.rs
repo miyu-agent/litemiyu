@@ -110,6 +110,7 @@ impl Home {
             tools: Arc::new(tools.clone()),
             home: Some(&self.home),
             configs: self.configs.clone(),
+            handed: Vec::new(),
             model: opening.model,
             no_tools: opening.no_tools,
             preset: opening.preset,
@@ -176,6 +177,7 @@ impl Home {
             tools: Arc::new(tools.clone()),
             home: Some(&self.home),
             configs: self.configs.clone(),
+            handed: Vec::new(),
         });
         within("载入", loaded).await.expect("载入得了会话")
     }

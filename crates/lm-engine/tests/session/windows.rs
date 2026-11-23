@@ -35,6 +35,7 @@ async fn try_load(home: &Home, session: &SessionId) -> Result<Handle, LoadError>
             tools: std::sync::Arc::new(base_system()),
             home: Some(&home.home),
             configs: home.configs.clone(),
+            handed: Vec::new(),
         }),
     )
     .await
@@ -131,6 +132,7 @@ async fn opening_a_session_keeps_its_place_and_talking_in_it_moves_it_up() {
             tools: std::sync::Arc::new(base_system()),
             home: Some(&home.home),
             configs: home.configs.clone(),
+            handed: Vec::new(),
         }),
     )
     .await
@@ -388,6 +390,7 @@ async fn hold(given: &str) {
         tools: std::sync::Arc::new(base_system()),
         home: Some(std::path::Path::new(fake_home)),
         configs: lm_engine::session::fixed(Default::default()),
+        handed: Vec::new(),
     })
     .await
     .expect("子进程载入得了");
