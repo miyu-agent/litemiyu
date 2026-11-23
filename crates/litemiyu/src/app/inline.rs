@@ -25,6 +25,28 @@ pub struct Laid {
     pub settled: usize,
 }
 
+/// 在 shell 里要另外办的斜杠命令。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slash {
+    /// 只在全屏界面里有意义（`/exit`、`/quit`、`/icons`）：说明一句。
+    FullscreenOnly,
+    /// 要进全屏界面办（`/config`、`/tui`、`/files`、`/jump`）。
+    Fullscreen,
+    /// `/loop`：拿着会话的进程要留下来才到得了点。
+    Loop,
+    /// `/new`：照全屏办，另留一行结果。
+    New,
+}
+
+/// 斜杠命令开的面板在 shell 里怎么办。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shown {
+    /// 整个印出来就完（`/help`、`/status`）：没有要选的。
+    Printed,
+    /// 画在提示符下面等人选（`/model`、`/effort`、`/sessions`、`/preset`）：选了、关了才完。
+    Picked,
+}
+
 /// 排的时候记着的：还在写的那一段回答，前几行已经定下来（[`settled_rows`]）。只在「写完了的那几块到哪」变了的时候重算。
 #[derive(Default)]
 pub struct Laying {
@@ -36,6 +58,24 @@ impl App {
     /// 说一句：照输入框里回车发出去的那一套办（斜杠打头的照命令办）。
     pub fn say_inline(&mut self, text: &str) {
         self.submit(Draft::plain(text));
+    }
+
+    /// 这一句是 `/edit` 放回命令行、改过的上一句（脚本带 `--redo` 交来的，坑 C4）：替换上一轮重来，照全屏「编辑上一句」
+    /// 回车的那一套办。上一轮重不了的（没有会话、最后一轮不是你说的话开的）照普通的一句发。
+    pub fn redo_inline(&mut self, text: &str) {
+        self.edit_last();
+        if !self.typing.input.editing() {
+            return self.say_inline(text);
+        }
+        self.typing.input.editor.set_draft(Draft::plain(text));
+        let draft = self.typing.input.editor.take_draft();
+        self.submit(draft);
+    }
+
+    /// 输入框正在「编辑上一句」（`/edit` 刚把上一句放进去）：交还给 shell 的命令行时要告诉脚本，下一次回车是替换上一轮
+    /// 重来。
+    pub fn editing_inline(&self) -> bool {
+        self.typing.input.editing()
     }
 
     /// 要开的旧会话还没开好、还在收补发。
@@ -107,6 +147,59 @@ impl App {
     /// 输入框里没发出去的字（粘贴块换回原文）：答完交还给 shell 的命令行。
     pub fn typed_inline(&self) -> String {
         self.typing.input.draft().expand()
+    }
+
+    /// 这个会话现在用的模型（引用的写法）；还没有会话、没说过话的是 `None`。
+    pub fn model_inline(&self) -> Option<String> {
+        self.talk.transcript.current_ref()
+    }
+
+    /// 这个会话的标题；没起名的是 `None`。
+    pub fn title_inline(&self) -> Option<String> {
+        self.talk.transcript.title.clone()
+    }
+
+    /// 开着的面板在 shell 里怎么办：没有面板的是 `None`。
+    pub fn panel_inline(&self) -> Option<Shown> {
+        match self.boxes.panel.as_ref()? {
+            super::Panel::Help { .. } | super::Panel::Status { .. } => Some(Shown::Printed),
+            _ => Some(Shown::Picked),
+        }
+    }
+
+    /// 面板开着的时候按的一个键：归面板（同全屏）。
+    pub fn panel_key_inline(&mut self, key: crossterm::event::KeyEvent) {
+        let _ignored = self.key(key);
+    }
+
+    /// 关上面板。
+    pub fn close_panel_inline(&mut self) {
+        self.boxes.panel = None;
+    }
+
+    /// 开着的面板画成一块（`ui::panel_block`）；等人选的下边框写按键提示，整个印出来就完的不写。
+    pub fn panel_block_inline(&self, width: u16, most: u16) -> Option<Buffer> {
+        let keys = self.panel_inline() == Some(Shown::Picked);
+        crate::ui::panel_block(&self.seen(), (width, most), keys)
+    }
+
+    /// 这一行在 shell 里要另外办的斜杠命令是哪一种（[`Slash`]）；不是命令的、照全屏办就行的命令是 `None`。
+    pub fn slash_inline(&self, text: &str) -> Option<Slash> {
+        use crate::commands::{Line as Typed, Run};
+        // `/tui` 只有 shell 里有：用全屏界面打开这个终端的会话。
+        if text.trim() == "/tui" {
+            return Some(Slash::Fullscreen);
+        }
+        let Typed::Command(spec, _) = self.config.commands.read(text) else {
+            return None;
+        };
+        match spec.run {
+            Run::Quit | Run::Icons => Some(Slash::FullscreenOnly),
+            Run::Config | Run::Files | Run::Jump => Some(Slash::Fullscreen),
+            Run::Loop => Some(Slash::Loop),
+            Run::New => Some(Slash::New),
+            _ => None,
+        }
     }
 
     /// 有抽屉开着。

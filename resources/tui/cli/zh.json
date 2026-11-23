@@ -182,6 +182,13 @@
     "o.shellhook.leftover": "回答期间输入的文字写入这个文件",
     "o.shellhook.redo": "这一句是修改后重发的上一句",
     "shellhook.say_failed": "无法把这句话交给 AI：{reason}",
-    "shellhook.not_remembered": "无法记录这个终端的会话，下一句会新开会话：{reason}"
+    "shellhook.not_remembered": "无法记录这个终端的会话，下一句会新开会话：{reason}",
+    "shellhook.slash.fullscreen_only": "{name} 只在全屏界面里有用，在 shell 里不起作用",
+    "shellhook.slash.fullscreen": "{name} 要在全屏界面里使用：先用 /tui 打开全屏界面",
+    "shellhook.slash.loop": "{name} 现在只能在全屏界面里使用：运行 litemiyu 打开全屏界面",
+    "shellhook.slash.new": "已开始新会话，这个终端的下一句话开始新的对话",
+    "shellhook.slash.restored": "已恢复刚才撤回的回合",
+    "shellhook.slash.model": "模型已换成 {name}",
+    "shellhook.slash.session": "已切换到会话「{title}」，这个终端接着说的话在它里面"
   }
 }

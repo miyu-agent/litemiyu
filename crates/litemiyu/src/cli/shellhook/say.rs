@@ -113,7 +113,28 @@ fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
     let said = wait(&mut control);
     drop(raw);
     let status = child.wait()?;
-    Ok(match said? {
+    let (said, fullscreen) = said?;
+    // 后台的进程没说退出码就没了：它可能把光标藏着。没有脚本在后面亮光标的时候（直接敲这条命令）也亮回来。
+    if said.is_none()
+        && let Some(mut tty) = tty.as_ref()
+    {
+        use std::io::Write;
+        drop(tty.write_all(b"\x1b[?25h"));
+    }
+    // 后台的进程请这一头起全屏界面（`/config`、`/tui`）：它已经退出、放掉了会话，终端也还原了。全屏界面直接用终端。
+    if let (Some(args), Some(tty)) = (fullscreen, &tty) {
+        let status = Command::new(std::env::current_exe()?)
+            .args(args)
+            .stdin(Stdio::from(tty.try_clone()?))
+            .stdout(Stdio::from(tty.try_clone()?))
+            .stderr(Stdio::from(tty.try_clone()?))
+            .status()?;
+        return Ok(status
+            .code()
+            .and_then(|code| u8::try_from(code).ok())
+            .unwrap_or(1));
+    }
+    Ok(match said {
         Some(code) => code,
         // 后台的进程没说退出码就没了（崩了、被杀了）：照它自己的退出码，没有的算出错。
         None => status
@@ -124,11 +145,12 @@ fn hand_over(parsed: &Parsed, text: &str) -> io::Result<u8> {
     })
 }
 
-/// 等后台的进程说退出码（没说就关了控制线的是 `None`）。这期间被要求结束的（`SIGTERM`、`SIGHUP`：终端关了）当场回来：
+/// 等后台的进程说退出码（没说就关了控制线的是 `None`），和它要不要这一头接着起全屏界面。这期间被要求结束的（`SIGTERM`、`SIGHUP`：终端关了）当场回来：
 /// 调的一方还原终端就走，后台的进程看到控制线关了自己收场。
-fn wait(control: &mut UnixStream) -> io::Result<Option<u8>> {
+fn wait(control: &mut UnixStream) -> io::Result<(Option<u8>, Option<Vec<String>>)> {
     let signals = Signals::listen();
     let mut code = None;
+    let mut fullscreen = None;
     loop {
         let (told, ended) = {
             let mut fds = vec![PollFd::new(&*control, PollFlags::IN)];
@@ -145,14 +167,15 @@ fn wait(control: &mut UnixStream) -> io::Result<Option<u8>> {
             (ready(0), ready(1))
         };
         if ended {
-            return Ok(Some(128 + 15));
+            return Ok((Some(128 + 15), None));
         }
         if told {
             match ToFront::read(control) {
                 Ok(Some(ToFront::Exit(exit))) => code = Some(exit),
+                Ok(Some(ToFront::Fullscreen(args))) => fullscreen = Some(args),
                 // 办完了：下一格就是退出码。
                 Ok(Some(ToFront::Done)) => {}
-                Ok(None) | Err(_) => return Ok(code),
+                Ok(None) | Err(_) => return Ok((code, fullscreen)),
             }
         }
     }

@@ -182,6 +182,13 @@
     "o.shellhook.leftover": "Write what was typed during the answer to this file",
     "o.shellhook.redo": "This sentence is the previous one, edited and resent",
     "shellhook.say_failed": "Cannot hand this sentence to the AI: {reason}",
-    "shellhook.not_remembered": "Cannot record this terminal's session, so the next sentence starts a new one: {reason}"
+    "shellhook.not_remembered": "Cannot record this terminal's session, so the next sentence starts a new one: {reason}",
+    "shellhook.slash.fullscreen_only": "{name} only makes sense in the full-screen interface; it does nothing in the shell",
+    "shellhook.slash.fullscreen": "{name} needs the full-screen interface: open it with /tui first",
+    "shellhook.slash.loop": "{name} works only in the full-screen interface for now: run litemiyu to open it",
+    "shellhook.slash.new": "Started a new session; the next sentence in this terminal begins a new conversation",
+    "shellhook.slash.restored": "Restored the turns that were just undone",
+    "shellhook.slash.model": "Model switched to {name}",
+    "shellhook.slash.session": "Switched to session “{title}”; what you say next in this terminal goes there"
   }
 }

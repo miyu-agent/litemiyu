@@ -38,9 +38,6 @@ pub fn run(parsed: &Parsed) -> ExitCode {
 
 /// 说那一句，跟到了结，交回退出码。
 fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u8 {
-    if let Err(code) = model_ready(words) {
-        return code;
-    }
     let paths = match Paths::locate(&Env::current()) {
         Ok(paths) => paths,
         Err(error) => {
@@ -55,7 +52,20 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
     let session = terminal
         .as_ref()
         .and_then(|terminal| terminal.session(&paths));
-    let outcome = match super::inline::run(&text, session, control) {
+    // `/config`、`/tui`：请前台在这个进程退出以后起全屏界面（这个进程不开会话，全屏界面打开它时不会撞上）。
+    if let Some(args) = super::inline::fullscreen(&text, session.as_deref()) {
+        let mut control = control;
+        drop(ToFront::Fullscreen(args).write(&mut control));
+        drop(ToFront::Done.write(&mut control));
+        return 0;
+    }
+    // 说话要先有能用的模型；斜杠命令不用（`/help`、`/status` 没配模型也看得了）。
+    if !text.trim_start().starts_with('/')
+        && let Err(code) = model_ready(words)
+    {
+        return code;
+    }
+    let outcome = match super::inline::run((&text, parsed.has("redo")), session, control, words) {
         Ok(outcome) => outcome,
         Err(why) => {
             let reason = words.why(&why);
@@ -66,9 +76,12 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
             return 1;
         }
     };
-    if let (Some(terminal), Some(id)) = (&terminal, &outcome.session)
-        && let Err(error) = terminal.remember(id)
-    {
+    let kept = match (&terminal, &outcome.session) {
+        (Some(terminal), super::inline::Session::Is(id)) => terminal.remember(id),
+        (Some(terminal), super::inline::Session::None) => terminal.forget(),
+        _ => Ok(()),
+    };
+    if let Err(error) = kept {
         let reason = words.why(&error.to_string());
         words.warn(
             &words.say("shellhook.not_remembered", &[("reason", &reason)]),
@@ -83,6 +96,10 @@ fn said(parsed: &Parsed, text: String, words: &Words, control: &UnixStream) -> u
         && !outcome.typed.is_empty()
     {
         drop(std::fs::write(path, &outcome.typed));
+        // `/edit` 放回来的上一句：旁边放一个标记，脚本记下「在编辑」，下一次回车带 `--redo`（坑 C4）。
+        if outcome.editing {
+            drop(std::fs::write(format!("{path}.redo"), ""));
+        }
     }
     outcome.code
 }

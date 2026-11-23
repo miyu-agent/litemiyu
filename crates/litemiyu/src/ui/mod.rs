@@ -61,6 +61,32 @@ pub use timeline::{release_on_fold, tail_rows};
 // shell 集成借的几样（`app/inline.rs`）：抽屉排几行、画抽屉，输入框里的一行字。
 pub(crate) use drawer::{draw as draw_drawer, rows as drawer_rows};
 pub(crate) use input_box::styled_line;
+
+/// shell 集成：开着的面板（`/model`、`/sessions` 这些）画成一块，`width` 宽、连边框最高 `most` 行；样子同全屏贴在输入框
+/// 上面的那个框（圆角框，标题嵌在上边框、按键提示嵌在下边框，里面上下各空一行）。没有面板、面板还没有内容的是 `None`。
+///
+/// `keys` 是下边框写不写按键提示：整个印出来就完的（`/help`、`/status`）没有键可按，不写（坑 C6：提示只写 shell 里有的键）。
+pub(crate) fn panel_block(
+    seen: &crate::app::Seen,
+    (width, most): (u16, u16),
+    keys: bool,
+) -> Option<ratatui::buffer::Buffer> {
+    let inner = width.saturating_sub(4).max(1);
+    let room = most.saturating_sub(2 + panel::PAD).max(1);
+    let (mut chrome, lines, _) = panels::content(seen, inner, usize::from(room));
+    if !keys {
+        chrome.hint = None;
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let rows = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let outer = Rect::new(0, 0, width, rows.saturating_add(2 + panel::PAD));
+    let mut buffer = ratatui::buffer::Buffer::empty(outer);
+    let text = Rect::new(2, 1 + panel::PAD / 2, inner, rows);
+    panel::draw(&mut Frame::new(&mut buffer), outer, text, chrome, lines);
+    Some(buffer)
+}
 mod shell_rows;
 pub(crate) mod sidebar;
 mod undo_rows;

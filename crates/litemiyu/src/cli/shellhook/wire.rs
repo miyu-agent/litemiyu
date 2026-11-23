@@ -4,7 +4,8 @@
 //! 套接字，一格一格的小消息。一格是一个字节的种类，后面跟着定长或者带长度的内容：
 //!
 //! - 前台 → 后台：`M` 加四字节长度（小端）加那句话。
-//! - 后台 → 前台：`D`，这一句办完了、它不再读终端；`X` 加一字节，退出码。
+//! - 后台 → 前台：`D`，这一句办完了、它不再读终端；`X` 加一字节，退出码；`F` 加四字节长度加几个参数（中间用 0 字节
+//!   隔开），请前台在它退出以后用这几个参数起全屏界面（`/config`、`/tui`：后台的进程不拿终端当全屏用，也要先放掉会话）。
 
 use std::io::{self, Read, Write};
 
@@ -16,12 +17,14 @@ pub enum ToWorker {
 }
 
 /// 后台交给前台的一格。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToFront {
     /// 这一句办完了：后台的进程不再读终端。
     Done,
     /// 退出码。
     Exit(u8),
+    /// 它退出以后请前台用这几个参数起全屏界面。
+    Fullscreen(Vec<String>),
 }
 
 /// 一句话最长多少字节（同 `ask` 从标准输入读的上限的量级）：长度是对面写的，不照它无限地要内存。
@@ -81,10 +84,20 @@ impl ToFront {
     /// # Errors
     ///
     /// 写不进（对面不在了）。
-    pub fn write(self, to: &mut impl Write) -> io::Result<()> {
+    pub fn write(&self, to: &mut impl Write) -> io::Result<()> {
         match self {
             ToFront::Done => to.write_all(b"D"),
-            ToFront::Exit(code) => to.write_all(&[b'X', code]),
+            ToFront::Exit(code) => to.write_all(&[b'X', *code]),
+            ToFront::Fullscreen(args) => {
+                let joined = args.join("\0");
+                let length = u32::try_from(joined.len())
+                    .ok()
+                    .filter(|length| *length <= LONGEST)
+                    .ok_or(io::ErrorKind::InvalidInput)?;
+                to.write_all(b"F")?;
+                to.write_all(&length.to_le_bytes())?;
+                to.write_all(joined.as_bytes())
+            }
         }
     }
 
@@ -103,6 +116,22 @@ impl ToFront {
                 let mut code = [0u8; 1];
                 from.read_exact(&mut code)?;
                 Ok(Some(ToFront::Exit(code[0])))
+            }
+            b'F' => {
+                let mut length = [0u8; 4];
+                from.read_exact(&mut length)?;
+                let length = u32::from_le_bytes(length);
+                if length > LONGEST {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                let mut joined = vec![0u8; length as usize];
+                from.read_exact(&mut joined)?;
+                let joined = String::from_utf8(joined).map_err(|_| io::ErrorKind::InvalidData)?;
+                let args = match joined.is_empty() {
+                    true => Vec::new(),
+                    false => joined.split('\0').map(str::to_string).collect(),
+                };
+                Ok(Some(ToFront::Fullscreen(args)))
             }
             _ => Err(io::ErrorKind::InvalidData.into()),
         }

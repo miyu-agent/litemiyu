@@ -46,6 +46,18 @@ impl Terminal {
         }
         fs::write(&self.path, format!("{id}\n"))
     }
+
+    /// 这个终端没有会话了（`/new`）：下一句新开。本来就没记的不算错。
+    ///
+    /// # Errors
+    ///
+    /// 删不掉。
+    pub fn forget(&self) -> io::Result<()> {
+        match fs::remove_file(&self.path) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// 记录都在哪。

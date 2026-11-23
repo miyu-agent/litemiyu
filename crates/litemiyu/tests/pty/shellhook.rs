@@ -172,7 +172,13 @@ fn a_sentence_is_answered_in_the_terminal_and_each_terminal_keeps_its_own_sessio
 
     let said = say(&home, &home.work, ("第一句", &one, None), &[], nothing);
     assert_eq!(said.code, Some(0), "{:?}", said.shown);
-    assert!(said.shown.contains("第一句的回答"), "{:?}", said.shown);
+    // 看终端画完以后留在屏幕上的，不看中间哪一帧出现过：回答留着（新开的会话刚拿到编号时不许把它当成「换了会话」
+    // 而不印，2026-11-23 出过）。
+    let lines = said.lines(120);
+    assert!(
+        lines.iter().any(|line| line.contains("第一句的回答")),
+        "{lines:#?}"
+    );
     assert_eq!(home.sessions().len(), 1);
     assert!(
         !records.join("999999999-gone").exists(),
@@ -185,7 +191,15 @@ fn a_sentence_is_answered_in_the_terminal_and_each_terminal_keeps_its_own_sessio
     std::fs::create_dir_all(&elsewhere).expect("建得了");
     let said = say(&home, &elsewhere, ("第二句", &one, None), &[], nothing);
     assert_eq!(said.code, Some(0), "{:?}", said.shown);
-    assert!(said.shown.contains("第二句的回答"), "{:?}", said.shown);
+    let lines = said.lines(120);
+    assert!(
+        lines.iter().any(|line| line.contains("第二句的回答")),
+        "{lines:#?}"
+    );
+    assert!(
+        !lines.iter().any(|line| line.contains("第一句的回答")),
+        "接着说的时候不把以前的几轮再印一遍：{lines:#?}"
+    );
     assert_eq!(home.sessions().len(), 1, "没有另开会话");
     let talks = server.talks();
     assert_eq!(talks.len(), 2);
@@ -521,4 +535,348 @@ fn a_long_answer_scrolls_into_the_history_whole_and_only_once() {
     }
     assert!(at("说完了。") > last, "{all}");
     assert!(lines.len() > 40, "比终端高得多：{} 行", lines.len());
+}
+
+/// 配了两个模型的一家（`m1` 是默认的聊天模型）；按键模式写明方向键：模型的框里打字就搜。
+fn two_models(base_url: &str) -> String {
+    format!(
+        "[providers.fake]\ndriver = \"openai-chat\"\nbase_url = \"{base_url}\"\nkey = {{ env = \"LITEMIYU_TEST_KEY\" }}\n\n\
+         [providers.fake.models.\"m1\"]\nwindow = 128000\n\n[providers.fake.models.\"m2\"]\nwindow = 64000\n\n[models]\nchat = \"fake/m1\"\n\n\
+         [tui]\nkeys = \"arrows\"\n"
+    )
+}
+
+/// 第 `at` 次对话请求发给哪个模型。
+fn model_of(talks: &[String], at: usize) -> String {
+    let json: serde_json::Value = serde_json::from_str(&talks[at]).expect("请求体是 JSON");
+    json["model"].as_str().unwrap_or_default().to_string()
+}
+
+#[test]
+fn slash_commands_that_only_show_something_print_it_and_come_back() {
+    // 坑 C1：斜杠命令在 shell 里原地办，不进全屏。`/help`、`/status` 没有要选的：印一个框就回到提示符，不发请求。
+    let server = serve(vec![]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("slash");
+    let said = say(&home, &home.work, ("/help", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(120);
+    let all = lines.join("\n");
+    assert!(
+        all.contains('╭') && all.contains('╰'),
+        "印了一个框：\n{all}"
+    );
+    assert!(all.contains("/model") && all.contains("/new"), "{all}");
+    // 坑 C6：印出来就完的框没有键可按，下边框不写「Esc 关闭」这类按键提示（只是一条线）。
+    let plain_bottom = |lines: &[String]| {
+        lines
+            .iter()
+            .filter(|line| line.starts_with('╰'))
+            .all(|line| line.chars().all(|c| matches!(c, '╰' | '─' | '╯')))
+    };
+    assert!(plain_bottom(&lines), "{all}");
+    let said = say(&home, &home.work, ("/status", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(120);
+    let all = lines.join("\n");
+    assert!(all.contains('╭') && all.contains("工作目录"), "{all}");
+    assert!(plain_bottom(&lines), "{all}");
+    // 只在全屏界面里有用的说明一句；`/files`、`/jump` 要在全屏界面里看，告诉人先用 `/tui` 打开；`/loop` 还没有做。
+    for (command, says) in [
+        ("/exit", "在 shell 里不起作用"),
+        ("/quit", "在 shell 里不起作用"),
+        ("/files", "/tui"),
+        ("/jump", "/tui"),
+        ("/loop 5m 看看", "全屏界面"),
+    ] {
+        let said = say(&home, &home.work, (command, &token, None), &[], nothing);
+        assert_eq!(said.code, Some(0), "{command}：{:?}", said.shown);
+        let all = said.lines(120).join("\n");
+        assert!(all.contains(says), "{command}：{all}");
+    }
+    // 坑 P13：命令表里没有的写「命令不存在」，不说成要先说一句。
+    let said = say(
+        &home,
+        &home.work,
+        ("/sesssions", &token, None),
+        &[],
+        nothing,
+    );
+    assert!(said.shown.contains("命令不存在"), "{:?}", said.shown);
+    assert!(server.requests().is_empty(), "都没有发请求");
+    assert!(home.sessions().is_empty(), "也没有开会话（坑 P12）");
+}
+
+#[test]
+fn slash_model_opens_a_box_under_the_prompt_and_the_pick_sticks() {
+    // 项目主人列的必需品：斜杠命令。`/model` 在提示符下面弹出和全屏一样的框，选了以后这个终端接着说的话用新的模型。
+    let server = serve(vec![
+        stream(says(&["第一句的回答"])),
+        stream(says(&["第二句的回答"])),
+    ]);
+    let home = Home::new(None);
+    home.write_config(&two_models(&server.base_url));
+    let token = terminal("model");
+    let said = say(&home, &home.work, ("头一句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(
+        &home,
+        &home.work,
+        ("/model", &token, None),
+        &[],
+        |keys, shown| {
+            until("框开了，两个模型都在", || {
+                let shown = shown();
+                shown.contains("模型") && shown.contains("m1") && shown.contains("m2")
+            });
+            // 打字筛成只剩 m2，回车换过去。
+            keys.write_all(b"m2").expect("敲得进");
+            keys.flush().expect("敲得进");
+            until("筛成一个", || shown().contains("1 个"));
+            keys.write_all(b"\r").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(120);
+    assert!(
+        !lines.iter().any(|line| line.contains('╭')),
+        "选完以后框不留在屏幕上：{lines:#?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("模型已换成") && line.contains("m2")),
+        "留一行结果（坑 C3）：{lines:#?}"
+    );
+    // 框开着、没有写字的地方的时候光标藏着（不然它停在框的右下角）。
+    assert!(said.shown.contains("\u{1b}[?25l"), "{:?}", said.shown);
+    let said = say(&home, &home.work, ("第二句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let talks = server.talks();
+    assert_eq!(talks.len(), 2);
+    assert_eq!(model_of(&talks, 0), "m1");
+    assert_eq!(model_of(&talks, 1), "m2", "换过以后用新的模型");
+    assert_eq!(home.sessions().len(), 1, "还是这个终端的那个会话");
+}
+
+#[test]
+fn slash_new_makes_the_next_sentence_start_a_fresh_session() {
+    let server = serve(vec![
+        stream(says(&["第一句的回答"])),
+        stream(says(&["新会话的回答"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("new");
+    let said = say(&home, &home.work, ("头一句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(&home, &home.work, ("/new", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.lines(120).join("\n").contains("已开始新会话"),
+        "留一行结果（坑 C3）：{:?}",
+        said.shown
+    );
+    let said = say(&home, &home.work, ("另起一句", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert_eq!(home.sessions().len(), 2, "新开了一个会话");
+    assert!(
+        !server.talks()[1].contains("头一句话"),
+        "新会话里没有以前的话"
+    );
+}
+
+#[test]
+fn undo_puts_the_sentence_back_and_restore_brings_the_turn_back() {
+    let server = serve(vec![stream(says(&["第一句的回答"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("undo");
+    let leftover = home.work.join("leftover");
+    let left = ["--leftover", &*leftover.to_string_lossy()];
+    let said = say(&home, &home.work, ("头一句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    // `/undo`：留一行说明，撤回的那一句回到命令行（同全屏放回输入框）。
+    let said = say(&home, &home.work, ("/undo", &token, None), &left, nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.lines(120).join("\n").contains("已撤回"),
+        "{:?}",
+        said.shown
+    );
+    assert_eq!(
+        std::fs::read_to_string(&leftover).expect("写了"),
+        "头一句话"
+    );
+    assert!(
+        !home.work.join("leftover.redo").exists(),
+        "撤回的不是「在编辑」"
+    );
+    std::fs::remove_file(&leftover).expect("删得掉");
+    // `/restore`：留一行结果。
+    let said = say(
+        &home,
+        &home.work,
+        ("/restore", &token, None),
+        &left,
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.lines(120).join("\n").contains("已恢复"),
+        "{:?}",
+        said.shown
+    );
+    assert!(!leftover.exists());
+    assert_eq!(server.talks().len(), 1, "这几条都不发请求");
+    assert_eq!(home.sessions().len(), 1);
+}
+
+#[test]
+fn edit_puts_the_last_sentence_back_and_the_edited_one_replaces_the_turn() {
+    // 坑 C4：`/edit` 把上一句放回命令行并记下「在编辑」（旁边的 `.redo` 标记），改完回车（脚本带 `--redo`）是替换上一轮
+    // 重来，不是新的一轮。
+    let server = serve(vec![
+        stream(says(&["第一句的回答"])),
+        stream(says(&["改过以后的回答"])),
+    ]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("edit");
+    let leftover = home.work.join("leftover");
+    let left = ["--leftover", &*leftover.to_string_lossy()];
+    let said = say(
+        &home,
+        &home.work,
+        ("写错了的一句", &token, None),
+        &[],
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(&home, &home.work, ("/edit", &token, None), &left, nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert_eq!(
+        std::fs::read_to_string(&leftover).expect("写了"),
+        "写错了的一句"
+    );
+    assert!(home.work.join("leftover.redo").exists(), "记下了在编辑");
+    let said = say(
+        &home,
+        &home.work,
+        ("改对了的一句", &token, None),
+        &["--redo"],
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let lines = said.lines(120);
+    assert!(
+        lines.iter().any(|line| line.contains("改过以后的回答")),
+        "{lines:#?}"
+    );
+    let talks = server.talks();
+    assert_eq!(talks.len(), 2);
+    assert!(
+        talks[1].contains("改对了的一句")
+            && !talks[1].contains("写错了的一句")
+            && !talks[1].contains("第一句的回答"),
+        "上一轮被替换了，不是接在后面：{}",
+        talks[1]
+    );
+    assert_eq!(home.sessions().len(), 1);
+}
+
+#[test]
+fn rename_export_and_clear_work_from_the_shell_and_leave_a_line() {
+    let server = serve(vec![stream(says(&["第一句的回答"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("direct");
+    let said = say(&home, &home.work, ("头一句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    for (command, says) in [
+        ("/rename 起个名字", "起个名字"),
+        ("/export", "已导出"),
+        ("/clear", "已清空"),
+    ] {
+        let said = say(&home, &home.work, (command, &token, None), &[], nothing);
+        assert_eq!(said.code, Some(0), "{command}：{:?}", said.shown);
+        let all = said.lines(120).join("\n");
+        assert!(all.contains(says), "{command}：{all}");
+    }
+    let exported: Vec<_> = std::fs::read_dir(&home.work)
+        .expect("读得了")
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".md"))
+        .collect();
+    assert_eq!(exported.len(), 1, "导出了一份");
+    assert_eq!(server.talks().len(), 1, "这几条都不发请求");
+    assert_eq!(home.sessions().len(), 1);
+}
+
+#[test]
+fn slash_tui_and_config_open_the_full_screen_interface_and_come_back() {
+    // 坑 C1 的另一半：只有 `/config`、`/tui` 进全屏。`/tui` 用全屏界面打开这个终端的会话，退出以后回到提示符。
+    let server = serve(vec![stream(says(&["第一句的回答"]))]);
+    let home = Home::new(Some(&server.base_url));
+    let token = terminal("tui");
+    let said = say(&home, &home.work, ("头一句话", &token, None), &[], nothing);
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    let said = say(
+        &home,
+        &home.work,
+        ("/tui", &token, None),
+        &[],
+        |keys, shown| {
+            // 进了全屏（备用屏）、这个终端的会话打开了：第一轮的话在里面。
+            until("全屏界面打开了这个终端的会话", || {
+                let shown = shown();
+                shown.contains("\u{1b}[?1049h") && shown.contains("第一句的回答")
+            });
+            keys.write_all(b"/exit\r").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(said.shown.contains("\u{1b}[?1049l"), "退出了全屏");
+    assert_eq!(home.sessions().len(), 1, "打开的是原来那个会话");
+    // `/config`：进配置界面，主菜单按 Esc 退出、回到提示符。没配模型的时候也进得去。
+    let fresh = Home::new(None);
+    let said = say(
+        &fresh,
+        &fresh.work,
+        ("/config", &terminal("config"), None),
+        &[],
+        |keys, shown| {
+            until("进了全屏", || shown().contains("\u{1b}[?1049h"));
+            std::thread::sleep(Duration::from_millis(600));
+            keys.write_all(b"\x1b").expect("敲得进");
+            keys.flush().expect("敲得进");
+        },
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(said.shown.contains("\u{1b}[?1049l"), "退出了全屏");
+    // `/help` 没配模型也看得了；说话才要模型。
+    let said = say(
+        &fresh,
+        &fresh.work,
+        ("/help", &terminal("nomodel"), None),
+        &[],
+        nothing,
+    );
+    assert_eq!(said.code, Some(0), "{:?}", said.shown);
+    assert!(
+        said.lines(120).join("\n").contains("/model"),
+        "{:?}",
+        said.shown
+    );
+    let said = say(
+        &fresh,
+        &fresh.work,
+        ("说一句", &terminal("nomodel"), None),
+        &[],
+        nothing,
+    );
+    assert_eq!(
+        said.code,
+        Some(5),
+        "没有模型的退出码同 ask：{:?}",
+        said.shown
+    );
 }

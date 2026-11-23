@@ -33,6 +33,9 @@ pub struct Painter<W: Write> {
     at: u16,
     /// 写字的那一格亮着光标。
     shown: bool,
+    /// 藏过光标了：没有写字的那一格的时候光标藏着（不然它停在活动区最后一行的末尾，框的右下角露一个光标块）。收工时
+    /// 不亮回来，由脚本画提示符时亮（坑 S12）。
+    hidden: bool,
     /// 上一帧的活动区和光标：一样的不再画（重画时光标要回上面去，输入法的候选框跟着跳）。
     last: Option<(Vec<String>, Caret)>,
 }
@@ -45,6 +48,7 @@ impl<W: Write> Painter<W> {
             live: 0,
             at: 0,
             shown: false,
+            hidden: false,
             last: None,
         }
     }
@@ -91,10 +95,12 @@ impl<W: Write> Painter<W> {
                 self.at = row;
                 bytes.push_str(SHOW);
                 self.shown = true;
+                self.hidden = false;
             }
-            _ if self.shown => {
+            _ if self.shown || !self.hidden => {
                 bytes.push_str(HIDE);
                 self.shown = false;
+                self.hidden = true;
             }
             _ => {}
         }
@@ -114,6 +120,7 @@ impl<W: Write> Painter<W> {
         self.last = None;
         if std::mem::take(&mut self.shown) {
             bytes.push_str(HIDE);
+            self.hidden = true;
         }
         bytes.push_str("\x1b[0m");
         bytes.push_str(END);

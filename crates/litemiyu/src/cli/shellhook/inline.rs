@@ -19,7 +19,8 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use super::paint::{self, Painter};
 use crate::app::App;
-use crate::app::inline::Laying;
+use crate::app::inline::{Laying, Shown, Slash};
+use crate::cli::words::Words;
 use crate::config::Config;
 use crate::core::{Command, Core, Update};
 use crate::incoming::Incoming;
@@ -45,14 +46,38 @@ enum In {
     Gone,
 }
 
+/// 办完以后这个终端的会话。
+pub enum Session {
+    /// 是这一个（说了话的、`/sessions` 换过去的）。
+    Is(String),
+    /// 没有了（`/new`、还没说过话）：下一句新开。
+    None,
+    /// 照原来记的（要接着说的会话没开成，什么都没变）。
+    Kept,
+}
+
 /// 跑完的样子。
 pub struct Outcome {
     /// 退出码。
     pub code: u8,
-    /// 说话的那个会话（开好了的）。
-    pub session: Option<String>,
+    /// 这个终端的会话。
+    pub session: Session,
     /// 答话的时候提前敲的字，没交出去的。
     pub typed: String,
+    /// 那些字是 `/edit` 放回来的上一句：脚本记下「在编辑」，下一次回车带 `--redo`。
+    pub editing: bool,
+}
+
+/// 那一句要进全屏界面办的：交回起全屏界面用的参数（`/config` 是配置界面；`/tui` 是打开这个终端的会话 `session`，还没
+/// 说过话的就是新的）。别的是 `None`。只看命令的名字：全屏界面自己起来、自己读配置，这里不起引擎、不开会话。
+pub fn fullscreen(text: &str, session: Option<&str>) -> Option<Vec<String>> {
+    let words = |list: &[&str]| Some(list.iter().map(|word| (*word).to_string()).collect());
+    match (text.trim(), session) {
+        ("/config", _) => words(&["config"]),
+        ("/tui", Some(id)) => words(&["-s", id]),
+        ("/tui", None) => words(&[]),
+        _ => None,
+    }
 }
 
 /// 说 `text`；`session` 是这个终端接着说的会话，没有的新开。`control` 是和前台连着的控制线：它关了就收场。
@@ -60,7 +85,12 @@ pub struct Outcome {
 /// # Errors
 ///
 /// 配置读不懂（编进程序的字表坏了、`config.toml` 读不了）：原话。
-pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<Outcome, String> {
+pub fn run(
+    (text, redo): (&str, bool),
+    session: Option<String>,
+    control: &UnixStream,
+    words: &Words,
+) -> Result<Outcome, String> {
     let env = |name: &str| std::env::var(name).ok();
     let table = crate::language::LanguageTable::builtin()?;
     let startup = crate::settings::startup::read(&table, env);
@@ -98,18 +128,27 @@ pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<
         laying: Laying::default(),
         printed: 0,
         asked: None,
+        unopened: false,
+        results: Vec::new(),
+        restored: false,
+        restored_line: words.get("shellhook.slash.restored").to_string(),
         interrupted: false,
         failed: false,
         gone: false,
     };
-    let code = run.go(text, session);
+    let code = run.go((text, redo), session, words);
     // 先让读按键的线程停下（它停好了才回，读走的按键都收下了，坑 P8），之后敲的字留在终端的缓冲里给 shell。
     if let Some(reader) = &reader {
         reader.pause();
     }
     run.drain_keys();
-    let session = run.app.talk.transcript.session.clone();
+    let session = match (run.unopened, run.app.talk.transcript.session.clone()) {
+        (true, _) => Session::Kept,
+        (false, Some(id)) => Session::Is(id),
+        (false, None) => Session::None,
+    };
     let typed = run.app.typed_inline();
+    let editing = run.app.editing_inline();
     // 有计划地停下会话：日志落好盘、放锁，后台命令整组停掉。
     let until = Instant::now() + CLOSING;
     run.app.finish_writes(until);
@@ -118,6 +157,7 @@ pub fn run(text: &str, session: Option<String>, control: &UnixStream) -> Result<
         code,
         session,
         typed,
+        editing,
     })
 }
 
@@ -154,6 +194,14 @@ struct Run {
     printed: usize,
     /// 抽屉从什么时候开着的（没开着的是 `None`）：开满 [`DRAWER_SETTLE`] 才画。
     asked: Option<Instant>,
+    /// 要接着说的会话没开成。
+    unopened: bool,
+    /// 斜杠命令办完要留的那几行结果（换了模型、换了会话）。
+    results: Vec<String>,
+    /// 恢复了刚撤销的那几轮（`/restore`）：收尾时留一行结果。
+    restored: bool,
+    /// 那一行写什么。
+    restored_line: String,
     /// 按过 `Ctrl+C`。
     interrupted: bool,
     /// 没发出去、被拒、引擎起不来。
@@ -164,7 +212,21 @@ struct Run {
 
 impl Run {
     /// 开会话、说那一句、跟到了结、印完，交回退出码。
-    fn go(&mut self, text: &str, session: Option<String>) -> u8 {
+    fn go(&mut self, (text, redo): (&str, bool), session: Option<String>, words: &Words) -> u8 {
+        // 在 shell 里要另外办的几条斜杠命令。进全屏的那几条、`/loop` 还没有做，先照实说。
+        let slash = self.app.slash_inline(text);
+        let name = text.split_whitespace().next().unwrap_or_default();
+        let told = match slash {
+            Some(Slash::FullscreenOnly) => Some("shellhook.slash.fullscreen_only"),
+            // `/config`、`/tui` 在开这一份状态以前就交给前台去起全屏界面了（[`fullscreen`]），到这里的是 `/files`、`/jump`。
+            Some(Slash::Fullscreen) => Some("shellhook.slash.fullscreen"),
+            Some(Slash::Loop) => Some("shellhook.slash.loop"),
+            Some(Slash::New) | None => None,
+        };
+        if let Some(key) = told {
+            self.unopened = true;
+            return self.told(&words.say(key, &[("name", name)]));
+        }
         if let Some(id) = session {
             self.app.open_session(id.clone());
             while self.app.opening_inline() && !self.stopping() {
@@ -173,19 +235,73 @@ impl Run {
             if self.app.talk.transcript.session.as_deref() != Some(id.as_str()) {
                 // 开不了（开在别的窗口里、读不了）：原因在提示里。
                 self.failed = true;
+                self.unopened = true;
                 return self.end();
             }
             // 人在两句话之间可能 `cd` 过：这一句在 shell 现在的目录里办。
             self.app.link.core.send(Command::Workspace);
         }
         let before = self.app.last_entry_inline();
-        self.app.say_inline(text);
+        match redo {
+            true => self.app.redo_inline(text),
+            false => self.app.say_inline(text),
+        }
+        if slash == Some(Slash::New) {
+            return self.told(words.get("shellhook.slash.new"));
+        }
         let said = Some(self.app.last_entry_inline()).filter(|id| *id > before);
         self.mark = (before, said);
+        let mut current = self.app.talk.transcript.session.clone();
+        let mut opened = false;
+        // 斜杠命令换了模型、换了会话的，收工时各留一行结果（坑 C3）。
+        let model = self.app.model_inline();
+        let command = said.is_none();
         loop {
-            self.paint(false);
-            if self.stopping() || self.settled() {
+            // 换了会话（`/sessions` 里选的另一个、`/new`）：补发来的旧正文不印，从这以后的才印。新开的会话刚拿到编号
+            // （原来没有、也没有在开旧会话）不算换：它的正文就是这一句的回答。
+            opened |= self.app.opening_inline();
+            if !self.app.opening_inline() && self.app.talk.transcript.session != current {
+                let fresh = current.is_none() && !opened;
+                current = self.app.talk.transcript.session.clone();
+                opened = false;
+                if !fresh {
+                    self.mark = (self.app.last_entry_inline(), None);
+                    self.printed = 0;
+                    if let Some(id) = &current {
+                        let title = self.app.title_inline().unwrap_or_else(|| id.clone());
+                        self.results
+                            .push(words.say("shellhook.slash.session", &[("title", &title)]));
+                    }
+                }
+            }
+            // 开着的旧会话还在收补发：不画（同全屏）。
+            if !self.app.opening_inline() {
+                self.paint(false);
+            }
+            if self.stopping() {
                 return self.end();
+            }
+            match self.app.panel_inline() {
+                // 没有要选的：等引擎把这个面板要的交齐，整个印出来就完。
+                Some(Shown::Printed) => {
+                    self.barrier();
+                    self.print_panel();
+                    self.app.close_panel_inline();
+                    continue;
+                }
+                Some(Shown::Picked) => {}
+                None if !self.app.opening_inline() && self.settled() => {
+                    if let Some(now) = self
+                        .app
+                        .model_inline()
+                        .filter(|now| command && current.is_some() && model.as_ref() != Some(now))
+                    {
+                        self.results
+                            .push(words.say("shellhook.slash.model", &[("name", &now)]));
+                    }
+                    return self.end();
+                }
+                None => {}
             }
             // 最晚到界面自己要醒的时刻（转圈、用时跳秒），和刚开的抽屉该画出来的时刻。
             let drawer = self
@@ -202,6 +318,15 @@ impl Run {
         }
     }
 
+    /// 留一行结果就收工（斜杠命令办完了、办不了的说明）：前面空一行，和提示符那一行隔开。
+    fn told(&mut self, line: &str) -> u8 {
+        drop(
+            self.painter
+                .frame(&[String::new(), format!("  {line}")], &[], None),
+        );
+        self.end()
+    }
+
     /// 不等了：前台不在了，或者按了第二下 `Ctrl+C`（坑 P15）。
     fn stopping(&self) -> bool {
         self.gone
@@ -212,15 +337,34 @@ impl Run {
         if !self.app.settled_inline() {
             return false;
         }
+        if !self.barrier() {
+            return true;
+        }
+        self.app.settled_inline() && self.app.panel_inline().is_none() && !self.app.opening_inline()
+    }
+
+    /// 过一道栅栏：等引擎把交给它的都办完，它这期间交来的都办掉。交回等到了没有（引擎不在了、太久的是假）。
+    fn barrier(&mut self) -> bool {
         let (done, back) = mpsc::channel();
         self.app.link.core.send(Command::Barrier(done));
         if back.recv_timeout(BARRIER).is_err() {
-            return true;
+            return false;
         }
         while let Ok(message) = self.rx.try_recv() {
             self.take(message);
         }
-        self.app.settled_inline()
+        true
+    }
+
+    /// 没有要选的面板（`/help`、`/status`）：整个印进滚动历史，前面空一行。
+    fn print_panel(&mut self) {
+        let (width, _) = self.size;
+        let Some(mut drawn) = self.app.panel_block_inline(width, u16::MAX) else {
+            return;
+        };
+        let mut lines = vec![String::new()];
+        lines.extend(paint::rendered(&mut drawn));
+        drop(self.painter.frame(&lines, &[], None));
     }
 
     /// 等下一样（最晚到 `until`），连同已经到了的一起办；一帧的间隔里再到的也收齐（一段段推来的字不是每段画一帧）。
@@ -266,6 +410,7 @@ impl Run {
                     update,
                     Update::Unsent { .. } | Update::Failed(_) | Update::Refused { .. }
                 );
+                self.restored |= matches!(update, Update::Undone { restore: true, .. });
                 self.app.core(update);
             }
             In::App(Incoming::Color(which, rgb)) => self.app.terminal_color(which, rgb),
@@ -284,12 +429,17 @@ impl Run {
             _ => return,
         };
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
-        if control && key.code == KeyCode::Char('c') {
+        if control && key.code == KeyCode::Char('c') && self.app.panel_inline().is_some() {
+            // 面板开着：`Ctrl+C` 只是不选了，关上它。
+            self.app.close_panel_inline();
+        } else if control && key.code == KeyCode::Char('c') {
             let again = std::mem::replace(&mut self.interrupted, true);
             match again || !self.app.answering_inline() {
                 true => self.gone = true,
                 false => self.app.interrupt_inline(),
             }
+        } else if self.app.panel_inline().is_some() {
+            self.app.panel_key_inline(key);
         } else if self.app.asking_inline() {
             // 抽屉还没画出来（刚开、没满那一小会儿）的时候按的键不算：人还没看到问的是什么。
             if self
@@ -361,6 +511,15 @@ impl Run {
             lines.extend(paint::rendered(&mut drawn));
             return (lines, at.map(|(row, column)| (row + 1, column)));
         }
+        // 斜杠命令开的面板：画在这里等人选。
+        if self.app.panel_inline() == Some(Shown::Picked) {
+            let Some(mut drawn) = self.app.panel_block_inline(width, (height / 2).max(8)) else {
+                return (Vec::new(), None);
+            };
+            let mut lines = vec![String::new()];
+            lines.extend(paint::rendered(&mut drawn));
+            return (lines, None);
+        }
         // 抽屉刚开、还没画出来：输入那几行也不画（按键这时归抽屉）。
         if self.app.asking_inline() || !self.app.answering_inline() {
             return (Vec::new(), None);
@@ -374,6 +533,15 @@ impl Run {
     /// 收尾：没印过的照最后的样子印出来，擦掉活动区，界面要说的那一句提示印在后面；交回退出码。
     fn end(&mut self) -> u8 {
         self.paint(true);
+        if self.restored {
+            let line = std::mem::take(&mut self.restored_line);
+            self.results.push(line);
+        }
+        if !self.results.is_empty() {
+            let mut lines = vec![String::new()];
+            lines.extend(self.results.drain(..).map(|line| format!("  {line}")));
+            drop(self.painter.frame(&lines, &[], None));
+        }
         drop(self.painter.finish());
         if let Some(notice) = &self.app.typing.notice {
             let mut out = io::stdout().lock();
