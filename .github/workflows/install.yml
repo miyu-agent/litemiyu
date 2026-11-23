@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       # 提示印中文的那一套：macOS 自带的 sh（bash 3.2）对变量后面紧跟中文字符的写法会出错，要在这里暴露。
-      LANG: zh_CN.UTF-8
+      LC_ALL: zh_CN.UTF-8
     steps:
       - uses: actions/checkout@v7
       - name: 安装
@@ -40,8 +40,9 @@ jobs:
           litemiyu --version
           latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/miyu-agent/litemiyu/releases/latest)
           test "$(litemiyu --version)" = "litemiyu ${latest##*/v}"
-          sh install.sh | tee again.txt
-          grep -qE '最新版|already' again.txt
+          # Homebrew 的一路「已经装了」这句是 brew 自己印在标准错误里的。
+          sh install.sh 2>&1 | tee again.txt
+          grep -qE '最新版|already installed' again.txt
       - name: 装 shell 集成
         run: |
           export PATH="$HOME/.local/bin:$PATH"
