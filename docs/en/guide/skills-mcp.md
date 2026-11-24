@@ -130,6 +130,10 @@ After you edit the configuration file, new sessions pick up the new server.
 
 Tools are given to the AI under the name `mcp__<server>__<tool>`, for example `mcp__echo__echo`.
 
+### MCP servers handed over by an editor
+
+When you use LiteMiyu inside an editor (see [Using LiteMiyu in an editor](acp.md)), the editor hands the MCP servers in its own configuration to LiteMiyu; they do not need to be written in the configuration file above. They are used only in threads in the editor and do not appear on the `MCP` page described below. If one has the same name as a server in the configuration file, the one in the configuration file is used. For how names are converted and which transports are supported, see "MCP servers configured in the editor" on that page.
+
 ### Viewing and switching
 
 Once MCP servers are configured, the main menu of `/config` gains an `MCP` page:

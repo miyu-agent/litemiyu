@@ -49,7 +49,7 @@ Run `/sessions` (or `/resume`) to open the session list:
 
 ![The session list](../../assets/tui-sessions.webp)
 
-The first row is the current session; below it the rest are grouped under `Recent`, `Past 7 days`, `Past 30 days` and `Older`. Each row shows the session's title, short ID, state and when it was last used. Untitled sessions show their first message; sessions created by `litemiyu ask` are listed here as well.
+The first row is the current session; below it the rest are grouped under `Recent`, `Past 7 days`, `Past 30 days` and `Older`. Each row shows the session's title, short ID, state and when it was last used. Untitled sessions show their first message; sessions created by `litemiyu ask` and threads started in an editor (see [Using LiteMiyu in an editor](acp.md)) are listed here as well.
 
 There are four states: `Not open`, `Running in the background` (in the background of this window), `Open in another window` and `Busy in another window`.
 

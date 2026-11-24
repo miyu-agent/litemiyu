@@ -4,7 +4,7 @@
 
 这一页是 `litemiyu` 这个程序在命令行上的全部用法：怎么启动全屏界面，以及怎么用 `ask` 在脚本和管道里调用它。
 
-LiteMiyu 的命令行很小，只有五样：
+LiteMiyu 的命令行很小，只有六样：
 
 | 命令 | 作用 |
 |---|---|
@@ -263,6 +263,12 @@ litemiyu ask -s 0199a2b3-0000-7000-8000-000000000001 "测试跑完了，结果�
 
 `--shell` 后面可以写 `fish`、`bash`、`zsh`。
 
+## litemiyu acp
+
+供支持 Agent Client Protocol（ACP）的编辑器调用。编辑器启动这条命令，通过标准输入、标准输出和它对话；编辑器关闭连接时它自动退出。这条命令除了 `--help` 没有别的选项，不需要手动运行。配置方法和在编辑器里能做的事见[在编辑器里使用](acp.md)。
+
+> 这条命令从 2026.11.2 起提供。
+
 ## litemiyu help
 
 ```bash
@@ -270,6 +276,7 @@ litemiyu help           # 和 litemiyu --help 一样
 litemiyu help ask       # ask 的说明，和 litemiyu ask --help 一样
 litemiyu help config
 litemiyu help shellhook
+litemiyu help acp
 ```
 
 ## 环境变量

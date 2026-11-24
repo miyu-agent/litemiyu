@@ -4,7 +4,7 @@
 
 This page covers everything the `litemiyu` program does on the command line: starting the full-screen interface, and calling it from scripts and pipes with `ask`.
 
-LiteMiyu's command line is small. There are five things:
+LiteMiyu's command line is small. There are six things:
 
 | Command | What it does |
 |---|---|
@@ -264,12 +264,20 @@ Installs, removes and checks shell integration. Once installed, you can talk to 
 
 `--shell` takes `fish`, `bash` or `zsh`.
 
+## litemiyu acp
+
+Serves an editor that supports the Agent Client Protocol (ACP). The editor starts this command and talks to it over standard input and output; the command exits when the editor closes the connection. It has no options other than `--help` and is not meant to be run by hand. See [Using LiteMiyu in an editor](acp.md) for how to set it up and what you can do in the editor.
+
+> This command is available since version 2026.11.2.
+
 ## litemiyu help
 
 ```bash
 litemiyu help           # same as litemiyu --help
 litemiyu help ask       # help for ask, same as litemiyu ask --help
 litemiyu help config
+litemiyu help shellhook
+litemiyu help acp
 ```
 
 ## Environment variables
