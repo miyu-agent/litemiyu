@@ -24,7 +24,7 @@ impl Engine {
         if self.rescued() {
             return;
         }
-        let listed = tokio::task::spawn_blocking(|| {
+        let listed = lm_engine::spawn_blocking(|| {
             Paths::locate(&Env::current())
                 .map(|paths| presets::read(&paths))
                 .unwrap_or_default()
@@ -64,7 +64,7 @@ impl Engine {
         if self.rescued() {
             return;
         }
-        let written = tokio::task::spawn_blocking(move || {
+        let written = lm_engine::spawn_blocking(move || {
             let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
             let edits = edits(&presets::read(&paths));
             Settings::new(paths, |name| std::env::var(name).ok())

@@ -208,7 +208,7 @@ impl ModelData {
     /// 发行配置 panic = abort（`docs/00-设计.md` 第九节），发出去的程序崩了整个进程退出）。
     pub async fn held(self: &Arc<Self>) -> Holding {
         let data = Arc::clone(self);
-        tokio::task::spawn_blocking(move || data.hold())
+        crate::spawn_blocking(move || data.hold())
             .await
             .unwrap_or_else(|_| Holding::default())
     }

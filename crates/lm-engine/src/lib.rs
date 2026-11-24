@@ -32,5 +32,6 @@ pub mod settings;
 pub mod skills;
 pub mod store;
 mod threads;
+pub use threads::spawn_blocking;
 pub mod tool;
 pub mod zone;

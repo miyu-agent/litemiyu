@@ -236,8 +236,8 @@ fn the_skills_and_mcp_pages_list_what_is_there() {
         std::fs::create_dir_all(skills.join(name)).expect("建得了目录");
         std::fs::write(skills.join(name).join("SKILL.md"), head).expect("写得进");
     }
-    // 同 Miyu 的先后：通用、外观、供应商和模型、隐私与安全、MCP、技能、高级；预设页（LM-29）排在 MCP 前面。
-    for _ in 0..6 {
+    // 先后：通用、外观、供应商和模型、预设、MCP、技能（Miyu 的「隐私与安全」「高级」两页并进了通用页，2026-11-24）。
+    for _ in 0..5 {
         session.press(DOWN);
     }
     session.press_enter();
@@ -253,12 +253,20 @@ fn the_skills_and_mcp_pages_list_what_is_there() {
     session.shot("mcp");
     session.press(ESC);
     session.wait_for("Enter 进入", "回主菜单");
-    // 「高级」排最后。
-    session.press(DOWN);
-    session.press(DOWN);
+    // 「隐私与安全」「高级」的那几项在通用页的最后两组。
+    for _ in 0..4 {
+        session.press(UP);
+    }
     session.press_enter();
-    session.wait_for("◉ 高级", "高级页");
-    session.shot("settings-advanced");
+    session.wait_for("◉ 通用", "通用页");
+    session.wait_for("确认超时", "权限那一组在通用页里");
+    session.wait_for("预压缩", "压缩那一组在通用页里");
+    let screen = session.screen();
+    assert!(
+        !screen.contains("隐私与安全") && !screen.contains("高级"),
+        "没有那两页了：{screen}"
+    );
+    session.shot("settings-general-end");
     session.press(ESC);
     session.wait_for("Enter 进入", "回主菜单");
     session.press(ESC);

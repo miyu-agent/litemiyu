@@ -2,8 +2,8 @@
 //! 照界面语言。
 //!
 //! - 项照登记的清单（`crate::configured::items`），先后照登记的；一项是什么类型、在哪一组、用什么控件都照它的声明。
-//! - 页照 Miyu 终端主菜单的先后（通用、外观、供应商和模型、高级）：照 Miyu 声明的页和组合过来（[`PAGES`]），一项的 `ui.page`
-//!   换成这里的页。
+//! - 页照 Miyu 终端主菜单的先后（通用、外观、供应商和模型）：照 Miyu 声明的页和组合过来（[`PAGES`]），一项的 `ui.page`
+//!   换成这里的页。Miyu 的「隐私与安全」「高级」两页在这里只有一项、两项，并进了通用页（2026-11-24 项目主人定）。
 //! - 登记了、界面不画的照 [`HIDDEN`]：引擎里还没人读的不许出现在界面上，每一项写着为什么。
 //! - 字编进程序（`resources/settings/<语言>.json`，中、英两份），只读选中的那一种。
 
@@ -13,7 +13,7 @@ use lm_kernel::config::{ConfigWords, Item, ItemWords};
 /// 一页。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Page {
-    /// 编号：`general`、`appearance`、`models`、`advanced`。
+    /// 编号：`general`、`appearance`、`models`。
     pub id: &'static str,
     /// 名字。
     pub name: String,
@@ -57,12 +57,14 @@ impl Schema {
     }
 }
 
-/// 页的先后（照 Miyu 终端的主菜单：通用、外观、供应商和模型、隐私与安全、高级）。
-pub const ORDER: [&str; 5] = ["general", "appearance", "models", "privacy", "advanced"];
+/// 页的先后（照 Miyu 终端的主菜单：通用、外观、供应商和模型）。Miyu 另有「隐私与安全」「高级」两页：LiteMiyu 这两页
+/// 一共只有三项，单列一页太空，并进通用页（2026-11-24 项目主人定），画在通用页的最后两组。
+pub const ORDER: [&str; 3] = ["general", "appearance", "models"];
 
 /// Miyu 声明的页、组 → 这里的页；组照这个先后画（通用的几组照 Miyu 终端通用页的先后：显示、新会话、会话、终端界面、
-/// 时间线、交互）。（LM-2 砍了 `web_search`，`net` 的搜索来源、几家的 key 两组跟着拿掉。）Miyu「隐私与安全」页的「权限」组照 Miyu 画在那一页（配置 六 B1）：
-/// LiteMiyu 只有确认超时一项（Miyu 施工 CD-1）；那一页依赖权限级别、沙盒的项（受保护的命令、私密目录）LiteMiyu 没有，不搬。
+/// 时间线、交互）。（LM-2 砍了 `web_search`，`net` 的搜索来源、几家的 key 两组跟着拿掉。）Miyu「隐私与安全」页的「权限」组
+/// LiteMiyu 只有确认超时一项（Miyu 施工 CD-1；那一页依赖权限级别、沙盒的项 LiteMiyu 没有，不搬），Miyu「高级」页的「压缩」组
+/// 只有两项：这两组画在通用页的最后（2026-11-24 项目主人定）。
 pub const PAGES: [(&str, &str, &str); 12] = [
     ("general", "display", "general"),
     ("general", "new_session", "general"),
@@ -74,8 +76,8 @@ pub const PAGES: [(&str, &str, &str); 12] = [
     ("appearance", "icons", "appearance"),
     ("models", "providers", "models"),
     ("models", "uses", "models"),
-    ("advanced", "compaction", "advanced"),
-    ("privacy", "permission", "privacy"),
+    ("privacy", "permission", "general"),
+    ("advanced", "compaction", "general"),
 ];
 
 /// 登记了、界面不画的项，和为什么。

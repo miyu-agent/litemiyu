@@ -72,7 +72,7 @@ The confirmation shows the title the AI gave this step, the `Dangerous command` 
 
 Pressing `Esc` twice also refuses.
 
-The top of the confirmation shows a countdown such as `Auto-deny in 4:58`. The default wait is 300 seconds; with no answer by then, the command is refused, so the AI does not hang forever while you are away. Change the wait under `Confirmation timeout` on the `Privacy & security` page of `/config`; `0` waits forever.
+The top of the confirmation shows a countdown such as `Auto-deny in 4:58`. The default wait is 300 seconds; with no answer by then, the command is refused, so the AI does not hang forever while you are away. Change the wait under `Confirmation timeout` on the `General` page of `/config`; `0` waits forever.
 
 ## Actions that are always blocked
 

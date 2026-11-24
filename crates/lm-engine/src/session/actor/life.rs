@@ -23,7 +23,7 @@ pub(crate) fn spawn(actor: Actor, first: Vec<Action>) {
         // 停了的会话不算在跑：核心不为它不肯空闲退出。
         busy.store(false, Ordering::Release);
         // 会话放下的还给系统（23 F3，施工 V-2 再补）：大会话关掉以后 glibc 不还，核心的内存一直不回落。
-        drop(tokio::task::spawn_blocking(lm_heap::trim));
+        drop(crate::spawn_blocking(lm_heap::trim));
     });
 }
 

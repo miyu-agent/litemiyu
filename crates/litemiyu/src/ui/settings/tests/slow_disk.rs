@@ -17,15 +17,15 @@ use crate::settings::{Outcome, Row, Settings, Tone, View};
 /// 一步最多等多久（界面线程卡在写盘上时这一步等不到）。
 const STEP: Duration = Duration::from_secs(10);
 
-/// 进「高级」，光标停在「预压缩」那个开关上。
+/// 进「通用」，光标停在「预压缩」那个开关上。
 fn to_prepare(settings: &mut Settings) {
     let entry = (0..settings.entries())
         .find(|&e| {
             settings
                 .page_of(e)
-                .is_some_and(|p| settings.schema.pages[p].id == "advanced")
+                .is_some_and(|p| settings.schema.pages[p].id == "general")
         })
-        .expect("有高级页");
+        .expect("有通用页");
     let rows = settings.rows(entry);
     let at = rows
         .iter()

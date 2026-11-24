@@ -199,7 +199,7 @@ impl Replay {
             return self.complete();
         }
         let replay = Arc::clone(self);
-        match tokio::task::spawn_blocking(move || replay.complete()).await {
+        match crate::spawn_blocking(move || replay.complete()).await {
             Ok(hash) => hash,
             // 阻塞线程里崩了：照算到的收尾。
             Err(_) => settle(&mut self.hash.lock().unwrap_or_else(PoisonError::into_inner)),
@@ -377,7 +377,8 @@ impl Stream {
         let (sender, receiver) = mpsc::channel(1);
         let replay = Arc::clone(&self.replay);
         let blob = blob.clone();
-        runtime.spawn_blocking(move || {
+        // 装箱再交出去：tokio 给任务生成的外壳照结果类型只留一份（瘦身线 SS-1，见 `crate::spawn_blocking`）。
+        let work: Box<dyn FnOnce() + Send> = Box::new(move || {
             let read = replay.read_blob(&blob, size, 0, |_, chunk| {
                 sender.blocking_send(Ok(chunk)).is_ok()
             });
@@ -386,6 +387,7 @@ impl Stream {
                 drop(sender.blocking_send(Err(error)));
             }
         });
+        runtime.spawn_blocking(work);
         Ok(receiver)
     }
 }

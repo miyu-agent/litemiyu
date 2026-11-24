@@ -284,20 +284,14 @@ impl Settings {
             .collect()
     }
 
-    /// 主菜单的先后（Miyu：通用、外观、供应商和模型、……、MCP、高级）：照清单画的几页，技能页、MCP 页插在「高级」前面
-    /// （MCP 在前；技能页是 LiteMiyu 多的，挨着 MCP）。配置里没有 MCP 服务的不列 MCP（Miyu `pages/mod.rs` 的 `entries`：
+    /// 主菜单的先后：照清单画的几页（通用、外观、供应商和模型），后面是预设页、MCP 页、技能页（MCP 在前；技能页是
+    /// LiteMiyu 多的，挨着 MCP）。Miyu 的这几页插在「高级」前面；LiteMiyu 的「高级」并进了通用页（2026-11-24 项目主人定），
+    /// 所以排在最后。配置里没有 MCP 服务的不列 MCP（Miyu `pages/mod.rs` 的 `entries`：
     /// `servers()` 是空的不列）；加服务在配置界面外头（手改配置，同 Miyu 装包、手改；LM-3 删了
     /// 命令行的 `mcp add`），加了再打开就列。
     pub fn layout(&self) -> Vec<Entry> {
         let mut layout: Vec<Entry> = self.menu().into_iter().map(Entry::Page).collect();
-        let advanced = layout
-            .iter()
-            .position(
-                |entry| matches!(entry, Entry::Page(p) if self.schema.pages[*p].id == ADVANCED),
-            )
-            .unwrap_or(layout.len());
-        layout.splice(
-            advanced..advanced,
+        layout.extend(
             EXTRAS
                 .iter()
                 .filter(|&&extra| extra != Extra::Mcp || self.mcp)
@@ -930,9 +924,6 @@ impl Settings {
 
 /// 「供应商和模型」那一页的编号。
 const MODELS: &str = "models";
-
-/// 「高级」那一页的编号：技能页、MCP 页插在它前面。
-const ADVANCED: &str = "advanced";
 
 /// 主菜单的一项。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

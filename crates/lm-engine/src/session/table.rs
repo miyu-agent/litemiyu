@@ -354,7 +354,7 @@ impl SessionPort for Port {
         Box::pin(async move {
             let table = self.table()?;
             let dir = table.kit.root.session(&session);
-            let events = tokio::task::spawn_blocking(move || crate::store::log::read_events(&dir))
+            let events = crate::spawn_blocking(move || crate::store::log::read_events(&dir))
                 .await
                 .map_err(|error| error.to_string())?
                 .map_err(|error| error.to_string())?;

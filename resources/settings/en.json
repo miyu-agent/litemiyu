@@ -135,9 +135,7 @@
   "pages": {
     "general": "General",
     "models": "Providers & models",
-    "appearance": "Appearance",
-    "privacy": "Privacy & security",
-    "advanced": "Advanced"
+    "appearance": "Appearance"
   },
   "groups": {
     "display": "Display",

@@ -21,6 +21,10 @@ const WAIT: Duration = Duration::from_secs(30);
 /// 收尾行（做完的、被打断的）打头的符号（`layout.json` 的 `done_icon`：Miyu 以前「工作区」那一级的图标）。
 pub const DONE: &str = "\u{25a3}";
 
+/// 敲了回车以后停多久再敲下一个键（[`Session::press_enter`]）：比程序认粘贴的那一小会儿（10 毫秒）长得多，测试机忙的时候读按键的
+/// 线程晚一点醒也不会把回车和后面的字收成一批。
+const AFTER_ENTER: Duration = Duration::from_millis(40);
+
 const COLS: u16 = 160;
 const ROWS: u16 = 45;
 
@@ -633,6 +637,11 @@ impl Session {
         let mut writer = self.writer.lock().expect("锁得上");
         writer.write_all(bytes).expect("写得进伪终端");
         writer.flush().expect("写得进伪终端");
+        // 敲了回车：照人的样子停一下再敲下一个键。回车和紧跟着的字一口气到的，程序认成不括起来的粘贴（LM-71，
+        // `unbracketed.rs`），回车成了换行。
+        if bytes.contains(&b'\r') {
+            std::thread::sleep(AFTER_ENTER);
+        }
     }
 }
 

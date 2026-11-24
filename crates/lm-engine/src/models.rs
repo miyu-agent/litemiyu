@@ -96,7 +96,7 @@ pub fn begin(
     // 读、解、放整份目录（几 MB 的小块）在单起、做完就退的线程里做，退完再还堆（占用线一）：在常驻的阻塞线程里做的话，放掉的
     // 小块有几块留在那条线程自己的缓存（glibc 的 tcache）里，钉着那个分配区的几百 KB；线程闲两秒退的时候才还回分配区，这时
     // 引擎的那一下还堆要是已经做过，就一直留到下一轮。
-    let task = tokio::task::spawn_blocking(move || {
+    let task = crate::spawn_blocking(move || {
         in_own_thread("lm-catalog", move || {
             read(reading, places, state, config, read_version)
         });
@@ -214,7 +214,7 @@ pub fn reload(
     cache: PathBuf,
     config: Option<Resolved>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::task::spawn_blocking(move || {
+    crate::spawn_blocking(move || {
         in_own_thread("lm-catalog", move || {
             let fetched = catalog::Meta::read(&cache)
                 .map(|meta| meta.fetched)

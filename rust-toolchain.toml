@@ -2,4 +2,5 @@
 [toolchain]
 channel = "1.97.0"
 profile = "minimal"
-components = ["rustfmt", "clippy"]
+# rust-src：发版的编法里标准库跟着程序重编（bench/order.py 的 BUILD_STD），要标准库的源码。平常的编译、测试不用它。
+components = ["rustfmt", "clippy", "rust-src"]

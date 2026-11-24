@@ -91,6 +91,7 @@ After the AI starts subagents, a few rows appear below the input box. The first 
 | `Ctrl+R` | Open the input history list |
 | `Ctrl+A` | Go to the start of the input |
 | `Ctrl+←` `Ctrl+→` | Move by word |
+| `Backspace`, `Ctrl+H` | Delete the previous character; if the cursor is right after a paste, image or file block, delete the whole block. Some terminals send `Ctrl+H` for the Backspace key, so both do the same |
 | `Ctrl+W`, `Alt+Backspace` | Delete the previous word |
 | `Ctrl+G` | Write this message in an external editor (uses `$VISUAL`, `$EDITOR`) |
 | `Ctrl+S` | Stash the input; press again to get it back |
@@ -154,6 +155,8 @@ There are two ways to paste:
 - `Ctrl+V`: LiteMiyu reads the system clipboard itself, and can paste text, images and copied files. On Linux and BSD this needs `wl-paste` (Wayland) or `xclip` or `xsel` (X11); macOS uses the built-in `pbpaste` and `osascript`. When something cannot be pasted, the hint says why, for example that no clipboard command was found, that the command failed, or that the clipboard holds neither text nor a supported image.
 
 A long paste is folded into a block in the input box, for example `[pasted 14 line(s)]`; the full text is what gets sent.
+
+Some terminals do not support bracketed paste and send pasted text as if it were typed key by key, so a line break cannot be told apart from the Enter key. LiteMiyu treats a batch of keys that arrive together, with text still following an Enter, as a paste: the line breaks stay in the input box, and the lines are not sent as separate messages. If the only Enter in such a batch is the last key, for example when a single line is pasted together with its trailing line break, that Enter still sends the message.
 
 ### Pasting files
 

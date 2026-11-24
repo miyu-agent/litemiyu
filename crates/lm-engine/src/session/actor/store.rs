@@ -208,7 +208,7 @@ impl Actor {
         // 同步挪到后台的（施工 V-19）：只写、不同步，写完拿最新的句柄；不挪的照旧连同同步写。
         let background = store.background();
         let blobs = Arc::clone(&lock(&self.sync).blobs);
-        let written = tokio::task::spawn_blocking(move || {
+        let written = crate::spawn_blocking(move || {
             if let Some(needs) = needs {
                 sync_blobs(&blobs, needs);
             }
@@ -256,7 +256,7 @@ impl Actor {
     ) -> Result<Result<Vec<Event>, String>, Stop> {
         self.write_held().await?;
         let store = self.store.take().ok_or(Stop)?;
-        let read = tokio::task::spawn_blocking(move || {
+        let read = crate::spawn_blocking(move || {
             let events = store.events_from(from);
             (store, events)
         })
@@ -341,7 +341,7 @@ impl Actor {
             (shared.durable.pending(), shared.flush.clone())
         };
         if let (Some(upto), Some(flush)) = (pending, flush) {
-            match tokio::task::spawn_blocking(move || flush.flush()).await {
+            match crate::spawn_blocking(move || flush.flush()).await {
                 Ok(Ok(())) => {
                     lock(&self.sync).durable.done(upto);
                 }
@@ -361,7 +361,7 @@ impl Actor {
 /// 派一串后台同步，从同步到 `upto` 起（施工 V-19）：在阻塞线程里对最新的句柄做，账上还要再做的接着做，都做完了、或者
 /// 出了错，报回 actor（`synced`）。
 fn dispatch(shared: Arc<Mutex<Syncing>>, done: mpsc::UnboundedSender<Synced>, mut upto: Seq) {
-    tokio::task::spawn_blocking(move || {
+    crate::spawn_blocking(move || {
         loop {
             // 先同步存了的 blob，再同步日志（速度线三）：日志里引用它们的那几条落盘以前，它们先落盘。
             let (flush, blobs) = {

@@ -18,13 +18,19 @@ impl Drop for Raise {
 /// 在阻塞线程里跑 `work`，交回它的结果。`work` 拿到的是这次调用的旗 `stop`；这个 future 被丢掉时旗也举起来。
 /// `work` 里 panic 了，这里照样 panic，执行器认得出工具崩了（只在测试的配置下：发行配置 panic = abort（`docs/00-设计.md` 第九节），发出去的程序崩了
 /// 整个进程退出）。
-pub(crate) async fn blocking<T: Send + 'static>(
+///
+/// 这一层只把 `work` 装箱（瘦身线 SS-1，原因同 `crate::session::blocking::blocking`），举旗、交出去、等结果都在只对结果
+/// 类型泛型的 [`raised`] 里，同原来一样在头一次轮询时才做。
+pub(crate) fn blocking<T: Send + 'static>(
     stop: Stop,
     work: impl FnOnce(&Stop) -> T + Send + 'static,
-) -> T {
-    let _raise = Raise(stop.clone());
-    match tokio::task::spawn_blocking(move || work(&stop)).await {
-        Ok(value) => value,
-        Err(error) => std::panic::resume_unwind(error.into_panic()),
-    }
+) -> impl Future<Output = T> + Send {
+    let theirs = stop.clone();
+    raised(stop, Box::new(move || work(&theirs)))
+}
+
+/// [`blocking`] 做事的那一半：这个 future 被丢掉时举起 `stop`。
+async fn raised<T: Send + 'static>(stop: Stop, work: Box<dyn FnOnce() -> T + Send>) -> T {
+    let _raise = Raise(stop);
+    crate::session::blocking::boxed(work).await
 }

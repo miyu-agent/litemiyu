@@ -124,7 +124,7 @@ After compaction:
 - When the AI needs details from before the compaction, it can look them up in the session log with the `history` tool.
 - If a compaction went wrong, `/undo` reverts it and shows `Undid a compaction: the context is back to before it`.
 
-The compaction line and pre-compaction can be adjusted on the `Advanced` page of `/config`; see [Configuration](config.md). If LiteMiyu does not know the model's window size, it does not compact automatically; see [Models and providers](models.md#when-the-context-window-is-unknown).
+The compaction line and pre-compaction can be adjusted on the `General` page of `/config`; see [Configuration](config.md). If LiteMiyu does not know the model's window size, it does not compact automatically; see [Models and providers](models.md#when-the-context-window-is-unknown).
 
 > When one job is finished and the next has nothing to do with it, running `/clear` to clear the context or `/new` to start a new session costs fewer tokens than carrying on in the same session, and the AI is less likely to be distracted by old content.
 

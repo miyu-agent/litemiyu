@@ -17,7 +17,7 @@ impl Engine {
     /// 列磁盘上的主会话（连这个窗口开着的），最近有动静的在前，交回界面。数据放哪照 `LITEMIYU_HOME`、XDG（不用先造好
     /// 会话要的几样）。
     pub(super) async fn list(&self) {
-        let listed = tokio::task::spawn_blocking(move || {
+        let listed = lm_engine::spawn_blocking(move || {
             let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
             lm_engine::session::list_sessions(&paths).map_err(|error| error.to_string())
         })
@@ -30,7 +30,7 @@ impl Engine {
     /// 导出会话 `id` 到 `path`（`/export`）：在阻塞线程里照 [`crate::cli::export_session`] 的写法直接写成 Markdown（不再起
     /// 自己跑子命令，审计 #068），交回写好的文件多大，或者为什么没写成（`litemiyu: ` 打头的那一句）。
     pub(super) async fn export(&self, id: String, path: std::path::PathBuf) {
-        let done = tokio::task::spawn_blocking(move || {
+        let done = lm_engine::spawn_blocking(move || {
             crate::cli::export_session(&id, &path)?;
             let size = std::fs::metadata(&path)
                 .map_err(|error| error.to_string())?
@@ -49,7 +49,7 @@ impl Engine {
         if let Some(parked) = self.parked.remove(&id)
             && parked.stop().await.is_err()
         {}
-        let done = tokio::task::spawn_blocking(move || {
+        let done = lm_engine::spawn_blocking(move || {
             let paths = Paths::locate(&Env::current()).map_err(|error| error.to_string())?;
             // 原因照引擎的原话（`no such session`、`the session is open in another window`），界面照 `why` 换成句子（LM-39）。
             lm_engine::session::remove_session(&paths, &id)

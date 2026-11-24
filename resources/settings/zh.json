@@ -135,9 +135,7 @@
   "pages": {
     "general": "通用",
     "models": "供应商和模型",
-    "appearance": "外观",
-    "privacy": "隐私与安全",
-    "advanced": "高级"
+    "appearance": "外观"
   },
   "groups": {
     "display": "显示",

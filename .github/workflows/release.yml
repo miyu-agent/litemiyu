@@ -115,9 +115,15 @@ jobs:
       - name: 有 gtar
         if: runner.os == 'macOS'
         run: gtar --version | head -n 1
-      # bench/order.py、xtask 编的时候带 --offline：依赖先照 Cargo.lock 取下来。
+      # bench/order.py、xtask 编的时候带 --offline：依赖先照 Cargo.lock 取下来。发行包的标准库跟着程序重编（
+      # bench/order.py 的 BUILD_STD），标准库自己的依赖照工具链 rust-src 里的 Cargo.lock 另取一遍：带同样的环境变量和 --target，
+      # cargo fetch 只取这个目标要的那几个（`--locked`：工作区的 Cargo.lock 不变）。
       - name: 取依赖
-        run: cargo fetch --locked
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          RUSTC_BOOTSTRAP=1 CARGO_UNSTABLE_BUILD_STD=std,panic_abort CARGO_UNSTABLE_BUILD_STD_FEATURES=optimize_for_size \
+            cargo fetch --locked --target "${{ matrix.target }}"
       - name: 打包
         run: cargo xtask dist --target "${{ matrix.target }}"
       - name: 查包

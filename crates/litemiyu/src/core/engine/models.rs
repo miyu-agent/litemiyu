@@ -28,7 +28,7 @@ impl Engine {
             return self.report(Update::Choices(Vec::new()));
         };
         data.wait().await;
-        let listed = tokio::task::spawn_blocking(move || {
+        let listed = lm_engine::spawn_blocking(move || {
             let resolved = source.with_project(&cwd);
             let listed = list(&resolved, source.as_ref(), &data);
             lm_heap::trim();
@@ -65,7 +65,7 @@ impl Engine {
             });
         };
         data.wait().await;
-        let (reference, levels) = tokio::task::spawn_blocking(move || {
+        let (reference, levels) = lm_engine::spawn_blocking(move || {
             let resolved = source.with_project(&cwd);
             let reference = reference.unwrap_or_else(|| match resolved.values().get(CHAT) {
                 Some(Value::Text(chat)) => chat.to_string(),
@@ -122,7 +122,7 @@ impl Engine {
             return;
         };
         let paths = ready.paths().clone();
-        let written = tokio::task::spawn_blocking(move || {
+        let written = lm_engine::spawn_blocking(move || {
             let settings = Settings::new(paths, |name| std::env::var(name).ok());
             settings
                 .set(&[Edit::Set(CHAT.to_string(), Value::Text(reference.into()))])

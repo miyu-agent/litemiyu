@@ -269,7 +269,7 @@ impl Ready {
         };
         let paths = self.paths.clone();
         let asked =
-            tokio::task::spawn_blocking(move || lm_engine::session::ask_handover(&paths, &session))
+            lm_engine::spawn_blocking(move || lm_engine::session::ask_handover(&paths, &session))
                 .await;
         let Ok(Ok(asked)) = asked else {
             return Err(NotLoaded::Taken);

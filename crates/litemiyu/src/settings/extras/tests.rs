@@ -122,26 +122,29 @@ fn mcp_servers_show_how_they_start_and_switch() {
 }
 
 #[test]
-fn empty_pages_say_so_and_the_menu_lists_both_before_advanced() {
+fn empty_pages_say_so_and_the_menu_lists_both_after_the_listed_pages() {
     let scratch = Scratch::new("empty");
     let mut settings = Settings::at(Paths::under(&scratch.0), "en", Outcome::Back).unwrap();
-    // 同 Miyu（`pages/mod.rs` 的 `entries`）：没有 MCP 服务的不列 MCP；技能页在「高级」前面，「高级」排最后。
+    // 同 Miyu（`pages/mod.rs` 的 `entries`）：没有 MCP 服务的不列 MCP；技能页排最后（「高级」并进了通用页）。
     let count = settings.entries();
     assert!(
         (0..count).all(|e| settings.extra(e) != Some(Extra::Mcp)),
         "没有服务不列 MCP"
     );
-    assert_eq!(settings.extra(count - 2), Some(Extra::Skills));
-    assert_eq!(settings.extra(count - 1), None);
-    let last = settings.page_of(count - 1).unwrap();
-    assert_eq!(settings.schema.pages[last].id, "advanced");
+    assert_eq!(settings.extra(count - 1), Some(Extra::Skills));
+    assert!(
+        (0..count).all(|e| settings
+            .page_of(e)
+            .is_none_or(|p| settings.schema.pages[p].id != "advanced")),
+        "没有高级页了"
+    );
     assert_eq!(settings.extra(0), None);
     enter(&mut settings, Extra::Skills);
     // 空的页按 Enter、上下挪都不出事。
     press(&mut settings, KeyCode::Down);
     press(&mut settings, KeyCode::Enter);
     assert_eq!(settings.status, None);
-    // 有服务了（手改配置）再打开：MCP 在「高级」前面，技能页挨着 MCP。
+    // 有服务了（手改配置）再打开：MCP 在技能页前面，两页挨着。
     let paths = Paths::under(&scratch.0);
     std::fs::create_dir_all(&paths.config).unwrap();
     std::fs::write(
@@ -151,8 +154,8 @@ fn empty_pages_say_so_and_the_menu_lists_both_before_advanced() {
     .unwrap();
     let settings = Settings::at(paths, "en", Outcome::Back).unwrap();
     let count = settings.entries();
-    assert_eq!(settings.extra(count - 3), Some(Extra::Mcp));
-    assert_eq!(settings.extra(count - 2), Some(Extra::Skills));
+    assert_eq!(settings.extra(count - 2), Some(Extra::Mcp));
+    assert_eq!(settings.extra(count - 1), Some(Extra::Skills));
     assert_eq!(settings.texts.extras.empty[1], "No MCP servers yet");
 }
 

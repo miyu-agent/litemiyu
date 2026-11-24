@@ -178,12 +178,18 @@ fn ordered(build: &Build, root: &Path) -> Result<String, String> {
 /// 2. 照换好的清单重链（`-order_file`），核对排上了；
 /// 3. 链完再单独去符号（`strip`）。让 cargo 照 profile 的 `strip = true` 一步做完的话链接器不照清单排（2026-11-22 量到）。
 ///
-/// 依赖源码路径去掉本机前缀（[`remap`]），同 `bench/order.py`。交回程序的路径。
+/// 标准库跟着重编（[`BUILD_STD`]，同 `bench/order.py`），依赖和标准库的源码路径同样去掉本机前缀（[`remap`]、[`std_remap`]）。
+/// 交回程序的路径。
 fn plain(build: &Build, root: &Path) -> Result<String, String> {
     let dir = root.join("target/plain");
     let release = dir.join(&build.target).join("release");
     let program = release.join("litemiyu");
     println!("编 {}（照 bench/macos-order.txt 排函数）", build.describe());
+    let rustflags = [remap(&cargo_home()), std_remap(root)?]
+        .into_iter()
+        .filter(|flags| !flags.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     let cargo_in = |extra: &[&str], tail: &[&str]| -> Result<(), String> {
         let status = Command::new(cargo())
             .args(extra)
@@ -191,9 +197,10 @@ fn plain(build: &Build, root: &Path) -> Result<String, String> {
             .args(["--target", &build.target, "-p", "litemiyu"])
             .args(tail)
             .current_dir(root)
+            .envs(BUILD_STD)
             .env("CARGO_TARGET_DIR", &dir)
             .env("CARGO_PROFILE_RELEASE_STRIP", "false")
-            .env("RUSTFLAGS", remap(&cargo_home()))
+            .env("RUSTFLAGS", &rustflags)
             .status()
             .map_err(|e| format!("cargo 起不来：{e}"))?;
         match status.success() {
@@ -293,6 +300,42 @@ fn remap(cargo_home: &Path) -> String {
         .map(|index| format!("--remap-path-prefix={}/=", index.display()))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// 标准库跟着程序一起重编（`docs/00-设计.md` 第八节）：照发行配置重编、打开 `optimize_for_size`、不带打印调用栈的那一套。
+/// 要钉住的工具链的 `rust-src` 组件；`RUSTC_BOOTSTRAP=1` 让正式版的 cargo 认这两个参数。只在发版的编法里开，和 `bench/order.py`
+/// 的 `BUILD_STD` 要一样。
+const BUILD_STD: [(&str, &str); 3] = [
+    ("RUSTC_BOOTSTRAP", "1"),
+    ("CARGO_UNSTABLE_BUILD_STD", "std,panic_abort"),
+    ("CARGO_UNSTABLE_BUILD_STD_FEATURES", "optimize_for_size"),
+];
+
+/// 标准库的源码路径去掉本机的前缀（同 `bench/order.py` 的 `remap`）：重编的标准库在 panic 的位置里记着
+/// `<工具链>/lib/rustlib/src/rust/library/…`，工具链在 rustup 的家里。换成 `library/…`。没装 `rust-src` 的报错。
+fn std_remap(root: &Path) -> Result<String, String> {
+    let sysroot = tool_in(root, "rustc", &["--print", "sysroot"])?;
+    let sources = Path::new(sysroot.trim()).join("lib/rustlib/src/rust");
+    if !sources.join("library").is_dir() {
+        return Err(format!(
+            "工具链里没有标准库的源码（{}）：要装 rust-src 组件（rust-toolchain.toml 里写着）",
+            sources.display()
+        ));
+    }
+    Ok(format!("--remap-path-prefix={}/=", sources.display()))
+}
+
+/// 在 `dir` 里跑一个命令（工具链照那里的 `rust-toolchain.toml`），交回它印的。
+fn tool_in(dir: &Path, program: &str, args: &[&str]) -> Result<String, String> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("{program} 起不来：{e}"))?;
+    if !output.status.success() {
+        return Err(format!("{program} {} 没成", args.join(" ")));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// 打包、看包用的 GNU tar：macOS 自带的是 bsdtar（不认 `--sort`、`--mtime`，列出来的样子也不一样），用 Homebrew 的 `gtar`

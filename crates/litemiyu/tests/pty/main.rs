@@ -45,6 +45,7 @@ mod models;
 mod narrow_shots;
 mod opening;
 mod opening_steps;
+mod paste;
 mod peers;
 mod pinned;
 mod pointer;

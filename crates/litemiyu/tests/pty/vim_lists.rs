@@ -8,6 +8,7 @@ use crate::support::{Options, Session, served};
 
 const ESC: &[u8] = b"\x1b";
 const DOWN: &[u8] = b"\x1b[B";
+const UP: &[u8] = b"\x1b[A";
 const CTRL_J: &[u8] = b"\x0a";
 const CTRL_R: &[u8] = b"\x12";
 /// 清空输入框。
@@ -262,7 +263,7 @@ fn arrow_keys_type_to_search_right_away() {
     session.press(ESC);
 }
 
-/// `/config` → 通用 → 最后一项「按键模式」→ 选择窗里往下挪一格（方向键的下一格是 Vim）选上 → 回对话（同
+/// `/config` → 通用 → 「交互」组的「按键模式」（通用页的最后一项是「预压缩」，从那里往上三格）→ 选择窗里往下挪一格（方向键的下一格是 Vim）选上 → 回对话（同
 /// `settings_keys.rs`）。
 fn switch_to_vim(session: &Session) {
     open(session, "/config", "j/k 移动   Enter 进入");
@@ -271,7 +272,12 @@ fn switch_to_vim(session: &Session) {
     for _ in 0..40 {
         session.press(DOWN);
     }
-    session.wait_for("┃ 按键模式", "光标到最后一项按键模式");
+    // 权限、压缩两组（原来的「隐私与安全」「高级」两页）并进了通用页，排在「交互」后面。
+    session.wait_for("┃ 预压缩", "光标到最后一项预压缩");
+    for _ in 0..3 {
+        session.press(UP);
+    }
+    session.wait_for("┃ 按键模式", "光标回到按键模式");
     session.press_enter();
     session.wait_for("Enter 确定", "选择窗");
     session.press(DOWN);

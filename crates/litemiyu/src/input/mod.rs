@@ -229,6 +229,8 @@ impl InputBox {
             KeyCode::Char('s') if ctrl => self.swap_stash(),
             KeyCode::Char('w') if ctrl => self.editor.delete_word(),
             KeyCode::Backspace if ctrl || alt => self.editor.delete_word(),
+            // 有的终端把退格键发成 `Ctrl+H`（`0x08`，crossterm 读成 `Ctrl+H`）：照退格办（同 readline），原来什么都不做（LM-72）。
+            KeyCode::Char('h') if ctrl => self.editor.backspace(),
             KeyCode::Left if ctrl => self.editor.word_left(shift),
             KeyCode::Right if ctrl => self.editor.word_right(shift),
             KeyCode::Char(c) if !ctrl => self.editor.insert(c.encode_utf8(&mut [0; 4])),

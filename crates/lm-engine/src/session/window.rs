@@ -231,7 +231,7 @@ impl Window {
         }
         if write {
             let (dir, summary) = (self.dir.clone(), tracker.summary().clone());
-            drop(tokio::task::spawn_blocking(move || store(&dir, &summary)));
+            drop(crate::spawn_blocking(move || store(&dir, &summary)));
         }
     }
 }

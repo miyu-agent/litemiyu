@@ -107,9 +107,23 @@ DAILY_ARGS = {"new": [], "continue": ["-c"]}
 DAILY = ["new", "continue"]
 
 
+# 标准库跟着程序一起重编（docs/00-设计.md 第八节）：照发行配置（`opt-level = "s"`、`panic = "abort"`、
+# 整个程序一起 LTO）重编，打开 `optimize_for_size`（排序、整数转字这些换成小的写法），不带打印调用栈的那一套。工具链不换，
+# 仍是 rust-toolchain.toml 钉的那一版，要它的 `rust-src` 组件；`RUSTC_BOOTSTRAP=1` 让正式版的 cargo 认这两个不稳定的参数。
+# 只在发版的编法里开：这里（量尺、Linux 的发行包）和 `xtask/src/dist.rs` 的 `BUILD_STD`（macOS 的发行包），两处要一样。平常的
+# `cargo build`、`cargo test`、门禁照旧用工具链带的标准库。标准库的依赖（libc 等）照 `rust-src` 里的 Cargo.lock 取，`--offline`
+# 编之前要先取下来：发版的工作流在「取依赖」那一步多取一遍（`cargo fetch` 带同样的环境变量和 `--target`）。
+BUILD_STD = {
+    "RUSTC_BOOTSTRAP": "1",
+    "CARGO_UNSTABLE_BUILD_STD": "std,panic_abort",
+    "CARGO_UNSTABLE_BUILD_STD_FEATURES": "optimize_for_size",
+}
+
+
 def cargo(crate, target_dir, rustflags, triple):
-    """编 release，不去符号。带 --target：参数只给程序本身，不给构建脚本。"""
+    """编 release，不去符号，标准库跟着重编（[`BUILD_STD`]）。带 --target：参数只给程序本身和标准库，不给构建脚本。"""
     env = dict(os.environ)
+    env.update(BUILD_STD)
     env["CARGO_TARGET_DIR"] = target_dir
     env["RUSTFLAGS"] = rustflags
     env["CARGO_PROFILE_RELEASE_STRIP"] = "false"
@@ -121,18 +135,25 @@ def cargo(crate, target_dir, rustflags, triple):
     )
 
 
-def remap():
+def remap(crate):
     """依赖的源码路径去掉本机的前缀：panic 的位置里记着源码文件的路径，依赖的写成
     `/home/<人>/.cargo/registry/src/index.crates.io-<哈希>/ring-0.17.14/src/…`，四百多个文件各带六十几个字节的本机前缀。
-    换成 `ring-0.17.14/src/…`：程序小三十来 kB，也不把编的人的家目录写进发出去的程序。"""
+    换成 `ring-0.17.14/src/…`：程序小三十来 kB，也不把编的人的家目录写进发出去的程序。
+    标准库跟着重编（[`BUILD_STD`]）以后，标准库的源码路径也写进了程序：`<工具链>/lib/rustlib/src/rust/library/core/src/…`
+    （工具链在 rustup 的家里，也在家目录下）。同样去掉前缀，写成 `library/core/src/…`。"""
     cargo_home = os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo")
     sources = os.path.join(cargo_home, "registry", "src")
-    if not os.path.isdir(sources):
-        return ""
-    return "".join(
-        f" --remap-path-prefix={os.path.join(sources, index)}/="
-        for index in sorted(os.listdir(sources))
-    )
+    flags = ""
+    if os.path.isdir(sources):
+        flags = "".join(
+            f" --remap-path-prefix={os.path.join(sources, index)}/="
+            for index in sorted(os.listdir(sources))
+        )
+    sysroot = subprocess.run(["rustc", "--print", "sysroot"], cwd=crate, check=True, capture_output=True, text=True)
+    std_sources = os.path.join(sysroot.stdout.strip(), "lib", "rustlib", "src", "rust")
+    if not os.path.isdir(os.path.join(std_sources, "library")):
+        raise SystemExit(f"工具链里没有标准库的源码（{std_sources}）：要装 rust-src 组件（rust-toolchain.toml 里写着）")
+    return flags + f" --remap-path-prefix={std_sources}/="
 
 
 def lld(crate, triple):
@@ -672,7 +693,7 @@ def main():
         f" -C link-arg=-Wl,-Map={map_file} -C link-arg=-Wl,-T,{hot_file}"
         # 把代码段的地址往后空出几页（第 6 步）。
         f" -C link-arg=-Wl,-T,{pad_file}"
-    ) + remap() + lld(crate, args.target)
+    ) + remap(crate) + lld(crate, args.target)
     if args.no_pie:
         link += " -C relocation-model=static"
     triple = args.target

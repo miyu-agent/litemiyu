@@ -17,7 +17,7 @@ fn help_says(session: &Session, hint: &str) {
     session.wait_until("帮助框关上", |s| !s.screen().contains(hint));
 }
 
-/// `/config` → 通用 → 最后一项「按键模式」→ 选择窗里往 `step` 挪一格选上 → 回对话。选择窗底下的按键提示照现在的按键模式写
+/// `/config` → 通用 → 「交互」组的「按键模式」（通用页的最后一项是「预压缩」，从那里往上三格）→ 选择窗里往 `step` 挪一格选上 → 回对话。选择窗底下的按键提示照现在的按键模式写
 /// （`keys`：Vim 写「j/k」，方向键写「↑/↓」，第二十六趟）。
 fn switch(session: &Session, step: &[u8], keys: &str) {
     session.type_text("/config");
@@ -28,7 +28,12 @@ fn switch(session: &Session, step: &[u8], keys: &str) {
     for _ in 0..40 {
         session.press(DOWN);
     }
-    session.wait_for("┃ 按键模式", "光标到最后一项按键模式");
+    // 权限、压缩两组（原来的「隐私与安全」「高级」两页）并进了通用页，排在「交互」后面。
+    session.wait_for("┃ 预压缩", "光标到最后一项预压缩");
+    for _ in 0..3 {
+        session.press(UP);
+    }
+    session.wait_for("┃ 按键模式", "光标回到按键模式");
     session.press_enter();
     session.wait_for(&format!("{keys} 选择   Enter 确定"), "选择窗");
     session.press(step);

@@ -160,14 +160,11 @@ fn settings_tour(variant: &Variant) {
     });
     session.press(ESC);
     session.wait_for("Enter 进入", "回主菜单");
-    // 隐私与安全、预设、MCP、技能、高级：照主菜单往下（隐私与安全照 Miyu 排在供应商和模型后面，配置 六 B1；预设页 LM-29
-    // 加的，排在 MCP 前面）。
+    // 预设、MCP、技能：照主菜单往下（预设页 LM-29 加的，排在 MCP 前面；Miyu 的「隐私与安全」「高级」两页并进了通用页）。
     for (name, anchor) in [
-        ("privacy", "◉ 隐私与安全"),
         ("presets", "◉ 预设"),
         ("mcp", "◉ MCP"),
         ("skills", "◉ 技能"),
-        ("advanced", "◉ 高级"),
     ] {
         session.press(DOWN);
         session.press_enter();

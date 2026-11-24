@@ -14,12 +14,13 @@ use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::theme::{Catch, Caught, Rgb, Which};
+use crate::unbracketed::Bursts;
 
 /// 这条线程的栈。它只做读和送，用不着默认的 2 MB。
 const STACK: usize = 64 * 1024;
@@ -120,63 +121,99 @@ pub fn spawn(send: impl Fn(Got) -> bool + Send + 'static) -> io::Result<Reader> 
     Ok(Reader { control, knock })
 }
 
-/// 线程的主体：先把 crossterm 手里不用等就有的事件都交出去，再睡在终端和门上等。
+/// 线程的主体：先把 crossterm 手里不用等就有的事件都读出来，收成一批交出去（不括起来的粘贴在这里认，`unbracketed.rs`），
+/// 再睡在终端和门上等。
 fn run(send: &impl Fn(Got) -> bool, door: &UnixStream, orders: &mpsc::Receiver<Control>) {
     let mut catch = Catch::default();
+    let mut bursts = Bursts::default();
     let mut asked = false;
     let pass = |events: Vec<Event>| events.into_iter().all(|e| send(Got::Event(Ok(e))));
     loop {
-        // 不用等就读得到的。
+        // 不用等就读得到的：收成一批。
+        let mut burst = Vec::new();
         loop {
             // 终端挂断了（窗口关了）：不交给 crossterm（见 [`hung`]），照读不了报。
             if hung() {
-                return fail(send, &pass, &mut catch, hung_up());
+                return fail(send, &pass, &mut catch, &mut bursts, burst, hung_up());
             }
             match event::poll(Duration::ZERO) {
                 Ok(true) => {}
                 Ok(false) => break,
-                Err(error) => return fail(send, &pass, &mut catch, error),
+                Err(error) => return fail(send, &pass, &mut catch, &mut bursts, burst, error),
             }
             let caught = match event::read() {
                 Ok(event) => catch.feed(event),
-                Err(error) => return fail(send, &pass, &mut catch, error),
+                Err(error) => return fail(send, &pass, &mut catch, &mut bursts, burst, error),
             };
-            let alive = match caught {
-                Caught::Pass(events) => pass(events),
-                Caught::Hold => true,
-                // 底色是问句的最后一句：答到这里，终端是会答话的，接着问键盘协议（只问一次）。
-                Caught::Color(Which::Bg, rgb) if !asked => {
-                    asked = true;
-                    send(Got::Color(Which::Bg, rgb)) && ask_keyboard(send)
+            let color = match caught {
+                Caught::Pass(events) => {
+                    burst.extend(events);
+                    continue;
                 }
-                Caught::Color(which, rgb) => send(Got::Color(which, rgb)),
+                Caught::Hold => continue,
+                Caught::Color(which, rgb) => (which, rgb),
             };
+            // 终端答了颜色：先把这一批、留着的交出去，再交颜色。
+            let mut before = bursts.end(std::mem::take(&mut burst), Instant::now());
+            before.extend(bursts.release());
+            let alive = pass(before)
+                && match color {
+                    // 底色是问句的最后一句：答到这里，终端是会答话的，接着问键盘协议（只问一次）。
+                    (Which::Bg, rgb) if !asked => {
+                        asked = true;
+                        send(Got::Color(Which::Bg, rgb)) && ask_keyboard(send)
+                    }
+                    (which, rgb) => send(Got::Color(which, rgb)),
+                };
             if !alive {
                 return;
             }
         }
-        // 认到半截的只等一会儿；别的一直睡着等。
-        let woke = match wait(door, catch.holding().then_some(HOLD)) {
-            Ok(woke) => woke,
-            Err(error) => return fail(send, &pass, &mut catch, error),
-        };
-        if woke == Woke::Timeout && !pass(catch.flush()) {
+        if !pass(bursts.end(burst, Instant::now())) {
             return;
         }
-        if woke == Woke::Door && !obey(door, orders) {
+        // 认到半截的、留着认粘贴的只等一会儿；别的一直睡着等。
+        let held = bursts
+            .until()
+            .map(|until| until.saturating_duration_since(Instant::now()));
+        let limit = match (catch.holding().then_some(HOLD), held) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let woke = match wait(door, limit) {
+            Ok(woke) => woke,
+            Err(error) => return fail(send, &pass, &mut catch, &mut bursts, Vec::new(), error),
+        };
+        // 到点的是留着认粘贴的那一批：交出去；没有留着的，是认到半截的回话等到了点。留着的还没到点（醒早了）：接着等。
+        let alive = match woke {
+            Woke::Timeout => match bursts.until() {
+                Some(until) if Instant::now() >= until => pass(bursts.release()),
+                Some(_) => true,
+                None => pass(catch.flush()),
+            },
+            // 要停下（让出终端）、换了窗口大小：留着的先交出去。
+            Woke::Door => pass(bursts.release()) && obey(door, orders),
+            Woke::Terminal => true,
+        };
+        if !alive {
             return;
         }
     }
 }
 
-/// 读不了了：攒着的先交出去，再报错；主循环不收了的就不报。
+/// 读不了了：攒着的、留着的、这一批读到的先交出去，再报错；主循环不收了的就不报。
 fn fail(
     send: &impl Fn(Got) -> bool,
     pass: &impl Fn(Vec<Event>) -> bool,
     catch: &mut Catch,
+    bursts: &mut Bursts,
+    burst: Vec<Event>,
     error: io::Error,
 ) {
-    if pass(catch.flush()) {
+    let mut events = bursts.end(burst, Instant::now());
+    events.extend(bursts.release());
+    events.extend(catch.flush());
+    if pass(events) {
         send(Got::Event(Err(error)));
     }
 }

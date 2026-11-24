@@ -321,7 +321,7 @@ impl Tools {
                     // 改前改后、交回的图片先落 blob，再送回去写引用它们的事件（07 第四节；图片施工 4-13）。
                     let reported = std::mem::take(&mut done.effects);
                     let images = std::mem::take(&mut done.images);
-                    let stored = tokio::task::spawn_blocking(move || {
+                    let stored = crate::spawn_blocking(move || {
                         let effects = effects::skilled(effects::store(&blobs, reported), &marks);
                         // 碰了的文件上面子目录的项目指令（施工 P-14 下）。
                         let below = docs::below(look.as_ref(), &effects);

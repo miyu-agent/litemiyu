@@ -76,7 +76,8 @@ fn the_menu_lists_pages_with_something_to_draw_and_esc_leaves_as_opened() {
         .collect();
     assert_eq!(
         names,
-        ["general", "appearance", "models", "privacy", "advanced"]
+        ["general", "appearance", "models"],
+        "隐私与安全、高级两页并进了通用页"
     );
     assert_eq!(press(&mut settings, KeyCode::Char('j')), Outcome::Stay);
     press(&mut settings, KeyCode::Char('j'));
@@ -115,7 +116,7 @@ fn a_toggle_flips_and_saves_at_once() {
     let scratch = Scratch::new("toggle");
     let paths = scratch.paths();
     let mut settings = Settings::at(paths.clone(), "zh", Outcome::Back).unwrap();
-    go_to(&mut settings, "advanced", "compaction.prepare");
+    go_to(&mut settings, "general", "compaction.prepare");
     press(&mut settings, KeyCode::Enter);
     assert_eq!(config(&paths), "[compaction]\nprepare = false\n");
     assert!(settings.changed);
@@ -189,7 +190,7 @@ fn a_number_that_is_not_a_number_keeps_the_window_open() {
     let scratch = Scratch::new("number");
     let paths = scratch.paths();
     let mut settings = Settings::at(paths.clone(), "zh", Outcome::Back).unwrap();
-    go_to(&mut settings, "advanced", "compaction.line");
+    go_to(&mut settings, "general", "compaction.line");
     press(&mut settings, KeyCode::Enter);
     settings.key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
     typed(&mut settings, "abc");
@@ -257,7 +258,7 @@ fn a_broken_file_is_shown_but_not_saved() {
     std::fs::write(paths.config_file(), "[ui\n").unwrap();
     let mut settings = Settings::at(paths.clone(), "en", Outcome::Back).unwrap();
     assert_eq!(settings.status.as_ref().map(|s| s.1), Some(Tone::Bad));
-    go_to(&mut settings, "advanced", "compaction.prepare");
+    go_to(&mut settings, "general", "compaction.prepare");
     press(&mut settings, KeyCode::Enter);
     assert_eq!(config(&paths), "[ui\n", "一个字节没动");
     assert!(!settings.changed);

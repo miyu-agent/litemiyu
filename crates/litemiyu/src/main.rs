@@ -65,6 +65,7 @@ mod theme;
 mod tips;
 mod transcript;
 mod ui;
+mod unbracketed;
 mod zone;
 
 use std::io;

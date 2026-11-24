@@ -21,14 +21,12 @@ The main menu has these pages:
 
 | Page | Content |
 |---|---|
-| `General` | Display, New sessions, Sessions, Terminal interface, Timeline, Interaction |
+| `General` | Display, New sessions, Sessions, Terminal interface, Timeline, Interaction, Permissions, Compaction |
 | `Appearance` | Color scheme, Icons |
 | `Providers & models` | Providers and default models; see [Models and providers](models.md) |
-| `Privacy & security` | Permissions |
 | `Presets` | Create, edit and delete presets; see [Presets](presets.md). The default preset is set on the `General` page |
 | `MCP` | MCP server status and switches. Present only when MCP servers are configured; see [Skills and MCP](skills-mcp.md) |
 | `Skills` | Skill descriptions and switches |
-| `Advanced` | Compaction |
 
 The keys are shown at the bottom of every page:
 
@@ -70,6 +68,9 @@ keys = "arrows"
 | `Thought preview rows` | `tui.timeline_thought_rows` | `15` | How many of the latest lines a running thought shows. Range 3 to 60 |
 | `Command preview rows` | `tui.timeline_preview_rows` | `10` | How many lines of command output are previewed at most. Range 3 to 60 |
 | `Key mode` | `tui.keys` | `vim` | `vim` or `arrows` (arrow keys); see [Interface and keys](interface.md#key-mode-vim-and-arrow-keys) |
+| `Confirmation timeout` | `permission.confirm.timeout` | `300` | How many seconds a dangerous-command confirmation waits for you before it is refused automatically. `0` waits forever. Range 0 to 86400 |
+| `Compaction line` | `compaction.line` | `85` | Compact automatically once the context fills this percent of the window, from 20 to 95. Models with small windows keep room for the reply, so compaction actually starts earlier |
+| `Pre-compaction` | `compaction.prepare` | `true` | When the context is nearly full, prepare the summary in the background so that the switch at the compaction line happens without a wait |
 
 ### Appearance
 
@@ -160,12 +161,6 @@ every = "24h"                          # how often to refresh, from 1 hour to 30
 
 The environment variable `LITEMIYU_CATALOG_UPDATE=false` does the same as `update = false` and takes precedence over the configuration file.
 
-### Privacy & security
-
-| Name in the interface | Key | Default | Meaning |
-|---|---|---|---|
-| `Confirmation timeout` | `permission.confirm.timeout` | `300` | How many seconds a dangerous-command confirmation waits for you before it is refused automatically. `0` waits forever. Range 0 to 86400 |
-
 ### MCP and skills
 
 MCP servers are written in `[mcp.<name>]` tables; see [Skills and MCP](skills-mcp.md#adding-an-mcp-server).
@@ -177,13 +172,6 @@ The switches for skills and MCP servers are in the `[features]` table. Anything 
 skill-commit-message = false    # switch off the skill named commit-message
 mcp-echo = false                # switch off the MCP server named echo
 ```
-
-### Advanced
-
-| Name in the interface | Key | Default | Meaning |
-|---|---|---|---|
-| `Compaction line` | `compaction.line` | `85` | Compact automatically once the context fills this percent of the window, from 20 to 95. Models with small windows keep room for the reply, so compaction actually starts earlier |
-| `Pre-compaction` | `compaction.prepare` | `true` | When the context is nearly full, prepare the summary in the background so that the switch at the compaction line happens without a wait |
 
 ## What happens when the configuration is wrong
 

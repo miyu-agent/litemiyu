@@ -3,7 +3,17 @@
 
 /// 在阻塞线程里做完，交回结果。阻塞的那一头 panic 了，照原样接着 panic：那是 bug。阻塞线程带着派活时的 span，
 /// 那边发的行也有会话编号（施工 4-9 再补四上）。
-pub(crate) async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+///
+/// 这一层只把 `work` 装箱，做事的是 [`boxed`]（瘦身线 SS-1）：这里对闭包的类型泛型，每一处调用各展开一份，所以要薄；
+/// [`boxed`] 只对结果类型泛型，它的状态机和 tokio 给任务生成的外壳照结果类型各只有一份。活照旧在头一次轮询时才交出去。
+pub(crate) fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> impl Future<Output = T> + Send {
+    boxed(Box::new(work))
+}
+
+/// 同 [`blocking`]，交进来的是装好箱的活。
+pub(crate) async fn boxed<T: Send + 'static>(work: Box<dyn FnOnce() -> T + Send>) -> T {
     match tokio::task::spawn_blocking(work).await {
         Ok(value) => value,
         Err(error) => std::panic::resume_unwind(error.into_panic()),
@@ -53,7 +63,7 @@ pub(crate) fn in_own_thread<T: Send + 'static>(
 /// 放掉 `taken`（内核线第三趟乙）：别的线程分配的一大堆（解日志的线程解出来的事件），交给一个放完就退的线程去放，原因同
 /// [`blocking_once`]；放完把空着的堆还给系统（`lm_heap::trim`）。马上返回，在阻塞线程里等它。
 pub(crate) fn release<T: Send + 'static>(taken: T) {
-    drop(tokio::task::spawn_blocking(move || {
+    drop(crate::spawn_blocking(move || {
         if let Ok(thread) = std::thread::Builder::new()
             .name("lm-release".to_string())
             .stack_size(crate::threads::STACK)

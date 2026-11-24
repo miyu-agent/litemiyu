@@ -256,7 +256,7 @@ impl Refresher {
         );
         let url = url.to_string();
         // 读、写、换上（整份目录几 MB 的小块）在单起、做完就退的线程里做，做完还堆（同起来时读目录，`super::begin`）。
-        tokio::task::spawn_blocking(move || {
+        crate::spawn_blocking(move || {
             let stored = in_own_thread("lm-catalog", move || {
                 let loaded = match body {
                     Some((text, etag)) => store(&cache, &url, text, etag)?,
@@ -435,7 +435,7 @@ fn client_for(url: &str) -> Result<Client, Unfetched> {
 /// 在阻塞线程里写 `dir/name`：先写临时文件再改名。
 async fn write(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), Unfetched> {
     let (dir, name, bytes) = (dir.to_path_buf(), name.to_string(), bytes.to_vec());
-    tokio::task::spawn_blocking(move || write_now(&dir, &name, &bytes))
+    crate::spawn_blocking(move || write_now(&dir, &name, &bytes))
         .await
         .map_err(|error| Unfetched::Other(error.to_string()))?
 }

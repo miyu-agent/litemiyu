@@ -126,3 +126,115 @@ fn picture_blocks_survive_the_history_file_and_come_back_from_the_transcript() {
     let unknown = Draft::from_pasted("看[图片 1]", &[piece(None)]);
     assert_eq!(unknown, Draft::plain("看[图片 1]"));
 }
+
+/// 字、一个图片块、字：`甲[图片 1]乙`。
+fn picture_between() -> crate::input::InputBox {
+    let mut i = input(60);
+    i.editor.insert("甲");
+    i.attach_image(shot(1), LABEL);
+    i.editor.insert("乙");
+    i.renumber(0, LABEL);
+    assert_eq!(i.editor.text(), "甲[图片 1]乙");
+    i
+}
+
+#[test]
+fn every_way_of_deleting_takes_a_picture_block_whole() {
+    // LM-72：用户说「[图片 1] 删除的时候是当成文字的」。每一种删法都整块删，不留半截，图片也跟着不带了。
+    let after = "甲[图片 1]".len();
+    let before = "甲".len();
+    // 光标在块后面：退格、`Ctrl+H`（有的终端把退格键发成它）、`Ctrl+W`、`Alt+退格`、`Ctrl+退格`。
+    for (code, modifiers) in [
+        (KeyCode::Backspace, KeyModifiers::NONE),
+        (KeyCode::Char('h'), KeyModifiers::CONTROL),
+        (KeyCode::Char('w'), KeyModifiers::CONTROL),
+        (KeyCode::Backspace, KeyModifiers::ALT),
+        (KeyCode::Backspace, KeyModifiers::CONTROL),
+    ] {
+        let mut i = picture_between();
+        i.editor.move_to(after, false);
+        press(&mut i, code, modifiers);
+        assert_eq!(i.editor.text(), "甲乙", "{code:?} {modifiers:?}");
+        assert!(i.draft().images().is_empty(), "{code:?} {modifiers:?}");
+    }
+    // 光标在块前面：`Delete`。
+    let mut i = picture_between();
+    i.editor.move_to(before, false);
+    press(&mut i, KeyCode::Delete, KeyModifiers::NONE);
+    assert_eq!(i.editor.text(), "甲乙");
+    // `Shift+←` 选：一下选过整块，退格删的是整块。
+    let mut i = picture_between();
+    i.editor.move_to(after, false);
+    press(&mut i, KeyCode::Left, KeyModifiers::SHIFT);
+    assert_eq!(i.editor.selection(), Some((before, after)));
+    press(&mut i, KeyCode::Backspace, KeyModifiers::NONE);
+    assert_eq!(i.editor.text(), "甲乙");
+    // 选区的一头拖到块中间：落到近的那一头，选区不会只盖住半块；删的、打字盖掉的是整块或者不碰它。
+    let mut i = picture_between();
+    i.editor.select(0, before + 4);
+    assert_eq!(i.editor.selection(), Some((0, before)), "离块头近");
+    press(&mut i, KeyCode::Backspace, KeyModifiers::NONE);
+    assert_eq!(i.editor.text(), "[图片 1]乙");
+    assert_eq!(i.draft().images(), [shot(1)]);
+    let mut i = picture_between();
+    i.editor.select(0, after - 2);
+    assert_eq!(i.editor.selection(), Some((0, after)), "离块尾近");
+    press(&mut i, KeyCode::Char('丙'), KeyModifiers::NONE);
+    assert_eq!(i.editor.text(), "丙乙");
+    assert!(i.draft().images().is_empty());
+    // 块前面紧挨着字、后面紧挨着字：`Ctrl+W` 只删这一块，不连前面的字。
+    let mut i = picture_between();
+    i.editor.move_to(after, false);
+    i.editor.delete_word();
+    assert_eq!(i.editor.text(), "甲乙");
+}
+
+#[test]
+fn the_cursor_never_stops_inside_a_picture_block() {
+    // 不管怎么挪（点在中间、按词跳、上下、行首行尾），光标都落在块的两头，在块里打不进字。
+    let inside = |i: &crate::input::InputBox| {
+        let at = i.editor.cursor();
+        at > "甲".len() && at < "甲[图片 1]".len()
+    };
+    let text = "甲[图片 1]乙";
+    for at in (0..=text.len()).filter(|at| text.is_char_boundary(*at)) {
+        let mut i = picture_between();
+        i.editor.move_to(at, false);
+        assert!(!inside(&i), "点在第 {at} 个字节");
+        i.editor.insert("丁");
+        assert!(
+            i.editor.text().contains("[图片 1]"),
+            "块没被打断：{}",
+            i.editor.text()
+        );
+    }
+    for (code, modifiers) in [
+        (KeyCode::Left, KeyModifiers::NONE),
+        (KeyCode::Right, KeyModifiers::NONE),
+        (KeyCode::Left, KeyModifiers::CONTROL),
+        (KeyCode::Right, KeyModifiers::CONTROL),
+        (KeyCode::Home, KeyModifiers::NONE),
+        (KeyCode::End, KeyModifiers::NONE),
+        (KeyCode::Up, KeyModifiers::NONE),
+        (KeyCode::Down, KeyModifiers::NONE),
+    ] {
+        for start in [0, "甲".len(), "甲[图片 1]".len(), text.len()] {
+            let mut i = picture_between();
+            i.editor.move_to(start, false);
+            press(&mut i, code, modifiers);
+            assert!(!inside(&i), "从 {start} 按 {code:?} {modifiers:?}");
+        }
+    }
+}
+
+#[test]
+fn ctrl_u_and_ctrl_k_do_nothing_in_the_box() {
+    // 输入框没有绑 `Ctrl+U`、`Ctrl+K`（不是 readline 那样删到行首、行尾）：按了什么都不变，块也还在。
+    for c in ['u', 'k'] {
+        let mut i = picture_between();
+        i.editor.move_to("甲[图片 1]".len(), false);
+        press(&mut i, KeyCode::Char(c), KeyModifiers::CONTROL);
+        assert_eq!(i.editor.text(), "甲[图片 1]乙");
+        assert_eq!(i.draft().images(), [shot(1)]);
+    }
+}

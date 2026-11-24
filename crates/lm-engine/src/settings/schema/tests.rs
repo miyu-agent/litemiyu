@@ -48,7 +48,7 @@ fn shown_items_get_the_page_they_are_drawn_on() {
     let schema = schema(&items(), "zh").expect("字对得上");
     let page = |key: &str| schema.item(key).map(|shown| shown.item.ui.page);
     assert_eq!(page("ui.language"), Some("general"));
-    assert_eq!(page("compaction.prepare"), Some("advanced"));
+    assert_eq!(page("compaction.prepare"), Some("general"), "并进了通用页");
     assert_eq!(page("tui.keys"), Some("general"));
     assert_eq!(page("tui.theme_background"), Some("appearance"));
     assert_eq!(page("providers.<id>.base_url"), Some("models"));
@@ -60,7 +60,7 @@ fn shown_items_get_the_page_they_are_drawn_on() {
     assert_eq!(page("jobs.max_running"), Some("general"));
     assert_eq!(
         page("permission.confirm.timeout"),
-        Some("privacy"),
-        "照 Miyu 在隐私与安全"
+        Some("general"),
+        "Miyu 在隐私与安全，这里并进了通用页"
     );
 }

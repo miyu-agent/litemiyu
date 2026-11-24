@@ -93,7 +93,7 @@ fn the_menu_shows_each_page_with_its_groups() {
     assert!(text.contains("供应商和模型"), "{text}");
     assert!(text.contains("供应商、默认模型"), "{text}");
     assert!(!text.contains("模型池"), "LM-8 砍了模型池：{text}");
-    // LM-2 砍了联网搜索：高级页只剩压缩那一组。
+    // LM-2 砍了联网搜索：压缩那一组并进了通用页。
     assert!(text.contains("压缩"), "{text}");
     assert!(!text.contains("联网"), "{text}");
     assert!(text.contains("Enter 进入"), "{text}");
@@ -138,8 +138,8 @@ fn the_focused_item_s_description_sits_under_the_list_lm38() {
         .unwrap_or_else(|| panic!("光标在「界面语言」：说明写出来了\n{text}"));
     let last = lines
         .iter()
-        .position(|l| l.contains("按键模式"))
-        .expect("列表最后一行是按键模式");
+        .position(|l| l.contains("预压缩"))
+        .expect("列表最后一行是预压缩（压缩那一组并进了通用页，排在最后）");
     assert_eq!(about, last + 2, "说明在列表下面空一行：\n{text}");
     let x = lines[about].find("界面").unwrap();
     let col = u16::try_from(lines[about][..x].width()).unwrap();
@@ -375,7 +375,7 @@ fn the_mcp_page_lists_a_server_with_its_switch_and_state() {
     )
     .unwrap();
     let mut settings = Settings::at(paths, "zh", Outcome::Back).unwrap();
-    // MCP 在「高级」前面（同 Miyu）。
+    // MCP 排在照清单画的几页后面。
     let mcp = (0..settings.entries())
         .find(|&e| settings.extra(e) == Some(crate::settings::Extra::Mcp))
         .unwrap();

@@ -199,7 +199,7 @@ pub async fn output(main: &Handle, job: &str) -> Option<String> {
         Err(Unreadable::Unknown | Unreadable::Agent) => return None,
     };
     let mut text = output.text?;
-    tokio::task::spawn_blocking(move || {
+    lm_engine::spawn_blocking(move || {
         let end = text.seek(SeekFrom::End(0)).ok()?;
         text.seek(SeekFrom::Start(end.saturating_sub(TAIL))).ok()?;
         let mut bytes = Vec::new();
